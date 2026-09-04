@@ -5,3 +5,4 @@ node_modules/
 .env.*
 .vercel/
 .vercel/output/
+# never commit Build Output API artifacts — Vercel would skip npm run build
