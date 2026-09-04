@@ -1,0 +1,14 @@
+export const APP_NAME = "test v1.0";
+export const APP_VERSION = "1.0";
+export const APP_BUILD = "2026.09.03";
+export const APP_SLUG = "test-v1.0";
+export const NETWORK_NAME = "Очаг";
+export const LABS_NAME = "Victimok Labs";
+export const LABS_LINE = "Разработано в Victimok Labs";
+export const LABS_RIGHTS = "Все права защищены";
+export const LABS_YEAR = 2026;
+export const LABS_CREDIT = `${LABS_LINE}. ${LABS_RIGHTS}.`;
+export const LABS_COPYRIGHT = `© ${LABS_YEAR} ${LABS_NAME}. ${LABS_RIGHTS}.`;
+export const INSTALL_DIR_DEFAULT = "C:\\Program Files\\Victimok Labs\\test v1.0";
+export const SETUP_EXE = "test v1.0 Setup.exe";
+export const APP_EXE = "test v1.0.exe";

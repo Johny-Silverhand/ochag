@@ -1,0 +1,1 @@
+import{a as e,n as t,t as n}from"./jsx-runtime-B-hcVAMW.js";var r=e(t()),i=n();function a(){return(0,r.useEffect)(()=>{window.location.replace(`/setup/index.html`)},[]),(0,i.jsx)(`div`,{className:`min-h-dvh bg-[#070c0e]`})}export{a as component};

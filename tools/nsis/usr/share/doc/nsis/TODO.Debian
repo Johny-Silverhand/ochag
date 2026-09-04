@@ -1,0 +1,5 @@
+Port to more architectures.
+Switch to non-forked halibut. [http://sf.net/support/tracker.php?aid=1651225]
+Port makensisw/etc to wxWidgets.
+Create a NEWS file in release.py.
+Get crossmingw.py merged into scons.

@@ -1,0 +1,47 @@
+{
+  "RT_GROUP_ICON": {
+    "APP": {
+      "0000": ["icon.png"]
+    }
+  },
+  "RT_MANIFEST": {
+    "#1": {
+      "0409": {
+        "identity": {
+          "name": "VictimokLabs.testv1",
+          "version": "1.0.0.0"
+        },
+        "description": "test v1.0 Setup",
+        "minimum-os": "win7",
+        "execution-level": "asInvoker",
+        "dpi-awareness": "perMonitorV2",
+        "long-path-aware": true,
+        "use-common-controls-v6": true
+      }
+    }
+  },
+  "RT_VERSION": {
+    "#1": {
+      "0000": {
+        "fixed": {
+          "file_version": "1.0.0.0",
+          "product_version": "1.0.0.0"
+        },
+        "info": {
+          "0409": {
+            "Comments": "Разработано в Victimok Labs. Все права защищены.",
+            "CompanyName": "Victimok Labs",
+            "FileDescription": "test v1.0 Setup",
+            "FileVersion": "1.0.0.0",
+            "InternalName": "test-v1.0-setup",
+            "LegalCopyright": "© 2026 Victimok Labs. Все права защищены.",
+            "LegalTrademarks": "test v1.0, Victimok Labs",
+            "OriginalFilename": "test v1.0 Setup.exe",
+            "ProductName": "test v1.0",
+            "ProductVersion": "1.0.0.0"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,60 @@
+The menu thing isn't included because it requires wxWidgets 2.8 to build.
+
+To build nsis plugins you have to install the nsis-pluginapi package 
+and follow the given below instructions.
+
+If your package manager did not install the recommended package(s) of
+nsis-pluginapi then you would need to manually install a cross compiler
+targeting the win32 platform.
+
+Ideally you should install the recommended package(s) which you could
+query with the following command:
+dpkg-query -W -f'${Recommends}\n' nsis-pluginapi
+
+Nevertheless you are free to take your favorite cross compiler targeting
+the win32 platform as long as it can handle the application binary
+interface (ABI) used by the nsis plugin api library. In that case you
+need to explicitly specify the include and library path as mentioned
+below. The plugin api library is available in the following three variants:
+x86-ansi, x86-unicode and amd64-unicode. The plugin api library has to match
+with the corresponding target architecture and character set of your plugin.
+
+You should include the header like so:
+
+#include <nsis/pluginapi.h>
+
+By default the include and library files of the nsis plugin api are
+installed in the standard search paths of the recommended win32 cross
+compiler package. An excerpt of a Makefile would look like the
+following for this case:
+
+# --- cut ---
+ARCH = x86
+CHARSET = unicode
+
+CC=i686-w64-mingw32-gcc
+
+LDFLAGS += -L$(abspath $(shell $(CC) -print-file-name=nsis))
+LDFLAGS += -lpluginapi-$(ARCH)-$(CHARSET)
+# --- cut ---
+
+If that is not the case then the include and library path need to be
+explicitly specified for example in a Makefile such as:
+
+# --- cut ---
+ARCH = x86
+CHARSET = unicode
+
+ifneq (,$(filter amd64,$(ARCH)))
+	ARCH_PREFIX = x86_64
+else
+	ARCH_PREFIX = i686
+endif
+
+CPPFLAGS += -I $(shell dpkg-query -L nsis-pluginapi \
+		| sed -n '/.*$(ARCH_PREFIX).\+\/include$$/p')
+
+LDFLAGS += -L $(shell dpkg-query -L nsis-pluginapi \
+		| sed -n '/.*$(ARCH_PREFIX).\+\/lib\/nsis$$/p')
+LDFLAGS += -lpluginapi-$(ARCH)-$(CHARSET)
+# --- cut ---

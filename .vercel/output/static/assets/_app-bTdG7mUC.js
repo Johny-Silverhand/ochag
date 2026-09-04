@@ -1,0 +1,1 @@
+import{a as e,n as t,t as n}from"./jsx-runtime-B-hcVAMW.js";import{n as r,r as i}from"./store-mbYA1yaN.js";import{n as a,t as o}from"./app-shell-BK2ovVIM.js";import{O as s}from"./index-CVkVp52j.js";var c=e(t()),l=n();function u(){let e=r(),t=i(e=>e.session),n=s();return(0,c.useEffect)(()=>{e&&!t&&n({to:`/`})},[e,t,n]),!e||!t?(0,l.jsx)(a,{}):(0,l.jsx)(o,{})}export{u as component};

@@ -1,0 +1,40 @@
+{
+  "url": "http://127.0.0.1:8080/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Очаг",
+      "hasCanvas": false,
+      "bodyTextLen": 601,
+      "bodyTextHash": "95d60708c6c6f72ad96cf6d1a1bcb545d02dfc4f5ff6a7c77003afb33ad9820a",
+      "bodyTextPrefix": "ОПЕРАЦИОННЫЙ КОНТУР Очаг держит смену, склад и прибыль в одном м",
+      "horizontalOverflow": false,
+      "consoleErrors": [
+        "A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:\n\n- A server/client branch `if (typeof window !== 'undefined')`.\n- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.\n- Date formatting in a user's locale which doesn't match the server.\n- External changing data without sending a snapshot of it along with the HTML.\n- Invalid HTML tag nesting.\n\nIt can also happen if the client has a browser extension installed which messes with the HTML before React loaded.\n\n%s%s https://react.dev/link/hydration-mismatch \n\n  ...\n    <SafeFragment>\n      <SafeFragment fallback={null}>\n        <CatchBoundary getResetKey={function getResetKey} errorComponent={function AppErrorComponent} ...>\n          <SafeFragment fallback={function fallback}>\n            <MatchInnerImpl match={{id:\"//\",ssr:true, ...}}>\n              <Lazy>\n                <LoginPage>\n                  <main className=\"min-h-dvh ...\">\n                    <section>\n                    <section className=\"flex min-h...\">\n                      <div className=\"mx-auto w-...\">\n                        <div>\n                        <div>\n                        <div>\n                        <form className=\"mt-8 space...\" onSubmit={function onSubmit}>\n                          <Field label=\"Логин\">\n                            <div className={undefined}>\n                              <Label>\n                              <Input value=\"owner\" onChange={function onChange} autoComplete=\"username\">\n                                <input\n                                  className=\"h-11 w-full rounded-sm border border-border bg-elevated px-3 text-sm text...\"\n                                  value=\"owner\"\n                                  onChange={function onChange}\n                                  autoComplete=\"username\"\n-                                 style={{caret-color:\"transparent\"}}\n                                >\n                          <Field label=\"Пароль\">\n                            <div className={undefined}>\n                              <Label>\n                              <Input type=\"password\" value=\"ochag\" onChange={function onChange} ...>\n                                <input\n                                  className=\"h-11 w-full rounded-sm border border-border bg-elevated px-3 text-sm text...\"\n                                  type=\"password\"\n                                  value=\"ochag\"\n                                  onChange={function onChange}\n                                  autoComplete=\"current-password\"\n-                                 style={{caret-color:\"transparent\"}}\n                                >\n                          ...\n                        ...\n"
+      ],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Очаг",
+      "hasCanvas": false,
+      "bodyTextLen": 301,
+      "bodyTextHash": "c15f19eb6b78ce336a39392a5c4dbf0d0d7e8b20f43136689b3942cecbf09dc9",
+      "bodyTextPrefix": "ОЧАГ Вход в контур Кирилл Сорокин Все филиалы, финансы, интеграц",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview-mobile.png"
+    }
+  },
+  "brandWarnings": [
+    "BRAND NOTE: no custom public/og.jpg — the platform will serve the og.grok.me placeholder. Custom cards are the default for games of every kind (DOM board/word games included), whimsical apps, creative tools, and brand-forward pages — only plain utilities (converters, CRUD trackers, admin dashboards) keep the placeholder. If this app is not a plain utility, finish the brand-asset pass per /workspace/.grok/skills/og/SKILL.md."
+  ],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-builder-preview.json"
+}
