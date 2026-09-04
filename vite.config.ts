@@ -157,6 +157,11 @@ export default defineConfig(({ command, isPreview }) => ({
     strictPort: true,
   },
   resolve: { tsconfigPaths: true },
+  // Bundle tslib + radix into the Vercel SSR output — otherwise nitro leaves
+  // bare `import "tslib"` in /var/task/_libs and production 500s.
+  ssr: {
+    noExternal: ["tslib", /^@radix-ui\/.*/],
+  },
   plugins: [
     pgliteBootstrapPlugin(),
     // Before tanstackStart so /auth/popup never falls through to the SPA.
