@@ -233,7 +233,7 @@ export function AppShell() {
             </Link>
           </div>
         </header>
-        <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col overflow-y-auto px-4 py-5 scroll-touch sm:px-6 sm:py-6">
+        <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 py-5 sm:px-6 sm:py-6 md:min-h-0 md:overflow-y-auto md:scroll-touch">
           <div className="flex-1">
             <Outlet />
           </div>
