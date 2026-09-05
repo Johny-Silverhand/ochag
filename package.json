@@ -20,7 +20,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "build:win": "python3 desktop/pack-media.py && node desktop/build.mjs",
-    "build:ios": "node ios/build.mjs"
+    "build:ios": "node ios/build.mjs",
+    "build:android": "node android/build.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.4",
