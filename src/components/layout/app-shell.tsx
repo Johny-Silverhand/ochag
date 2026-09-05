@@ -128,7 +128,7 @@ export function AppShell() {
   const sync = useSync();
 
   return (
-    <div className="app-frame min-h-dvh bg-bg text-fg md:grid md:h-dvh md:grid-cols-[220px_1fr] md:overflow-hidden">
+    <div className="app-frame flex h-[var(--app-height,100dvh)] min-h-0 flex-col overflow-hidden bg-bg text-fg md:grid md:h-dvh md:grid-cols-[220px_1fr]">
       <aside className="no-print hidden bg-sidebar text-sidebar-fg md:flex md:h-full md:flex-col md:overflow-hidden">
         <div className="flex items-center gap-2.5 px-5 pt-6 pb-5">
           <Mark className="size-8 text-sidebar-fg" />
@@ -178,7 +178,7 @@ export function AppShell() {
         </div>
       </aside>
 
-      <div className="flex min-h-0 min-w-0 flex-col overflow-y-auto pb-[calc(5.25rem+env(safe-area-inset-bottom))] scroll-touch md:h-full md:overflow-hidden md:pb-0">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto scroll-touch pb-[calc(5.25rem+env(safe-area-inset-bottom))] md:h-full md:overflow-hidden md:pb-0">
         <header className="no-print sticky top-0 z-30 flex items-center gap-2 border-b border-border bg-bg/90 px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 backdrop-blur-sm sm:px-6">
           <div className="flex items-center gap-2 md:hidden">
             <Mark className="size-7 text-primary" />
