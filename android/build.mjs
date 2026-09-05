@@ -7,6 +7,9 @@
  *                  (box: /workspace/android-sdk)
  *
  * Usage (from repo root): npm run build:android
+ *
+ * Prefers ./gradlew when present (with gradle-wrapper.jar). Otherwise downloads
+ * Gradle 8.7 to a cache dir and runs :app:assembleDebug.
  */
 import { spawnSync } from "node:child_process";
 import {
@@ -16,13 +19,16 @@ import {
   writeFileSync,
   chmodSync,
   statSync,
+  rmSync,
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import os from "node:os";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const androidDir = __dirname;
+const GRADLE_VER = "8.7";
 
 const javaHome =
   process.env.JAVA_HOME ||
@@ -65,34 +71,49 @@ writeFileSync(
   `sdk.dir=${androidHome.replace(/\\/g, "/")}\n`,
 );
 
-const wrapperJar = path.join(androidDir, "gradle/wrapper/gradle-wrapper.jar");
-if (!existsSync(wrapperJar) || statSync(wrapperJar).size < 1000) {
-  mkdirSync(path.dirname(wrapperJar), { recursive: true });
-  console.log("[android] downloading gradle-wrapper.jar…");
-  const dl = spawnSync(
-    "curl",
-    [
-      "-fsSL",
-      "-o",
-      wrapperJar,
-      "https://github.com/gradle/gradle/raw/v8.7.0/gradle/wrapper/gradle-wrapper.jar",
-    ],
-    { stdio: "inherit" },
+function resolveGradle() {
+  const gradlew = path.join(
+    androidDir,
+    process.platform === "win32" ? "gradlew.bat" : "gradlew",
   );
-  if (dl.status !== 0 || !existsSync(wrapperJar)) {
-    fail("Could not download gradle-wrapper.jar");
+  const jar = path.join(androidDir, "gradle/wrapper/gradle-wrapper.jar");
+  if (existsSync(gradlew) && existsSync(jar) && statSync(jar).size > 1000) {
+    try {
+      chmodSync(gradlew, 0o755);
+    } catch {
+      /* ignore */
+    }
+    return { cmd: gradlew, args: [":app:assembleDebug", "--no-daemon"] };
   }
-}
 
-const gradlew = path.join(
-  androidDir,
-  process.platform === "win32" ? "gradlew.bat" : "gradlew",
-);
-if (!existsSync(gradlew)) fail(`gradlew missing at ${gradlew}`);
-try {
-  chmodSync(gradlew, 0o755);
-} catch {
-  /* ignore */
+  const cacheRoot = path.join(os.homedir(), ".cache", "ochag-gradle");
+  const distDir = path.join(cacheRoot, `gradle-${GRADLE_VER}`);
+  const gradleBin = path.join(
+    distDir,
+    `gradle-${GRADLE_VER}`,
+    "bin",
+    process.platform === "win32" ? "gradle.bat" : "gradle",
+  );
+  if (!existsSync(gradleBin)) {
+    mkdirSync(cacheRoot, { recursive: true });
+    const zip = path.join(cacheRoot, `gradle-${GRADLE_VER}-bin.zip`);
+    if (!existsSync(zip)) {
+      console.log(`[android] downloading Gradle ${GRADLE_VER}…`);
+      const url = `https://services.gradle.org/distributions/gradle-${GRADLE_VER}-bin.zip`;
+      const dl = spawnSync("curl", ["-fsSL", "-o", zip, url], { stdio: "inherit" });
+      if (dl.status !== 0) fail("Failed to download Gradle distribution");
+    }
+    rmSync(distDir, { recursive: true, force: true });
+    mkdirSync(distDir, { recursive: true });
+    const unzip = spawnSync("unzip", ["-q", zip, "-d", distDir], { stdio: "inherit" });
+    if (unzip.status !== 0) fail("Failed to unzip Gradle distribution");
+  }
+  try {
+    chmodSync(gradleBin, 0o755);
+  } catch {
+    /* ignore */
+  }
+  return { cmd: gradleBin, args: [":app:assembleDebug", "--no-daemon"] };
 }
 
 const env = {
@@ -107,7 +128,8 @@ console.log(`[android] JAVA_HOME=${javaHome}`);
 console.log(`[android] ANDROID_HOME=${androidHome}`);
 console.log("[android] assembling debug APK…");
 
-const assemble = spawnSync(gradlew, [":app:assembleDebug", "--no-daemon"], {
+const { cmd, args } = resolveGradle();
+const assemble = spawnSync(cmd, args, {
   cwd: androidDir,
   stdio: "inherit",
   env,
