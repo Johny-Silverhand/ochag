@@ -7,6 +7,7 @@ import type {
   BanquetStatus,
   ExpenseKind,
   InvoiceLine,
+  PayrollAdjKind,
   Period,
   Recipe,
   RequestStatus,
@@ -32,10 +33,14 @@ import {
   applyOpenShift,
   applyProfile,
   applyRequestFromNeed,
+  applyClosePeriod,
+  applyPayrollAdjustment,
   applyRequestStatus,
+  applyRevenuePlan,
   applyRevision,
   applySettings,
   applyStopList,
+  applyTopUpDebt,
   applyTransfer,
   applyUpsertRecipe,
   applyWriteoff,
@@ -80,9 +85,19 @@ interface OpsState extends Snapshot {
   }) => void;
   addInvoice: (input: { supplier: string; number: string; date: string; lines: InvoiceLine[] }) => void;
   createRequestFromNeed: () => void;
-  setRequestStatus: (id: string, status: RequestStatus) => void;
-  openShift: (input: { openCash: number; staffIds: string[]; startList: string[] }) => void;
+  setRequestStatus: (id: string, status: RequestStatus, supplierId?: string) => void;
+  openShift: (input: {
+    openCash: number;
+    staffIds: string[];
+    startList: string[];
+    topUpDebtId?: string;
+    topUpAmount?: number;
+  }) => void;
   closeShift: (input: { closeCash: number; note?: string }) => void;
+  topUpDebt: (debtId: string) => void;
+  closePeriod: (input: { from: string; to: string; revisionId: string }) => void;
+  adjustPayroll: (input: { userId: string; kind: PayrollAdjKind; amount: number; note: string; date?: string }) => void;
+  setPlan: (input: { branchId: string; month: string; target: number }) => void;
   addManualSale: (items: Omit<SaleItem, "costAtSale">[], payment: "cash" | "card" | "qr") => void;
   importKeeperSales: (
     sales: Array<
@@ -329,8 +344,10 @@ export const useOps = create<OpsState>()(
         void applyRemote("procurement/request", {}, (snap, actor) => applyRequestFromNeed(snap, actor));
       },
 
-      setRequestStatus: (id, status) => {
-        void applyRemote("procurement/status", { id, status }, (snap, actor) => applyRequestStatus(snap, actor, id, status));
+      setRequestStatus: (id, status, supplierId) => {
+        void applyRemote("procurement/status", { id, status, supplierId }, (snap, actor) =>
+          applyRequestStatus(snap, actor, id, status, supplierId),
+        );
       },
 
       openShift: (input) => {
@@ -339,6 +356,22 @@ export const useOps = create<OpsState>()(
 
       closeShift: (input) => {
         void applyRemote("shifts/close", input, (snap, actor) => applyCloseShift(snap, actor, input));
+      },
+
+      topUpDebt: (debtId) => {
+        void applyRemote("debts/topup", { debtId }, (snap, actor) => applyTopUpDebt(snap, actor, { debtId }));
+      },
+
+      closePeriod: (input) => {
+        void applyRemote("period/close", input, (snap, actor) => applyClosePeriod(snap, actor, input));
+      },
+
+      adjustPayroll: (input) => {
+        void applyRemote("staff/adjust", input, (snap, actor) => applyPayrollAdjustment(snap, actor, input));
+      },
+
+      setPlan: (input) => {
+        void applyRemote("plan", input, (snap, actor) => applyRevenuePlan(snap, actor, input));
       },
 
       addManualSale: (items, payment) => {

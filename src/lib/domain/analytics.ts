@@ -153,12 +153,33 @@ export function compareRevisions(snap: Snapshot, branchId: string) {
       shortage,
     };
   });
-  return { left: older, right: newer, rows };
+  const byCategory = new Map<string, { category: string; shortage: number; count: number }>();
+  for (const r of rows) {
+    const cur = byCategory.get(r.category) ?? { category: r.category || "Прочее", shortage: 0, count: 0 };
+    if (r.shortage < 0) {
+      cur.shortage += r.shortage;
+      cur.count += 1;
+    }
+    byCategory.set(r.category, cur);
+  }
+  const shift = snap.shifts.find((s) => s.branchId === branchId && s.date === newer.date) ?? null;
+  return { left: older, right: newer, rows, byCategory: [...byCategory.values()], shift };
 }
 
-export function priceHistory(snap: Snapshot, productId: string) {
-  const points: { date: string; price: number; supplier: string; branchId: string; up: boolean }[] = [];
-  const invoices = [...snap.invoices].sort((a, b) => a.date.localeCompare(b.date));
+export function priceHistory(snap: Snapshot, productId: string, branchId?: string) {
+  const product = snap.products.find((p) => p.id === productId);
+  const points: {
+    date: string;
+    price: number;
+    supplier: string;
+    branchId: string;
+    up: boolean;
+    pct: number;
+    name: string;
+  }[] = [];
+  const invoices = [...snap.invoices]
+    .filter((inv) => !branchId || branchId === "all" || inv.branchId === branchId)
+    .sort((a, b) => a.date.localeCompare(b.date));
   let prev = 0;
   for (const inv of invoices) {
     const line = inv.lines.find((l) => l.productId === productId);
@@ -169,10 +190,24 @@ export function priceHistory(snap: Snapshot, productId: string) {
       supplier: inv.supplier,
       branchId: inv.branchId,
       up: prev > 0 && line.price > prev,
+      pct: prev > 0 ? ((line.price - prev) / prev) * 100 : 0,
+      name: product?.name ?? productId,
     });
     prev = line.price;
   }
   return points;
+}
+
+export function stopListHistory(snap: Snapshot, branchId: string, from: string, to: string) {
+  return snap.stopList
+    .filter(
+      (e) =>
+        (branchId === "all" || e.branchId === branchId) &&
+        e.createdAt.slice(0, 10) >= from &&
+        e.createdAt.slice(0, 10) <= to,
+    )
+    .slice()
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
 }
 
 export function periodPayroll(snap: Snapshot, period: Period, branchId: string) {

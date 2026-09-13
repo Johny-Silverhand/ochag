@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { actorFrom, AuthzError } from "../authz/actor.ts";
 import { emptySnapshot } from "../data/empty.ts";
-import { applyManualSale, applyOnboard, applyOpenShift } from "./mutations.ts";
+import { applyClosePeriod, applyManualSale, applyOnboard, applyOpenShift, applyRevision } from "./mutations.ts";
 import { defaultSettings } from "./types.ts";
 
 const ownerActor = actorFrom(
@@ -72,6 +72,34 @@ describe("manual cheque vs keeper link", () => {
     assert.throws(
       () => applyManualSale(withShift, actor, [], "cash"),
       (err: unknown) => err instanceof AuthzError && /кипер/i.test(err.message),
+    );
+  });
+});
+
+describe("period close", () => {
+  it("requires a done revision on the selected branch", () => {
+    const onboarded = applyOnboard(emptySnapshot(), {
+      ownerName: "Кирилл",
+      login: "owner",
+      password: "ochag",
+      pin: "1001",
+      branchName: "Пушкина",
+      city: "Краснодар",
+      address: "ул. Пушкина, 1",
+    });
+    const branchId = onboarded.branches[0]!.id;
+    const actor = { ...ownerActor, userId: onboarded.users[0]!.id, sessionBranchId: branchId };
+    assert.throws(
+      () => applyClosePeriod(onboarded, actor, { from: "2026-09-01", to: "2026-09-13", revisionId: "missing" }),
+      (err: unknown) => err instanceof AuthzError && /ревизи/i.test(err.message),
+    );
+    const withRev = applyRevision(onboarded, actor, [{ productId: "p1", bookQty: 2, factQty: 2 }], "закрытие");
+    const rev = withRev.revisions[0]!;
+    const closed = applyClosePeriod(withRev, actor, { from: rev.date, to: rev.date, revisionId: rev.id });
+    assert.equal(closed.closedPeriods.length, 1);
+    assert.throws(
+      () => applyManualSale(closed, actor, [], "cash"),
+      (err: unknown) => err instanceof AuthzError && /закрыт/i.test(err.message),
     );
   });
 });

@@ -443,6 +443,22 @@ export function createSeed(): Snapshot {
       userId: MANAGERS[br.id] ?? "u-owner",
     };
     invoices.push(inv);
+    if (br.id === "br-south") {
+      const pork = PRODUCTS.find((p) => p.id === "prd-pork");
+      if (pork) {
+        const upPrice = Math.round(pork.avgCost * 1.14);
+        invoices.push({
+          id: "inv-south-pork-up",
+          number: "НФ-ЮГ-2410",
+          branchId: "br-south",
+          supplier: "Кубанский двор",
+          date: addDays(TODAY, -2),
+          lines: [{ productId: pork.id, qty: 8, price: upPrice }],
+          total: 8 * upPrice,
+          userId: "u-mgr-s",
+        });
+      }
+    }
     for (const line of lines) {
       const mov: StockMovement = {
         id: `m-open-${br.id}-${line.productId}`,
@@ -840,7 +856,22 @@ export function createSeed(): Snapshot {
       { id: "sup-drink", name: "Юг-напитки", email: "opt@yug.example", telegram: "", channel: "email" },
     ],
     closedPeriods: [],
-    debts: [],
+    debts: (() => {
+      const yest = addDays(TODAY, -1);
+      const southYest = shifts.find((s) => s.branchId === "br-south" && s.date === yest && s.status === "closed");
+      const amount = southYest && (southYest.discrepancy ?? 0) < 0 ? Math.abs(southYest.discrepancy ?? 0) : 800;
+      return [
+        {
+          id: "debt-south-1",
+          branchId: "br-south",
+          fromShiftId: southYest?.id ?? shifts.find((s) => s.branchId === "br-south")?.id ?? "sh-south",
+          date: yest,
+          amount,
+          status: "open" as const,
+          note: "Недостача к утреннему довнесению",
+        },
+      ];
+    })(),
     payrollAdjustments: [
       {
         id: "adj-1",
@@ -872,6 +903,28 @@ export function createSeed(): Snapshot {
         note: "Баранина на стопе до поставки",
         createdAt: atHour(TODAY, 11, 20),
         createdBy: "u-cook-s",
+      },
+      {
+        id: "sl-south-pork-old",
+        branchId: "br-south",
+        recipeId: "rcp-pork",
+        reason: "quality",
+        note: "Партия шеи — запах",
+        createdAt: atHour(addDays(TODAY, -18), 12, 10),
+        createdBy: "u-cook-s",
+        clearedAt: atHour(addDays(TODAY, -17), 9, 40),
+        clearedBy: "u-mgr-s",
+      },
+      {
+        id: "sl-push-salad",
+        branchId: "br-pushkin",
+        recipeId: "rcp-salad",
+        reason: "no_stock",
+        note: "Зелень до поставки",
+        createdAt: atHour(addDays(TODAY, -6), 14, 0),
+        createdBy: "u-cook-p",
+        clearedAt: atHour(addDays(TODAY, -5), 11, 0),
+        clearedBy: "u-mgr-p",
       },
     ],
   };

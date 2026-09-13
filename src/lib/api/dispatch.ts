@@ -28,6 +28,7 @@ import {
   applySessionBranch,
   applySettings,
   applyStopList,
+  applyTopUpDebt,
   applyTransfer,
   applyUpsertRecipe,
   applyWriteoff,
@@ -42,7 +43,7 @@ import { safeMetrics } from "../ai/safe-context";
 import { flushOutbox, notifyReady } from "../notify/send";
 import { banquetPdf, periodPdf, revisionActPdf, toCsv } from "../reports/pdf";
 import { advisor } from "../ai/advisor";
-import { abcByRevenue, compareRevisions, deviations, periodPayroll, planVsFact, priceHistory, stockCover } from "../domain/analytics";
+import { abcByRevenue, compareRevisions, deviations, periodPayroll, planVsFact, priceHistory, stockCover, stopListHistory } from "../domain/analytics";
 import { isOnboarded } from "../data/empty";
 import { createSeed } from "../data/seed";
 import { can } from "../domain/permissions";
@@ -105,7 +106,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
       return json({
         ok: true,
         service: "ochag",
-        stage: 1,
+        stage: 3,
         onboarded: isOnboarded(snap),
         store: status,
         notify: notifyReady(),
@@ -234,13 +235,18 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
       return mutate(request, (snap, actor) => applyRequestFromNeed(snap, actor));
     }
     if (method === "POST" && path === "procurement/status") {
-      return mutate(request, (snap, actor) => applyRequestStatus(snap, actor, String(body.id), body.status as never));
+      return mutate(request, (snap, actor) =>
+        applyRequestStatus(snap, actor, String(body.id), body.status as never, body.supplierId ? String(body.supplierId) : undefined),
+      );
     }
     if (method === "POST" && path === "shifts/open") {
       return mutate(request, (snap, actor) => applyOpenShift(snap, actor, body as never));
     }
     if (method === "POST" && path === "shifts/close") {
       return mutate(request, (snap, actor) => applyCloseShift(snap, actor, body as never));
+    }
+    if (method === "POST" && path === "debts/topup") {
+      return mutate(request, (snap, actor) => applyTopUpDebt(snap, actor, { debtId: String(body.debtId) }));
     }
     if (method === "POST" && path === "shifts/stop-list") {
       return mutate(request, (snap, actor) => applyStopList(snap, actor, body as never));
@@ -357,7 +363,22 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     if (method === "GET" && path === "analytics/prices") {
       const actor = await requireActor(request);
       const repo = await getRepo();
-      return json({ rows: priceHistory(await repo.load(), String(url.searchParams.get("product") ?? "")) });
+      return json({
+        rows: priceHistory(
+          await repo.load(),
+          String(url.searchParams.get("product") ?? ""),
+          url.searchParams.get("branch") ?? actor.sessionBranchId,
+        ),
+      });
+    }
+    if (method === "GET" && path === "analytics/stoplist") {
+      const actor = await requireActor(request);
+      const repo = await getRepo();
+      const from = url.searchParams.get("from") ?? today().slice(0, 7) + "-01";
+      const to = url.searchParams.get("to") ?? today();
+      return json({
+        rows: stopListHistory(await repo.load(), url.searchParams.get("branch") ?? actor.sessionBranchId, from, to),
+      });
     }
     if (method === "GET" && path === "analytics/payroll") {
       const actor = await requireActor(request);

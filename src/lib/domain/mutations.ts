@@ -181,10 +181,21 @@ export function applyRequestFromNeed(snap: Snapshot, actor: Actor): Snapshot {
   };
 }
 
-export function applyRequestStatus(snap: Snapshot, actor: Actor, id: string, status: RequestStatus): Snapshot {
+export function applyRequestStatus(
+  snap: Snapshot,
+  actor: Actor,
+  id: string,
+  status: RequestStatus,
+  supplierId?: string,
+): Snapshot {
   const row = snap.requests.find((r) => r.id === id);
   if (!row) return snap;
   assertBranchScope(actor, row.branchId);
+  const supplier =
+    snap.suppliers.find((s) => s.id === (supplierId || row.supplierId)) ??
+    snap.suppliers.find((s) => s.channel === snap.settings.supplierChannel) ??
+    snap.suppliers[0];
+  const channel = supplier?.channel ?? snap.settings.supplierChannel;
   let next: Snapshot = {
     ...snap,
     requests: snap.requests.map((r) =>
@@ -192,14 +203,14 @@ export function applyRequestStatus(snap: Snapshot, actor: Actor, id: string, sta
         ? {
             ...r,
             status,
+            supplierId: supplier?.id ?? r.supplierId,
             sentAt: status === "sent" ? new Date().toISOString() : r.sentAt,
-            sentChannel: status === "sent" ? snap.settings.supplierChannel : r.sentChannel,
+            sentChannel: status === "sent" ? channel : r.sentChannel,
           }
         : r,
     ),
   };
   if (status === "sent") {
-    const supplier = snap.suppliers[0];
     const lines = row.lines
       .map((l) => `${snap.products.find((p) => p.id === l.productId)?.name ?? l.productId} × ${l.qty}`)
       .join(", ");
@@ -208,9 +219,9 @@ export function applyRequestStatus(snap: Snapshot, actor: Actor, id: string, sta
       "purchase_sent",
       `Заявка ${row.number} отправлена`,
       lines,
-      supplier?.channel === "email" ? supplier.email : supplier?.telegram,
+      channel === "email" ? supplier?.email : supplier?.telegram,
     );
-    next = appendAudit(next, actor, "purchase_sent", "request", row.number, row.branchId);
+    next = appendAudit(next, actor, "purchase_sent", "request", `${row.number} → ${supplier?.name ?? channel}`, row.branchId);
   }
   return next;
 }
@@ -564,6 +575,7 @@ export function applyExpense(
   assertExpenses(actor);
   const branchId = writeBranch(actor);
   assertBranchScope(actor, branchId);
+  assertPeriodOpen(snap, branchId, input.date ?? today());
   return {
     ...snap,
     expenses: [
@@ -726,21 +738,69 @@ export function applyClosePeriod(
 ): Snapshot {
   if (!canClosePeriod(actor.role)) throw new AuthzError("Закрытие периода недоступно");
   const branchId = writeBranch(actor);
-  return {
+  const rev = snap.revisions.find((r) => r.id === input.revisionId);
+  if (!rev || rev.status !== "done") {
+    throw new AuthzError("Закрытие периода — только после закрытой ревизии филиала.");
+  }
+  if (rev.branchId !== branchId) {
+    throw new AuthzError("Ревизия принадлежит другому филиалу.");
+  }
+  if (rev.date < input.from || rev.date > input.to) {
+    throw new AuthzError(`Ревизия ${rev.date} вне периода ${input.from}–${input.to}.`);
+  }
+  if (snap.closedPeriods.some((p) => p.branchId === branchId && p.from === input.from && p.to === input.to)) {
+    throw new AuthzError("Этот период уже закрыт.");
+  }
+  return appendAudit(
+    {
+      ...snap,
+      closedPeriods: [
+        {
+          id: uid("cp"),
+          branchId,
+          from: input.from,
+          to: input.to,
+          closedAt: new Date().toISOString(),
+          closedBy: actor.userId,
+          revisionId: input.revisionId,
+        },
+        ...snap.closedPeriods,
+      ],
+    },
+    actor,
+    "period_close",
+    "period",
+    `${input.from}–${input.to}`,
+    branchId,
+  );
+}
+
+export function applyTopUpDebt(snap: Snapshot, actor: Actor, input: { debtId: string }): Snapshot {
+  const branchId = writeBranch(actor);
+  const debt = snap.debts.find((d) => d.id === input.debtId);
+  if (!debt || debt.status !== "open") throw new AuthzError("Долг не найден или уже закрыт");
+  if (debt.branchId !== branchId) throw new AuthzError("Долг другого филиала");
+  const open = openShiftFor(snap.shifts, branchId);
+  let next: Snapshot = {
     ...snap,
-    closedPeriods: [
-      {
-        id: uid("cp"),
-        branchId,
-        from: input.from,
-        to: input.to,
-        closedAt: new Date().toISOString(),
-        closedBy: actor.userId,
-        revisionId: input.revisionId,
-      },
-      ...snap.closedPeriods,
-    ],
+    debts: snap.debts.map((d) =>
+      d.id === debt.id
+        ? {
+            ...d,
+            status: "topped" as const,
+            toppedAt: new Date().toISOString(),
+            toppedShiftId: open?.id,
+          }
+        : d,
+    ),
   };
+  if (open) {
+    next = {
+      ...next,
+      shifts: next.shifts.map((s) => (s.id === open.id ? { ...s, openCash: s.openCash + debt.amount } : s)),
+    };
+  }
+  return appendAudit(next, actor, "debt_topup", "debt", `${debt.amount} ₽`, branchId);
 }
 
 export function applyPayrollAdjustment(
@@ -750,6 +810,7 @@ export function applyPayrollAdjustment(
 ): Snapshot {
   if (!canInviteStaff(actor.role)) throw new AuthzError("Корректировка ФОТ недоступна");
   const branchId = writeBranch(actor);
+  assertPeriodOpen(snap, branchId, input.date ?? today());
   const row = {
     id: uid("adj"),
     userId: input.userId,
