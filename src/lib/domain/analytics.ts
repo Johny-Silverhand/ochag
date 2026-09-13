@@ -133,16 +133,20 @@ export function deviations(snap: Snapshot, period: Period, branchId: string) {
 }
 
 export function compareRevisions(snap: Snapshot, branchId: string) {
-  const pair = snap.revisions.filter((r) => r.branchId === branchId && r.status === "done").slice(0, 2);
-  if (pair.length < 2) return { left: pair[0] ?? null, right: pair[1] ?? null, rows: [] };
+  const pair = snap.revisions
+    .filter((r) => r.branchId === branchId && r.status === "done")
+    .slice()
+    .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
+    .slice(0, 2);
+  if (pair.length < 2) return { left: pair[0] ?? null, right: pair[1] ?? null, rows: [], byCategory: [], shift: null };
   const [newer, older] = pair;
   const ids = new Set([...newer.lines.map((l) => l.productId), ...older.lines.map((l) => l.productId)]);
   const rows = [...ids].map((productId) => {
     const a = older.lines.find((l) => l.productId === productId);
     const b = newer.lines.find((l) => l.productId === productId);
     const product = snap.products.find((p) => p.id === productId);
-    const delta = (b?.factQty ?? 0) - (a?.factQty ?? 0);
-    const shortage = Math.min(0, (b?.factQty ?? 0) - (b?.bookQty ?? 0));
+    const delta = Math.round(((b?.factQty ?? 0) - (a?.factQty ?? 0)) * 100) / 100;
+    const shortage = Math.round(Math.min(0, (b?.factQty ?? 0) - (b?.bookQty ?? 0)) * 100) / 100;
     return {
       productId,
       name: product?.name ?? productId,
@@ -157,7 +161,7 @@ export function compareRevisions(snap: Snapshot, branchId: string) {
   for (const r of rows) {
     const cur = byCategory.get(r.category) ?? { category: r.category || "Прочее", shortage: 0, count: 0 };
     if (r.shortage < 0) {
-      cur.shortage += r.shortage;
+      cur.shortage = Math.round((cur.shortage + r.shortage) * 100) / 100;
       cur.count += 1;
     }
     byCategory.set(r.category, cur);
