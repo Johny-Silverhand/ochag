@@ -19,7 +19,7 @@ function IntegrationsPage() {
   const sync = useSync();
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<{
-    source: "neon" | "pglite";
+    source: "neon" | "pglite" | "memory" | "json";
     ready: boolean;
     updatedAt: string | null;
     sales: number;
@@ -32,7 +32,14 @@ function IntegrationsPage() {
   }, [sync.updatedAt]);
 
   const source = status?.source ?? sync.source;
-  const dbLive = source === "neon" ? "Neon Postgres" : "Postgres (локальный контур)";
+  const dbLive =
+    source === "neon"
+      ? "Neon Postgres"
+      : source === "json"
+        ? "JSON-файл"
+        : source === "memory"
+          ? "Память процесса"
+          : "Postgres (локальный контур)";
 
   return (
     <div>
@@ -49,8 +56,8 @@ function IntegrationsPage() {
               <div className="text-xs tracking-wide text-muted uppercase">База</div>
               <h2 className="mt-1 text-lg font-medium">{dbLive}</h2>
               <p className="mt-2 max-w-xl text-sm text-muted">
-                Склад, чеки, смены и банкеты пишутся в Postgres. На проде это Neon; в превью — тот же движок, чтобы
-                ничего не расходилось.
+                Склад и касса живут в репозитории без живого Postgres. Миграции уже лежат в проекте — DATABASE_URL
+                подключите позже, без переписывания контура.
               </p>
             </div>
             <Badge tone={status?.ready || sync.status === "ok" ? "success" : "warning"}>

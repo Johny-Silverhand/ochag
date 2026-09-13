@@ -206,7 +206,13 @@ export function AppShell() {
                 "hidden items-center gap-1.5 rounded-full px-2 py-1 text-[11px] sm:inline-flex",
                 sync.status === "error" ? "bg-danger-soft text-danger" : "bg-surface text-muted",
               )}
-              title={sync.source === "neon" ? "Neon Postgres" : "Postgres"}
+              title={
+                sync.source === "neon"
+                  ? "Neon Postgres"
+                  : sync.source === "json"
+                    ? "JSON store"
+                    : "Память / контур"
+              }
             >
               <span
                 className={cn(

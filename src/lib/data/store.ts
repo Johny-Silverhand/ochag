@@ -169,7 +169,7 @@ export const useOps = create<OpsState>()(
         set({ ...snap, session });
         applyingRemote = false;
         useSync.getState().setMeta({
-          source: useSync.getState().source ?? "pglite",
+          source: useSync.getState().source ?? "memory",
           updatedAt: new Date().toISOString(),
           sales: snap.sales.length,
         });
@@ -593,7 +593,7 @@ if (typeof window !== "undefined") {
         .save(snapshotOf(state))
         .then(() => {
           useSync.getState().setMeta({
-            source: useSync.getState().source ?? "pglite",
+            source: useSync.getState().source ?? "memory",
             updatedAt: new Date().toISOString(),
             sales: state.sales.length,
           });
@@ -637,7 +637,7 @@ export function useHydrated() {
           }
         } catch {
           useSync.getState().setMeta({
-            source: "pglite",
+            source: "memory",
             updatedAt: new Date().toISOString(),
             sales: snap.sales.length,
           });

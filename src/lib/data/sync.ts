@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 export type SyncState = "loading" | "ok" | "saving" | "error";
-export type DbSource = "neon" | "pglite";
+export type DbSource = "neon" | "pglite" | "memory" | "json";
 
 interface SyncStore {
   status: SyncState;
