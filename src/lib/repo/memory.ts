@@ -1,6 +1,7 @@
 import { emptySnapshot } from "../data/empty";
 import { createSeed } from "../data/seed";
 import { normalizeSnapshot } from "../data/normalize";
+import { retainSecrets } from "../data/secrets";
 import { publicSnapshot } from "../domain/finance";
 import type { Snapshot } from "../domain/types";
 import type { OpsRepository, StoreSource } from "./types";
@@ -29,7 +30,7 @@ export function createMemoryRepository(source: StoreSource = "memory"): OpsRepos
       return structuredClone(slot().snapshot);
     },
     async save(snapshot) {
-      const next = normalizeSnapshot(snapshot);
+      const next = retainSecrets(slot().snapshot, normalizeSnapshot(snapshot));
       slot().snapshot = next;
       slot().updatedAt = new Date().toISOString();
     },

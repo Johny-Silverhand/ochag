@@ -447,12 +447,23 @@ export function useHydrated() {
     async function boot() {
       const apiPersist = useOps.persist;
       if (apiPersist && !apiPersist.hasHydrated()) {
-        await new Promise<void>((resolve) => {
-          const unsub = apiPersist.onFinishHydration(() => {
-            unsub();
-            resolve();
-          });
-        });
+        await Promise.race([
+          new Promise<void>((resolve) => {
+            if (apiPersist.hasHydrated()) {
+              resolve();
+              return;
+            }
+            const unsub = apiPersist.onFinishHydration(() => {
+              unsub();
+              resolve();
+            });
+            if (apiPersist.hasHydrated()) {
+              unsub();
+              resolve();
+            }
+          }),
+          new Promise<void>((resolve) => setTimeout(resolve, 800)),
+        ]);
       }
       try {
         const snap = await dbAdapter.load();
