@@ -7,7 +7,6 @@ import type {
   ExpenseKind,
   InvoiceLine,
   Period,
-  PurchaseLine,
   RequestStatus,
   RevisionLine,
   SaleItem,
@@ -15,30 +14,41 @@ import type {
   StopListReason,
   WriteoffReason,
 } from "../domain/types";
-import { TODAY, type Session } from "../domain/types";
+import { type Session } from "../domain/types";
+import { actorFrom, type Actor } from "../authz/actor";
 import {
-  applyMovement,
-  deductSaleFromStock,
-  needToBuy,
-  openShiftFor,
-  payrollForShift,
-  shiftTotals,
-  stockOf,
-} from "../domain/engine";
-import { catalogAvgFromStock, freezeSaleCosts } from "../domain/finance";
+  applyBanquet,
+  applyBanquetStatus,
+  applyCloseShift,
+  applyExpense,
+  applyInvoice,
+  applyKeeperSales,
+  applyManualSale,
+  applyOpenShift,
+  applyProfile,
+  applyRequestFromNeed,
+  applyRequestStatus,
+  applyRevision,
+  applyStopList,
+  applyTransfer,
+  applyWriteoff,
+} from "../domain/mutations";
 import { createSeed } from "./seed";
 import { dbAdapter } from "./adapter";
 import { getOpsStatus } from "@/lib/data/ops";
 import { useSync } from "./sync";
-import { uid } from "../utils";
+import { api, setToken } from "../api/client";
+import { mapKeeperReceipts } from "../integrations/keeper";
+import { parseKeeperXml } from "../integrations/keeper-xml";
 
 export type BranchFilter = string | "all";
 
 interface OpsState extends Snapshot {
   session: Session | null;
   period: Period;
-  login: (email: string, password: string) => boolean;
-  loginAs: (email: string) => boolean;
+  login: (email: string, password: string) => Promise<boolean>;
+  loginPin: (email: string, pin: string) => Promise<boolean>;
+  loginAs: (email: string) => Promise<boolean>;
   logout: () => void;
   setBranch: (branchId: string) => void;
   setPeriod: (period: Period) => void;
@@ -57,6 +67,7 @@ interface OpsState extends Snapshot {
   closeShift: (input: { closeCash: number; note?: string }) => void;
   addManualSale: (items: Omit<SaleItem, "costAtSale">[], payment: "cash" | "card" | "qr") => void;
   importKeeperSales: (sales: Omit<Snapshot["sales"][number], "shiftId" | "id" | "number" | "branchId">[]) => number;
+  importKeeperXml: (xml: string) => void;
   upsertBanquet: (b: Banquet) => void;
   setBanquetStatus: (id: string, status: BanquetStatus) => void;
   completeRevision: (lines: RevisionLine[], note?: string) => void;
@@ -71,10 +82,27 @@ interface OpsState extends Snapshot {
   addExpense: (input: { category: string; amount: number; note?: string; kind: ExpenseKind; date?: string }) => void;
 }
 
-function writeBranch(s: { session: Session | null; branches: Snapshot["branches"] }) {
-  const id = s.session?.branchId;
-  if (!id || id === "all") return s.branches[0]?.id ?? "br-pushkin";
-  return id;
+function actorOf(s: { session: Session | null; users: Snapshot["users"] }): Actor | null {
+  if (!s.session) return null;
+  const user = s.users.find((u) => u.id === s.session?.userId);
+  if (!user) return null;
+  return actorFrom(user, s.session);
+}
+
+async function applyRemote(path: string, body: unknown, local: (snap: Snapshot, actor: Actor) => Snapshot) {
+  const session = useOps.getState().session;
+  try {
+    const res = await api<{ state: Snapshot }>(path, { method: "POST", body });
+    applyingRemote = true;
+    useOps.setState((s) => ({ ...s, ...res.state, session: session ?? s.session }));
+    applyingRemote = false;
+  } catch {
+    const s = useOps.getState();
+    const actor = actorOf(s);
+    if (!actor) return;
+    const next = local(snapshotOf(s), actor);
+    useOps.setState({ ...next });
+  }
 }
 
 function snapshotOf(s: OpsState): Snapshot {
@@ -100,6 +128,7 @@ function snapshotOf(s: OpsState): Snapshot {
 function withSeed(): Omit<
   OpsState,
   | "login"
+  | "loginPin"
   | "loginAs"
   | "logout"
   | "setBranch"
@@ -114,6 +143,7 @@ function withSeed(): Omit<
   | "closeShift"
   | "addManualSale"
   | "importKeeperSales"
+  | "importKeeperXml"
   | "upsertBanquet"
   | "setBanquetStatus"
   | "completeRevision"
@@ -133,30 +163,58 @@ export const useOps = create<OpsState>()(
     (set, get) => ({
       ...withSeed(),
 
-      login: (email, password) => {
-        const user = get().users.find(
-          (u) => u.email.toLowerCase() === email.trim().toLowerCase() && u.password === password,
-        );
-        if (!user) return false;
-        const branchId = user.branchId ?? "all";
-        set({ session: { userId: user.id, branchId } });
-        return true;
+      login: async (email, password) => {
+        try {
+          const res = await api<{ user: { userId: string; branchId: string }; state: Snapshot }>("auth/login", {
+            method: "POST",
+            body: { login: email, password },
+          });
+          applyingRemote = true;
+          set({ ...res.state, session: { userId: res.user.userId, branchId: res.user.branchId } });
+          applyingRemote = false;
+          return true;
+        } catch {
+          const user = get().users.find(
+            (u) => u.email.toLowerCase() === email.trim().toLowerCase() && u.password === password,
+          );
+          if (!user) return false;
+          set({ session: { userId: user.id, branchId: user.branchId ?? "all" } });
+          return true;
+        }
       },
 
-      loginAs: (email) => {
-        const user = get().users.find((u) => u.email === email);
-        if (!user) return false;
-        const branchId = user.branchId ?? "all";
-        set({ session: { userId: user.id, branchId } });
-        return true;
+      loginPin: async (email, pin) => {
+        try {
+          const res = await api<{ user: { userId: string; branchId: string }; state: Snapshot }>("auth/pin", {
+            method: "POST",
+            body: { login: email, pin },
+          });
+          applyingRemote = true;
+          set({ ...res.state, session: { userId: res.user.userId, branchId: res.user.branchId } });
+          applyingRemote = false;
+          return true;
+        } catch {
+          const user = get().users.find(
+            (u) => u.email.toLowerCase() === email.trim().toLowerCase() && u.pin === pin,
+          );
+          if (!user) return false;
+          set({ session: { userId: user.id, branchId: user.branchId ?? "all" } });
+          return true;
+        }
       },
 
-      logout: () => set({ session: null }),
+      loginAs: async (email) => get().login(email, "ochag"),
+
+      logout: () => {
+        setToken(null);
+        set({ session: null });
+      },
 
       setBranch: (branchId) => {
         const session = get().session;
         if (!session) return;
         set({ session: { ...session, branchId } });
+        void api("session/branch", { method: "POST", body: { branchId } }).catch(() => undefined);
       },
 
       setPeriod: (period) => set({ period }),
@@ -176,403 +234,71 @@ export const useOps = create<OpsState>()(
       },
 
       updateProfile: (patch) => {
-        const session = get().session;
-        if (!session) return;
-        set((s) => ({
-          users: s.users.map((u) => (u.id === session.userId ? { ...u, ...patch } : u)),
-        }));
+        void applyRemote("profile", patch, (snap, actor) => applyProfile(snap, actor, patch));
       },
 
-      addWriteoff: ({ productId, qty, reason, note }) => {
-        const { session, products } = get();
-        if (!session) return;
-        const branchId = writeBranch(get());
-        const product = products.find((p) => p.id === productId);
-        const unit = stockOf(get().stock, branchId, productId) >= 0
-          ? (get().stock.find((s) => s.branchId === branchId && s.productId === productId)?.avgCost ?? product?.avgCost ?? 0)
-          : (product?.avgCost ?? 0);
-        const q = -Math.abs(qty);
-        const mov = {
-          id: uid("wo"),
-          at: new Date().toISOString(),
-          branchId,
-          productId,
-          type: "writeoff" as const,
-          qty: q,
-          cost: Math.abs(q) * unit,
-          reason,
-          note,
-          userId: session.userId,
-        };
-        set((s) => ({
-          movements: [mov, ...s.movements],
-          stock: applyMovement(s.stock, mov),
-        }));
+      addWriteoff: (input) => {
+        void applyRemote("stock/writeoff", input, (snap, actor) => applyWriteoff(snap, actor, input));
       },
 
-      addInvoice: ({ supplier, number, date, lines }) => {
-        const { session } = get();
-        if (!session) return;
-        const branchId = writeBranch(get());
-        const total = lines.reduce((sum, l) => sum + l.qty * l.price, 0);
-        const inv = {
-          id: uid("inv"),
-          number,
-          branchId,
-          supplier,
-          date,
-          lines,
-          total,
-          userId: session.userId,
-        };
-        const movs = lines.map((l) => ({
-          id: uid("m"),
-          at: `${date}T10:00:00.000Z`,
-          branchId,
-          productId: l.productId,
-          type: "receipt" as const,
-          qty: l.qty,
-          cost: l.qty * l.price,
-          refId: inv.id,
-          userId: session.userId,
-          note: supplier,
-        }));
-        set((s) => {
-          let stock = s.stock;
-          for (const m of movs) stock = applyMovement(stock, m);
-          const productsNext = s.products.map((p) => {
-            const line = lines.find((l) => l.productId === p.id);
-            if (!line) return p;
-            return { ...p, avgCost: catalogAvgFromStock(stock, p.id, line.price) };
-          });
-          return {
-            invoices: [inv, ...s.invoices],
-            movements: [...movs, ...s.movements],
-            stock,
-            products: productsNext,
-          };
-        });
+      addInvoice: (input) => {
+        void applyRemote("stock/receipt", input, (snap, actor) => applyInvoice(snap, actor, input));
       },
 
       createRequestFromNeed: () => {
-        const { session } = get();
-        if (!session) return;
-        const branchId = writeBranch(get());
-        const need = needToBuy(snapshotOf(get()), branchId);
-        if (need.length === 0) return;
-        const lines: PurchaseLine[] = need.map((n) => ({
-          productId: n.product.id,
-          qty: Math.ceil(n.deficit * 10) / 10,
-        }));
-        set((s) => ({
-          requests: [
-            {
-              id: uid("pr"),
-              number: `ЗК-${100 + s.requests.length + 1}`,
-              branchId,
-              date: TODAY,
-              status: "draft",
-              lines,
-              userId: session.userId,
-            },
-            ...s.requests,
-          ],
-        }));
+        void applyRemote("procurement/request", {}, (snap, actor) => applyRequestFromNeed(snap, actor));
       },
 
       setRequestStatus: (id, status) => {
-        set((s) => ({
-          requests: s.requests.map((r) => (r.id === id ? { ...r, status } : r)),
-        }));
+        void applyRemote("procurement/status", { id, status }, (snap) => applyRequestStatus(snap, id, status));
       },
 
-      openShift: ({ openCash, staffIds }) => {
-        const { session, shifts } = get();
-        if (!session) return;
-        const branchId = writeBranch(get());
-        if (openShiftFor(shifts, branchId)) return;
-        set((s) => ({
-          shifts: [
-            {
-              id: uid("sh"),
-              branchId,
-              date: TODAY,
-              status: "open",
-              openedAt: new Date().toISOString(),
-              openedBy: session.userId,
-              openCash,
-              cashTotal: 0,
-              cardTotal: 0,
-              qrTotal: 0,
-              staffIds,
-            },
-            ...s.shifts,
-          ],
-        }));
+      openShift: (input) => {
+        void applyRemote("shifts/open", input, (snap, actor) => applyOpenShift(snap, actor, input));
       },
 
-      closeShift: ({ closeCash, note }) => {
-        const { session } = get();
-        if (!session) return;
-        const branchId = writeBranch(get());
-        const shift = openShiftFor(get().shifts, branchId);
-        if (!shift) return;
-        const totals = shiftTotals(shift, get().sales);
-        const discrepancy = Math.round(closeCash - totals.expected);
-        const pays = payrollForShift(shift, get().sales, get().users);
-        set((s) => ({
-          shifts: s.shifts.map((sh) =>
-            sh.id === shift.id
-              ? {
-                  ...sh,
-                  status: "closed" as const,
-                  closedAt: new Date().toISOString(),
-                  closedBy: session.userId,
-                  closeCash,
-                  expectedCash: totals.expected,
-                  discrepancy,
-                  cashTotal: totals.cash,
-                  cardTotal: totals.card,
-                  qrTotal: totals.qr,
-                  note,
-                }
-              : sh,
-          ),
-          payroll: [
-            ...pays.map((p) => ({
-              id: uid("pay"),
-              userId: p.userId,
-              branchId,
-              date: TODAY,
-              shiftId: shift.id,
-              hours: p.hours,
-              base: p.base,
-              bonus: p.bonus,
-              total: p.total,
-            })),
-            ...s.payroll,
-          ],
-        }));
+      closeShift: (input) => {
+        void applyRemote("shifts/close", input, (snap, actor) => applyCloseShift(snap, actor, input));
       },
 
       addManualSale: (items, payment) => {
-        const { session, shifts, sales, recipes, products, stock } = get();
-        if (!session) return;
-        const branchId = writeBranch(get());
-        const shift = openShiftFor(shifts, branchId);
-        if (!shift) return;
-        const total = items.reduce((sum, i) => sum + i.sum, 0);
-        const frozen = freezeSaleCosts(items, recipes, products, stock, branchId);
-        const sale = {
-          id: uid("sale"),
-          number: `ЧК-${String(10000 + sales.length + 1).padStart(4, "0")}`,
-          branchId,
-          shiftId: shift.id,
-          at: new Date().toISOString(),
-          items: frozen,
-          payments: [{ type: payment, amount: total }],
-          total,
-          waiterId: session.userId,
-          source: "manual" as const,
-        };
-        const deducted = deductSaleFromStock(stock, sale, recipes, products, session.userId);
-        set((s) => ({
-          sales: [sale, ...s.sales],
-          stock: deducted.stock,
-          movements: [...deducted.movements, ...s.movements],
-        }));
+        void applyRemote("sales/manual", { items, payment }, (snap, actor) => applyManualSale(snap, actor, items, payment));
       },
 
       importKeeperSales: (incoming) => {
-        const { session, shifts, recipes, products } = get();
-        if (!session) return 0;
-        const branchId = writeBranch(get());
-        const shift = openShiftFor(shifts, branchId);
-        if (!shift) return 0;
-        let added = 0;
-        set((s) => {
-          let stock = s.stock;
-          const movs = [];
-          const newSales = [];
-          for (const row of incoming) {
-            const sale = {
-              ...row,
-              id: uid("sale"),
-              number: `КПР-${String(s.sales.length + added + 1).padStart(4, "0")}`,
-              shiftId: shift.id,
-              branchId,
-              source: "keeper" as const,
-              items: freezeSaleCosts(row.items, recipes, products, stock, branchId),
-            };
-            const d = deductSaleFromStock(stock, sale, recipes, products, session.userId);
-            stock = d.stock;
-            movs.push(...d.movements);
-            newSales.push(sale);
-            added += 1;
-          }
-          return {
-            sales: [...newSales, ...s.sales],
-            stock,
-            movements: [...movs, ...s.movements],
-          };
+        void applyRemote("sales/import", { sales: incoming }, (snap, actor) => applyKeeperSales(snap, actor, incoming).snap);
+        return incoming.length;
+      },
+
+      importKeeperXml: (xml) => {
+        void applyRemote("sales/keeper-xml", { xml }, (snap, actor) => {
+          const mapped = mapKeeperReceipts(parseKeeperXml(xml), snap.recipes, actor.userId);
+          return applyKeeperSales(snap, actor, mapped).snap;
         });
-        return added;
       },
 
       upsertBanquet: (b) => {
-        set((s) => {
-          const i = s.banquets.findIndex((x) => x.id === b.id);
-          if (i < 0) return { banquets: [b, ...s.banquets] };
-          const next = s.banquets.slice();
-          next[i] = b;
-          return { banquets: next };
-        });
+        void applyRemote("banquets", b, (snap, actor) => applyBanquet(snap, actor, b));
       },
 
       setBanquetStatus: (id, status) => {
-        set((s) => ({
-          banquets: s.banquets.map((b) => (b.id === id ? { ...b, status } : b)),
-        }));
+        void applyRemote("banquets/status", { id, status }, (snap, actor) => applyBanquetStatus(snap, actor, id, status));
       },
 
       completeRevision: (lines, note) => {
-        const { session, products } = get();
-        if (!session) return;
-        const branchId = writeBranch(get());
-        const movs = lines
-          .filter((l) => l.factQty !== l.bookQty)
-          .map((l) => {
-            const p = products.find((x) => x.id === l.productId);
-            const unit =
-              get().stock.find((s) => s.branchId === branchId && s.productId === l.productId)?.avgCost ??
-              p?.avgCost ??
-              0;
-            const qty = l.factQty - l.bookQty;
-            return {
-              id: uid("rev"),
-              at: new Date().toISOString(),
-              branchId,
-              productId: l.productId,
-              type: "revision" as const,
-              qty,
-              cost: Math.abs(qty) * unit,
-              reason: "revision" as const,
-              note,
-              userId: session.userId,
-            };
-          });
-        set((s) => {
-          let stock = s.stock;
-          for (const m of movs) stock = applyMovement(stock, m);
-          return {
-            stock,
-            movements: [...movs, ...s.movements],
-            revisions: [
-              {
-                id: uid("r"),
-                branchId,
-                date: TODAY,
-                status: "done" as const,
-                lines,
-                userId: session.userId,
-                note,
-              },
-              ...s.revisions,
-            ],
-          };
-        });
+        void applyRemote("stock/revision", { lines, note }, (snap, actor) => applyRevision(snap, actor, lines, note));
       },
 
-      transferStock: ({ fromBranchId, toBranchId, productId, qty, note }) => {
-        const { session, products } = get();
-        if (!session || fromBranchId === toBranchId || qty <= 0) return;
-        const unit =
-          get().stock.find((s) => s.branchId === fromBranchId && s.productId === productId)?.avgCost ??
-          products.find((p) => p.id === productId)?.avgCost ??
-          0;
-        const refId = uid("tr");
-        const at = new Date().toISOString();
-        const out = {
-          id: uid("m"),
-          at,
-          branchId: fromBranchId,
-          productId,
-          type: "transfer" as const,
-          qty: -Math.abs(qty),
-          cost: Math.abs(qty) * unit,
-          note,
-          refId,
-          userId: session.userId,
-          counterpartBranchId: toBranchId,
-        };
-        const inn = {
-          ...out,
-          id: uid("m"),
-          branchId: toBranchId,
-          qty: Math.abs(qty),
-          counterpartBranchId: fromBranchId,
-        };
-        set((s) => {
-          let stock = applyMovement(s.stock, out);
-          stock = applyMovement(stock, inn);
-          return { stock, movements: [inn, out, ...s.movements] };
-        });
+      transferStock: (input) => {
+        void applyRemote("stock/transfer", input, (snap, actor) => applyTransfer(snap, actor, input));
       },
 
-      setStopList: ({ recipeId, reason, note, clear }) => {
-        const { session } = get();
-        if (!session) return;
-        const branchId = writeBranch(get());
-        const now = new Date().toISOString();
-        set((s) => {
-          if (clear) {
-            return {
-              stopList: s.stopList.map((e) =>
-                e.recipeId === recipeId && e.branchId === branchId && !e.clearedAt
-                  ? { ...e, clearedAt: now, clearedBy: session.userId }
-                  : e,
-              ),
-            };
-          }
-          const exists = s.stopList.some(
-            (e) => e.recipeId === recipeId && e.branchId === branchId && !e.clearedAt,
-          );
-          if (exists) return {};
-          return {
-            stopList: [
-              {
-                id: uid("sl"),
-                branchId,
-                recipeId,
-                reason,
-                note,
-                createdAt: now,
-                createdBy: session.userId,
-              },
-              ...s.stopList,
-            ],
-          };
-        });
+      setStopList: (input) => {
+        void applyRemote("shifts/stop-list", input, (snap, actor) => applyStopList(snap, actor, input));
       },
 
-      addExpense: ({ category, amount, note, kind, date }) => {
-        const { session } = get();
-        if (!session) return;
-        const branchId = writeBranch(get());
-        set((s) => ({
-          expenses: [
-            {
-              id: uid("exp"),
-              branchId,
-              date: date ?? TODAY,
-              category,
-              amount,
-              note: note ?? "",
-              kind,
-            },
-            ...s.expenses,
-          ],
-        }));
+      addExpense: (input) => {
+        void applyRemote("expenses", input, (snap, actor) => applyExpense(snap, actor, input));
       },
     }),
     {
