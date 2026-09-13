@@ -16,6 +16,7 @@ import { pct, ruDateTime, rub } from "@/lib/format";
 import { demoKeeperZReport, mapKeeperReceipts } from "@/lib/integrations/keeper";
 import { SAMPLE_KEEPER_XML } from "@/lib/integrations/keeper-xml";
 import { isStopped } from "@/lib/domain/stoplist";
+import { NETWORK_DEFAULT_BRANCH } from "@/lib/authz/actor";
 import { usePrefs } from "@/lib/prefs";
 
 export const Route = createFileRoute("/_app/sales")({ component: SalesPage });
@@ -31,6 +32,7 @@ function SalesPage() {
   const addManualSale = useOps((s) => s.addManualSale);
   const ownSalesOnly = usePrefs((s) => s.waiterOwnSalesOnly);
   const scope = session.branchId;
+  const writeScope = scope === "all" ? NETWORK_DEFAULT_BRANCH : scope;
   const from = periodStart(period);
   const rows = useMemo(() => {
     let list = filterPeriod(filterByBranch(snap.sales, scope), from, TODAY);
@@ -50,7 +52,7 @@ function SalesPage() {
     { cash: 0, card: 0, qr: 0 },
   );
   const dishes = topDishes(rows, 6);
-  const open = scope === "all" ? null : openShiftFor(snap.shifts, scope);
+  const open = openShiftFor(snap.shifts, writeScope);
 
   return (
     <div>
@@ -104,6 +106,11 @@ function SalesPage() {
           </div>
         }
       />
+      {scope === "all" ? (
+        <p className="mb-3 text-xs text-muted">
+          Сводка по сети. Z-отчёт и ручной чек пишутся на Пушкина, пока в шапке не выбран филиал.
+        </p>
+      ) : null}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi label="Выручка" value={rub(revenue)} hint={`${rows.length} чеков`} />
