@@ -11,7 +11,11 @@ import {
   Plug,
   Receipt,
   Settings,
+  ShieldCheck,
   ShoppingCart,
+  Sparkles,
+  CalendarClock,
+  LineChart,
   Users,
   Wallet,
 } from "lucide-react";
@@ -43,6 +47,10 @@ const NAV: NavItem[] = [
   { to: "/banquets", label: "Банкеты", icon: CalendarDays, module: "banquets" },
   { to: "/staff", label: "Сотрудники", icon: Users, module: "staff" },
   { to: "/reports", label: "Отчёты", icon: ClipboardList, module: "reports" },
+  { to: "/planning", label: "План", icon: LineChart, module: "planning" },
+  { to: "/schedule", label: "График", icon: CalendarClock, module: "schedule" },
+  { to: "/quality", label: "Качество", icon: ShieldCheck, module: "quality" },
+  { to: "/ai", label: "AI", icon: Sparkles, module: "ai" },
   { to: "/integrations", label: "Интеграции", icon: Plug, module: "integrations" },
 ];
 

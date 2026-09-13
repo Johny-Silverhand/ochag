@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
-import { Field, NativeSelect } from "@/components/ui/input";
+import { Field, NativeSelect, Textarea } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/tabs";
 import { useOps, useSessionUser } from "@/lib/data/store";
 import { canCreateSale, canImportKeeper } from "@/lib/domain/permissions";
@@ -14,6 +14,8 @@ import { filterByBranch, filterPeriod, openShiftFor, periodStart, salePayments, 
 import { PAYMENT_LABEL, TODAY, type PaymentType, type Period, type SaleItem } from "@/lib/domain/types";
 import { pct, ruDateTime, rub } from "@/lib/format";
 import { demoKeeperZReport, mapKeeperReceipts } from "@/lib/integrations/keeper";
+import { SAMPLE_KEEPER_XML } from "@/lib/integrations/keeper-xml";
+import { isStopped } from "@/lib/domain/stoplist";
 import { usePrefs } from "@/lib/prefs";
 
 export const Route = createFileRoute("/_app/sales")({ component: SalesPage });
@@ -25,6 +27,7 @@ function SalesPage() {
   const setPeriod = useOps((s) => s.setPeriod);
   const user = useSessionUser()!;
   const importKeeperSales = useOps((s) => s.importKeeperSales);
+  const importKeeperXml = useOps((s) => s.importKeeperXml);
   const addManualSale = useOps((s) => s.addManualSale);
   const ownSalesOnly = usePrefs((s) => s.waiterOwnSalesOnly);
   const scope = session.branchId;
@@ -67,22 +70,37 @@ function SalesPage() {
               ]}
             />
             {canImportKeeper(user.role) ? (
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  if (!open) {
-                    toast.error("Откройте смену, затем импортируйте отчёт кипера");
-                    return;
-                  }
-                  const mapped = mapKeeperReceipts(demoKeeperZReport(), snap.recipes, session.userId);
-                  const n = importKeeperSales(mapped);
-                  toast.success(`Забрано ${n} чеков из кипера`);
-                }}
-              >
-                Импорт кипера
-              </Button>
+              <>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    if (!open) {
+                      toast.error("Откройте смену, затем импортируйте отчёт кипера");
+                      return;
+                    }
+                    const mapped = mapKeeperReceipts(demoKeeperZReport(), snap.recipes, session.userId);
+                    const n = importKeeperSales(mapped);
+                    toast.success(`Забрано ${n} чеков из Z-отчёта`);
+                  }}
+                >
+                  Z-отчёт
+                </Button>
+                <KeeperXmlDialog
+                  disabled={!open}
+                  onImport={(xml) => {
+                    importKeeperXml(xml);
+                    toast.success("XML кипера разобран и проведён");
+                  }}
+                />
+              </>
             ) : null}
-            {canCreateSale(user.role) ? <ManualSaleDialog recipes={snap.recipes} onSubmit={addManualSale} disabled={!open} /> : null}
+            {canCreateSale(user.role) ? (
+              <ManualSaleDialog
+                recipes={snap.recipes.filter((r) => scope === "all" || !isStopped(snap.stopList, scope, r.id))}
+                onSubmit={addManualSale}
+                disabled={!open}
+              />
+            ) : null}
           </div>
         }
       />
@@ -150,13 +168,13 @@ function ManualSaleDialog({
   disabled,
 }: {
   recipes: { id: string; name: string; price: number }[];
-  onSubmit: (items: SaleItem[], payment: PaymentType) => void;
+  onSubmit: (items: Omit<SaleItem, "costAtSale">[], payment: PaymentType) => void;
   disabled: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [recipeId, setRecipeId] = useState(recipes[0]?.id ?? "");
   const [qty, setQty] = useState(1);
-  const [items, setItems] = useState<SaleItem[]>([]);
+  const [items, setItems] = useState<Omit<SaleItem, "costAtSale">[]>([]);
   const [pay, setPay] = useState<PaymentType>("card");
 
   return (
@@ -221,6 +239,39 @@ function ManualSaleDialog({
             }}
           >
             Провести {rub(items.reduce((s, i) => s + i.sum, 0))}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function KeeperXmlDialog({ disabled, onImport }: { disabled: boolean; onImport: (xml: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [xml, setXml] = useState(SAMPLE_KEEPER_XML);
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="secondary" disabled={disabled}>
+          XML кипера
+        </Button>
+      </DialogTrigger>
+      <DialogContent title="Заглушка r_keeper XML">
+        <div className="space-y-3">
+          <p className="text-sm text-muted">
+            Живой RK7 не подключаем. Сюда кладётся выгрузка чеков — парсер понимает Receipt/Item.
+          </p>
+          <Field label="XML">
+            <Textarea value={xml} onChange={(e) => setXml(e.target.value)} rows={8} className="font-mono text-xs" />
+          </Field>
+          <Button
+            className="w-full"
+            onClick={() => {
+              onImport(xml);
+              setOpen(false);
+            }}
+          >
+            Провести XML
           </Button>
         </div>
       </DialogContent>

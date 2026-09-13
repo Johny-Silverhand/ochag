@@ -21,13 +21,17 @@ function LoginPage() {
   const hydrated = useHydrated();
   const session = useOps((s) => s.session);
   const login = useOps((s) => s.login);
+  const loginPin = useOps((s) => s.loginPin);
   const loginAs = useOps((s) => s.loginAs);
   const setPeriod = useOps((s) => s.setPeriod);
   const defaultPeriod = usePrefs((s) => s.defaultPeriod);
   const navigate = useNavigate();
   const [email, setEmail] = useState("owner");
   const [password, setPassword] = useState("ochag");
+  const [pin, setPin] = useState("");
+  const [mode, setMode] = useState<"password" | "pin">("pin");
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
   const ios = useIosInstall();
   const [android, setAndroid] = useState(() => isAndroidDevice());
 
@@ -41,10 +45,17 @@ function LoginPage() {
 
   if (hydrated && session) return <BootScreen />;
 
-  function enter(nextEmail: string, nextPassword = "ochag") {
-    const ok = nextPassword ? login(nextEmail, nextPassword) : loginAs(nextEmail);
+  async function enter(nextEmail: string, nextPassword = "ochag", nextPin?: string) {
+    setBusy(true);
+    setError("");
+    const ok = nextPin
+      ? await loginPin(nextEmail, nextPin)
+      : nextPassword
+        ? await login(nextEmail, nextPassword)
+        : await loginAs(nextEmail);
+    setBusy(false);
     if (!ok) {
-      setError("Неверный логин или пароль");
+      setError("Неверный логин, пароль или PIN");
       return;
     }
     setPeriod(defaultPeriod);
@@ -104,7 +115,7 @@ function LoginPage() {
             </div>
             <h2 className="mt-2 text-3xl font-medium tracking-tight">Выберите роль</h2>
             <p className="mt-2 text-sm text-muted">
-              Вход сотрудников. Пароль для всех учёток — ochag. Издатель — {LABS_NAME}.
+              JWT + PIN. Демо-пароль ochag, PIN на карточке роли. Издатель — {LABS_NAME}.
             </p>
           </div>
 
@@ -119,14 +130,15 @@ function LoginPage() {
               <button
                 key={acc.email}
                 type="button"
-                onClick={() => enter(acc.email)}
+                disabled={busy}
+                onClick={() => void enter(acc.email, "ochag", acc.pin)}
                 className="flex min-h-14 items-start justify-between rounded-xl bg-surface px-4 py-3.5 text-left shadow-(--shadow-border) transition-[box-shadow,transform] duration-150 hover:shadow-(--shadow-border-hover) active:scale-[0.99]"
               >
                 <span>
                   <span className="block text-sm font-medium">{acc.name}</span>
                   <span className="mt-0.5 block text-xs text-muted">{acc.hint}</span>
                 </span>
-                <span className="text-xs text-subtle">{acc.role}</span>
+                <span className="text-xs text-subtle">PIN {acc.pin}</span>
               </button>
             ))}
           </div>
@@ -135,9 +147,18 @@ function LoginPage() {
             className="mt-8 space-y-3"
             onSubmit={(e) => {
               e.preventDefault();
-              enter(email, password);
+              void (mode === "pin" ? enter(email, "", pin) : enter(email, password));
             }}
           >
+            <div className="flex gap-2 text-xs">
+              <button type="button" className={mode === "pin" ? "text-fg" : "text-muted"} onClick={() => setMode("pin")}>
+                PIN
+              </button>
+              <span className="text-subtle">·</span>
+              <button type="button" className={mode === "password" ? "text-fg" : "text-muted"} onClick={() => setMode("password")}>
+                Пароль
+              </button>
+            </div>
             <Field label="Логин">
               <Input
                 value={email}
@@ -149,18 +170,31 @@ function LoginPage() {
                 enterKeyHint="next"
               />
             </Field>
-            <Field label="Пароль">
-              <Input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
-                enterKeyHint="go"
-              />
-            </Field>
+            {mode === "password" ? (
+              <Field label="Пароль">
+                <Input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                  enterKeyHint="go"
+                />
+              </Field>
+            ) : (
+              <Field label="PIN">
+                <Input
+                  inputMode="numeric"
+                  maxLength={4}
+                  value={pin}
+                  onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                  autoComplete="one-time-code"
+                  enterKeyHint="go"
+                />
+              </Field>
+            )}
             {error ? <p className="text-sm text-danger">{error}</p> : null}
-            <Button type="submit" className="w-full">
-              Войти
+            <Button type="submit" className="w-full" disabled={busy}>
+              {busy ? "Входим…" : "Войти"}
             </Button>
           </form>
           {showDesktopDownloads ? (

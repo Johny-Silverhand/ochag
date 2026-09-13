@@ -5,9 +5,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
-import { Field, Input } from "@/components/ui/input";
+import { Field, Input, NativeSelect } from "@/components/ui/input";
 import { useOps, useSessionUser } from "@/lib/data/store";
 import { openShiftFor, shiftTotals, staffName } from "@/lib/domain/engine";
+import { activeStopList, startList } from "@/lib/domain/stoplist";
+import { canManageStopList } from "@/lib/domain/permissions";
+import { STOP_REASON_LABEL, type StopListReason } from "@/lib/domain/types";
 import { ruDate, ruDateTime, rub, signedRub } from "@/lib/format";
 import { notify } from "@/lib/notify";
 
@@ -19,9 +22,12 @@ function ShiftsPage() {
   const user = useSessionUser()!;
   const openShift = useOps((s) => s.openShift);
   const closeShift = useOps((s) => s.closeShift);
+  const setStopList = useOps((s) => s.setStopList);
   const branchId = session.branchId === "all" ? "br-pushkin" : session.branchId;
   const current = openShiftFor(snap.shifts, branchId);
   const totals = current ? shiftTotals(current, snap.sales) : null;
+  const stopped = activeStopList(snap.stopList, branchId);
+  const available = startList(snap, branchId);
   const history = snap.shifts
     .filter((s) => s.branchId === branchId)
     .slice()
@@ -77,6 +83,51 @@ function ShiftsPage() {
           <p className="text-sm text-muted">Смена на этом филиале закрыта. Откройте перед первым чеком.</p>
         </Card>
       )}
+
+      <div className="mb-4 grid gap-4 lg:grid-cols-2">
+        <Card>
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-sm font-medium">Стоп-лист</div>
+            {canManageStopList(user.role) ? (
+              <StopListDialog
+                recipes={snap.recipes}
+                onStop={(recipeId, reason) => setStopList({ recipeId, reason })}
+              />
+            ) : null}
+          </div>
+          <ul className="mt-3 space-y-2 text-sm">
+            {stopped.map((e) => (
+              <li key={e.id} className="flex items-center justify-between gap-2">
+                <span>
+                  {snap.recipes.find((r) => r.id === e.recipeId)?.name ?? e.recipeId}
+                  <span className="ml-2 text-xs text-muted">{STOP_REASON_LABEL[e.reason]}</span>
+                </span>
+                {canManageStopList(user.role) ? (
+                  <button
+                    type="button"
+                    className="text-xs text-muted hover:text-fg"
+                    onClick={() => setStopList({ recipeId: e.recipeId, reason: e.reason, clear: true })}
+                  >
+                    в старт-лист
+                  </button>
+                ) : null}
+              </li>
+            ))}
+            {stopped.length === 0 ? <p className="text-sm text-muted">Пусто — всё в продаже.</p> : null}
+          </ul>
+        </Card>
+        <Card>
+          <div className="text-sm font-medium">Старт-лист · {available.length} блюд</div>
+          <p className="mt-2 text-sm text-muted">
+            Доступно к продаже на смене. Стоп снимает позицию с ручного чека и с зала.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {available.slice(0, 10).map((r) => (
+              <Badge key={r.id}>{r.name}</Badge>
+            ))}
+          </div>
+        </Card>
+      </div>
 
       <Card className="overflow-hidden p-0">
         <div className="border-b border-border px-5 py-4 text-sm font-medium">История</div>
@@ -214,6 +265,56 @@ function CloseDialog({ expected, onClose }: { expected: number; onClose: (cash: 
         >
           Закрыть и начислить зарплату
         </Button>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function StopListDialog({
+  recipes,
+  onStop,
+}: {
+  recipes: { id: string; name: string }[];
+  onStop: (recipeId: string, reason: StopListReason) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [recipeId, setRecipeId] = useState(recipes[0]?.id ?? "");
+  const [reason, setReason] = useState<StopListReason>("manual");
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="secondary">На стоп</Button>
+      </DialogTrigger>
+      <DialogContent title="Стоп-лист">
+        <div className="space-y-3">
+          <Field label="Блюдо">
+            <NativeSelect value={recipeId} onChange={(e) => setRecipeId(e.target.value)}>
+              {recipes.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </NativeSelect>
+          </Field>
+          <Field label="Причина">
+            <NativeSelect value={reason} onChange={(e) => setReason(e.target.value as StopListReason)}>
+              {Object.entries(STOP_REASON_LABEL).map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v}
+                </option>
+              ))}
+            </NativeSelect>
+          </Field>
+          <Button
+            className="w-full"
+            onClick={() => {
+              onStop(recipeId, reason);
+              setOpen(false);
+            }}
+          >
+            Поставить на стоп
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
   );

@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { Field, Input, NativeSelect, Textarea } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/tabs";
 import { useOps, useSessionUser } from "@/lib/data/store";
-import { canWriteoff } from "@/lib/domain/permissions";
+import { canTransfer, canWriteoff } from "@/lib/domain/permissions";
 import { stockOf } from "@/lib/domain/engine";
 import {
   MOVEMENT_LABEL,
@@ -28,6 +28,7 @@ function InventoryPage() {
   const user = useSessionUser()!;
   const addWriteoff = useOps((s) => s.addWriteoff);
   const completeRevision = useOps((s) => s.completeRevision);
+  const transferStock = useOps((s) => s.transferStock);
   const showFoodCost = usePrefs((s) => s.showFoodCost);
   const branchId = session.branchId === "all" ? "br-pushkin" : session.branchId;
   const [tab, setTab] = useState("stock");
@@ -63,6 +64,17 @@ function InventoryPage() {
                 onSubmit={(input) => {
                   addWriteoff(input);
                   notify("writeoff", "Списание проведено");
+                }}
+              />
+            ) : null}
+            {canTransfer(user.role) ? (
+              <TransferDialog
+                products={snap.products}
+                branches={snap.branches}
+                fromId={branchId}
+                onSubmit={(input) => {
+                  transferStock(input);
+                  toast.success("Перемещение проведено");
                 }}
               />
             ) : null}
@@ -275,6 +287,66 @@ function RevisionDialog({
         >
           Закрыть ревизию
         </Button>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function TransferDialog({
+  products,
+  branches,
+  fromId,
+  onSubmit,
+}: {
+  products: { id: string; name: string }[];
+  branches: { id: string; short: string }[];
+  fromId: string;
+  onSubmit: (input: { fromBranchId: string; toBranchId: string; productId: string; qty: number; note?: string }) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [productId, setProductId] = useState(products[0]?.id ?? "");
+  const [toId, setToId] = useState(branches.find((b) => b.id !== fromId)?.id ?? "");
+  const [qtyV, setQtyV] = useState("1");
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="secondary">Перемещение</Button>
+      </DialogTrigger>
+      <DialogContent title="Между филиалами">
+        <div className="space-y-3">
+          <Field label="Куда">
+            <NativeSelect value={toId} onChange={(e) => setToId(e.target.value)}>
+              {branches
+                .filter((b) => b.id !== fromId)
+                .map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.short}
+                  </option>
+                ))}
+            </NativeSelect>
+          </Field>
+          <Field label="Продукт">
+            <NativeSelect value={productId} onChange={(e) => setProductId(e.target.value)}>
+              {products.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </NativeSelect>
+          </Field>
+          <Field label="Количество">
+            <Input value={qtyV} onChange={(e) => setQtyV(e.target.value)} inputMode="decimal" />
+          </Field>
+          <Button
+            className="w-full"
+            onClick={() => {
+              onSubmit({ fromBranchId: fromId, toBranchId: toId, productId, qty: Number(qtyV) });
+              setOpen(false);
+            }}
+          >
+            Провести
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
   );
