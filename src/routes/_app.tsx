@@ -5,6 +5,7 @@ import { useHydrated, useOps } from "@/lib/data/store";
 
 export const Route = createFileRoute("/_app")({
   ssr: false,
+  pendingComponent: BootScreen,
   component: AppGate,
 });
 

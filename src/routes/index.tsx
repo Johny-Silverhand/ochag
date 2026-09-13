@@ -10,7 +10,11 @@ import { IosInstallCard, useIosInstall } from "@/components/ios/runtime";
 import { APP_NAME, APP_VERSION, LABS_NAME } from "@/lib/brand";
 import { usePrefs } from "@/lib/prefs";
 
-export const Route = createFileRoute("/")({ ssr: false, component: LoginPage });
+export const Route = createFileRoute("/")({
+  ssr: false,
+  pendingComponent: BootScreen,
+  component: LoginPage,
+});
 
 function isAndroidDevice() {
   if (typeof navigator === "undefined") return false;
