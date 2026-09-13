@@ -66,7 +66,13 @@ interface OpsState extends Snapshot {
   openShift: (input: { openCash: number; staffIds: string[] }) => void;
   closeShift: (input: { closeCash: number; note?: string }) => void;
   addManualSale: (items: Omit<SaleItem, "costAtSale">[], payment: "cash" | "card" | "qr") => void;
-  importKeeperSales: (sales: Omit<Snapshot["sales"][number], "shiftId" | "id" | "number" | "branchId">[]) => number;
+  importKeeperSales: (
+    sales: Array<
+      Omit<Snapshot["sales"][number], "shiftId" | "id" | "number" | "branchId" | "items"> & {
+        items: Omit<SaleItem, "costAtSale">[];
+      }
+    >,
+  ) => number;
   importKeeperXml: (xml: string) => void;
   upsertBanquet: (b: Banquet) => void;
   setBanquetStatus: (id: string, status: BanquetStatus) => void;

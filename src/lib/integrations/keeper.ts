@@ -1,7 +1,7 @@
 /**
  * Коннектор r_keeper: Z-отчёт → чеки и списание по техкартам.
  */
-import type { PaymentType, Recipe, Sale } from "../domain/types";
+import type { PaymentType, Recipe } from "../domain/types";
 
 export interface KeeperConfig {
   baseUrl: string;
@@ -55,11 +55,7 @@ export function demoKeeperZReport(): KeeperReceipt[] {
   ];
 }
 
-export function mapKeeperReceipts(
-  receipts: KeeperReceipt[],
-  recipes: Recipe[],
-  waiterId: string,
-): Omit<Sale, "id" | "number" | "shiftId" | "branchId">[] {
+export function mapKeeperReceipts(receipts: KeeperReceipt[], recipes: Recipe[], waiterId: string) {
   return receipts.map((r) => {
     const items = r.items.map((line) => {
       const recipe = recipes.find((x) => x.name.toLowerCase() === line.name.toLowerCase());

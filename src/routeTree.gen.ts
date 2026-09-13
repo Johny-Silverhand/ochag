@@ -23,8 +23,13 @@ import { Route as AppSalesRouteImport } from './routes/_app/sales'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppShiftsRouteImport } from './routes/_app/shifts'
 import { Route as AppStaffRouteImport } from './routes/_app/staff'
+import { Route as AppPlanningRouteImport } from './routes/_app/planning'
+import { Route as AppScheduleRouteImport } from './routes/_app/schedule'
+import { Route as AppQualityRouteImport } from './routes/_app/quality'
+import { Route as AppAiRouteImport } from './routes/_app/ai'
 import { Route as AppBanquetsIdRouteImport } from './routes/_app/banquets.$id'
 import { Route as PrintBanquetIdRouteImport } from './routes/print.banquet.$id'
+import { Route as ApiV1SplatRouteImport } from './routes/api/v1.$'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -95,6 +100,31 @@ const AppStaffRoute = AppStaffRouteImport.update({
   path: '/staff',
   getParentRoute: () => AppRoute,
 } as any)
+const AppPlanningRoute = AppPlanningRouteImport.update({
+  id: '/planning',
+  path: '/planning',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppScheduleRoute = AppScheduleRouteImport.update({
+  id: '/schedule',
+  path: '/schedule',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppQualityRoute = AppQualityRouteImport.update({
+  id: '/quality',
+  path: '/quality',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAiRoute = AppAiRouteImport.update({
+  id: '/ai',
+  path: '/ai',
+  getParentRoute: () => AppRoute,
+} as any)
+const ApiV1SplatRoute = ApiV1SplatRouteImport.update({
+  id: '/api/v1/$',
+  path: '/api/v1/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppBanquetsIdRoute = AppBanquetsIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -120,6 +150,11 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AppSettingsRoute
   '/shifts': typeof AppShiftsRoute
   '/staff': typeof AppStaffRoute
+  '/planning': typeof AppPlanningRoute
+  '/schedule': typeof AppScheduleRoute
+  '/quality': typeof AppQualityRoute
+  '/ai': typeof AppAiRoute
+  '/api/v1/$': typeof ApiV1SplatRoute
   '/banquets/$id': typeof AppBanquetsIdRoute
   '/print/banquet/$id': typeof PrintBanquetIdRoute
 }
@@ -137,6 +172,11 @@ export interface FileRoutesByTo {
   '/settings': typeof AppSettingsRoute
   '/shifts': typeof AppShiftsRoute
   '/staff': typeof AppStaffRoute
+  '/planning': typeof AppPlanningRoute
+  '/schedule': typeof AppScheduleRoute
+  '/quality': typeof AppQualityRoute
+  '/ai': typeof AppAiRoute
+  '/api/v1/$': typeof ApiV1SplatRoute
   '/banquets/$id': typeof AppBanquetsIdRoute
   '/print/banquet/$id': typeof PrintBanquetIdRoute
 }
@@ -156,6 +196,11 @@ export interface FileRoutesById {
   '/_app/settings': typeof AppSettingsRoute
   '/_app/shifts': typeof AppShiftsRoute
   '/_app/staff': typeof AppStaffRoute
+  '/_app/planning': typeof AppPlanningRoute
+  '/_app/schedule': typeof AppScheduleRoute
+  '/_app/quality': typeof AppQualityRoute
+  '/_app/ai': typeof AppAiRoute
+  '/api/v1/$': typeof ApiV1SplatRoute
   '/_app/banquets/$id': typeof AppBanquetsIdRoute
   '/print/banquet/$id': typeof PrintBanquetIdRoute
 }
@@ -175,6 +220,11 @@ export interface FileRouteTypes {
     | '/settings'
     | '/shifts'
     | '/staff'
+    | '/planning'
+    | '/schedule'
+    | '/quality'
+    | '/ai'
+    | '/api/v1/$'
     | '/banquets/$id'
     | '/print/banquet/$id'
   fileRoutesByTo: FileRoutesByTo
@@ -192,6 +242,11 @@ export interface FileRouteTypes {
     | '/settings'
     | '/shifts'
     | '/staff'
+    | '/planning'
+    | '/schedule'
+    | '/quality'
+    | '/ai'
+    | '/api/v1/$'
     | '/banquets/$id'
     | '/print/banquet/$id'
   id:
@@ -210,6 +265,11 @@ export interface FileRouteTypes {
     | '/_app/settings'
     | '/_app/shifts'
     | '/_app/staff'
+    | '/_app/planning'
+    | '/_app/schedule'
+    | '/_app/quality'
+    | '/_app/ai'
+    | '/api/v1/$'
     | '/_app/banquets/$id'
     | '/print/banquet/$id'
   fileRoutesById: FileRoutesById
@@ -219,6 +279,7 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   SetupRoute: typeof SetupRoute
   PrintBanquetIdRoute: typeof PrintBanquetIdRoute
+  ApiV1SplatRoute: typeof ApiV1SplatRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -321,6 +382,41 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppStaffRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/planning': {
+      id: '/_app/planning'
+      path: '/planning'
+      fullPath: '/planning'
+      preLoaderRoute: typeof AppPlanningRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/schedule': {
+      id: '/_app/schedule'
+      path: '/schedule'
+      fullPath: '/schedule'
+      preLoaderRoute: typeof AppScheduleRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/quality': {
+      id: '/_app/quality'
+      path: '/quality'
+      fullPath: '/quality'
+      preLoaderRoute: typeof AppQualityRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/ai': {
+      id: '/_app/ai'
+      path: '/ai'
+      fullPath: '/ai'
+      preLoaderRoute: typeof AppAiRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/api/v1/$': {
+      id: '/api/v1/$'
+      path: '/api/v1/$'
+      fullPath: '/api/v1/$'
+      preLoaderRoute: typeof ApiV1SplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_app/banquets/$id': {
       id: '/_app/banquets/$id'
       path: '/$id'
@@ -362,6 +458,10 @@ interface AppRouteChildren {
   AppSettingsRoute: typeof AppSettingsRoute
   AppShiftsRoute: typeof AppShiftsRoute
   AppStaffRoute: typeof AppStaffRoute
+  AppPlanningRoute: typeof AppPlanningRoute
+  AppScheduleRoute: typeof AppScheduleRoute
+  AppQualityRoute: typeof AppQualityRoute
+  AppAiRoute: typeof AppAiRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
@@ -376,6 +476,10 @@ const AppRouteChildren: AppRouteChildren = {
   AppSettingsRoute: AppSettingsRoute,
   AppShiftsRoute: AppShiftsRoute,
   AppStaffRoute: AppStaffRoute,
+  AppPlanningRoute: AppPlanningRoute,
+  AppScheduleRoute: AppScheduleRoute,
+  AppQualityRoute: AppQualityRoute,
+  AppAiRoute: AppAiRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
@@ -385,6 +489,7 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   SetupRoute: SetupRoute,
   PrintBanquetIdRoute: PrintBanquetIdRoute,
+  ApiV1SplatRoute: ApiV1SplatRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

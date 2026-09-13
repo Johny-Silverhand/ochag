@@ -16,5 +16,5 @@ export const callOchagApi = createServerFn({ method: "POST" })
       body: data.method === "GET" ? undefined : JSON.stringify(data.body ?? {}),
     });
     const res = await handleApiRequest(req, data.path);
-    return { status: res.status, data: (await res.json()) as unknown };
+    return { status: res.status, json: await res.text() };
   });

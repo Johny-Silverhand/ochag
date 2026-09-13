@@ -239,7 +239,11 @@ export function applyManualSale(
 export function applyKeeperSales(
   snap: Snapshot,
   actor: Actor,
-  incoming: Omit<Sale, "shiftId" | "id" | "number" | "branchId">[],
+  incoming: Array<
+    Omit<Sale, "shiftId" | "id" | "number" | "branchId" | "items"> & {
+      items: Omit<SaleItem, "costAtSale">[];
+    }
+  >,
 ): { snap: Snapshot; added: number } {
   assertKeeper(actor);
   const branchId = writeBranch(actor);

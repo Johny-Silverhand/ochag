@@ -38,12 +38,11 @@ export async function api<T = unknown>(
     const fallback = await callOchagApi({
       data: { path, method, body: opts.body, token },
     });
+    const parsed = JSON.parse(fallback.json || "{}") as T & { error?: string; token?: string };
     if (fallback.status >= 400) {
-      const message = (fallback.data as { error?: string })?.error || `HTTP ${fallback.status}`;
-      throw new Error(message);
+      throw new Error(parsed.error || `HTTP ${fallback.status}`);
     }
-    const data = fallback.data as T & { token?: string };
-    if (data && typeof data === "object" && data.token) setToken(data.token);
-    return data;
+    if (parsed && typeof parsed === "object" && parsed.token) setToken(parsed.token);
+    return parsed;
   }
 }
