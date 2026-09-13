@@ -137,7 +137,7 @@ function LoginPage() {
             </div>
             <div>
               <dt className="text-xs text-sidebar-muted">Этап</dt>
-              <dd className="mt-1 font-mono text-2xl tabular-nums">1</dd>
+              <dd className="mt-1 font-mono text-2xl tabular-nums">3</dd>
             </div>
           </dl>
           <LabsCredit tone="sidebar" align="left" className="mt-8" />

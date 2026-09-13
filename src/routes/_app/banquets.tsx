@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { PageHeader } from "@/components/layout/page";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +26,7 @@ const TONE: Record<BanquetStatus, "muted" | "primary" | "success" | "warning" | 
 };
 
 function BanquetsPage() {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
   const snap = useOps((s) => s);
   const session = useOps((s) => s.session)!;
   const user = useSessionUser()!;
@@ -33,6 +34,11 @@ function BanquetsPage() {
   const scope = session.branchId;
   const canWrite = isWriteScope(scope);
   const [phoneQ, setPhoneQ] = useState("");
+  const [cursor, setCursor] = useState(today().slice(0, 7));
+  const days = useMemo(() => monthCells(cursor), [cursor]);
+  if (pathname !== "/banquets" && pathname.startsWith("/banquets/")) {
+    return <Outlet />;
+  }
   const rows = snap.banquets
     .filter((b) => scope === "all" || b.branchId === scope)
     .filter((b) => {
@@ -42,10 +48,6 @@ function BanquetsPage() {
     })
     .slice()
     .sort((a, b) => (a.date > b.date ? 1 : -1));
-
-  const [cursor, setCursor] = useState(today().slice(0, 7));
-
-  const days = useMemo(() => monthCells(cursor), [cursor]);
   const byDay = new Map<string, Banquet[]>();
   for (const b of rows) {
     const list = byDay.get(b.date) ?? [];
