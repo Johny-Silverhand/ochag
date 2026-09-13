@@ -43,7 +43,7 @@ function AiPage() {
       <PageHeader
         eyebrow="Этап 3"
         title="Очаг AI"
-        description="Локальная модель через Ollama или эвристика, если её нет. В модель уходят только агрегаты, без PIN и телефонов."
+        description="Автосводка, свободный вопрос и рекомендации по цифрам контура. Ollama, если доступна, иначе эвристика. PIN и телефоны в модель не уходят."
         actions={provider ? <Badge>{provider === "ollama" ? "Ollama" : "эвристика"}</Badge> : null}
       />
       <div className="grid gap-4 lg:grid-cols-2">

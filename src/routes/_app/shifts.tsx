@@ -26,6 +26,7 @@ function ShiftsPage() {
   const openShift = useOps((s) => s.openShift);
   const closeShift = useOps((s) => s.closeShift);
   const setStopList = useOps((s) => s.setStopList);
+  const topUpDebt = useOps((s) => s.topUpDebt);
   const canWrite = isWriteScope(session.branchId);
   const branchId = canWrite ? session.branchId : "";
   const current = canWrite ? openShiftFor(snap.shifts, branchId) : undefined;
@@ -59,12 +60,18 @@ function ShiftsPage() {
               defaultStaff={snap.users.filter((u) => u.branchId === branchId).map((u) => u.id)}
               recipes={available}
               debts={snap.debts.filter((d) => d.branchId === branchId && d.status === "open")}
-              onOpen={(openCash, staffIds, startIds) => {
+              onOpen={(openCash, staffIds, startIds, topUp) => {
                 if (!startIds.length) {
                   toast.error("Подтвердите старт-лист перед открытием смены");
                   return;
                 }
-                openShift({ openCash, staffIds, startList: startIds });
+                openShift({
+                  openCash,
+                  staffIds,
+                  startList: startIds,
+                  topUpDebtId: topUp?.id,
+                  topUpAmount: topUp?.amount,
+                });
                 notify("shift", "Смена открыта");
               }}
             />
@@ -94,6 +101,43 @@ function ShiftsPage() {
           <p className="text-sm text-muted">Смена на этом филиале закрыта. Откройте перед первым чеком.</p>
         </Card>
       )}
+
+      {canWrite ? (
+        <Card className="mb-4">
+          <div className="text-sm font-medium">Открытые долги кассы</div>
+          <p className="mt-1 text-xs text-muted">
+            Недостача не режет выручку и прибыль дня. Довнесение увеличивает размен открытой смены, не создаёт чек.
+          </p>
+          <ul className="mt-3 space-y-2 text-sm">
+            {snap.debts
+              .filter((d) => d.branchId === branchId)
+              .slice(0, 6)
+              .map((d) => (
+                <li key={d.id} className="flex flex-wrap items-center justify-between gap-2">
+                  <span>
+                    {ruDate(d.date)} · {rub(d.amount)}
+                    <span className="ml-2 text-xs text-muted">{d.status === "open" ? "открыт" : "довнесён"}</span>
+                  </span>
+                  {d.status === "open" && current ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => {
+                        topUpDebt(d.id);
+                        toast.success("Долг закрыт, размен увеличен. Выручка обоих дней без изменений.");
+                      }}
+                    >
+                      Довнести в размен
+                    </Button>
+                  ) : null}
+                </li>
+              ))}
+            {snap.debts.filter((d) => d.branchId === branchId).length === 0 ? (
+              <li className="text-muted">Долгов нет.</li>
+            ) : null}
+          </ul>
+        </Card>
+      ) : null}
 
       <div className="mb-4 grid gap-4 lg:grid-cols-2">
         <Card>
@@ -199,12 +243,18 @@ function OpenDialog({
   defaultStaff: string[];
   recipes: { id: string; name: string }[];
   debts: { id: string; amount: number }[];
-  onOpen: (openCash: number, staffIds: string[], startList: string[]) => void;
+  onOpen: (
+    openCash: number,
+    staffIds: string[],
+    startList: string[],
+    topUp?: { id: string; amount: number },
+  ) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [cash, setCash] = useState("15000");
   const [ids, setIds] = useState<string[]>(defaultStaff);
   const [startIds, setStartIds] = useState<string[]>(recipes.map((r) => r.id));
+  const [topUpId, setTopUpId] = useState(debts[0]?.id ?? "");
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -216,10 +266,16 @@ function OpenDialog({
             <Input value={cash} onChange={(e) => setCash(e.target.value)} inputMode="numeric" />
           </Field>
           {debts.length ? (
-            <p className="text-xs text-danger">
-              Вечерний долг {debts.reduce((s, d) => s + d.amount, 0)} ₽ — довнесите в размен. NOTE: сумма не вычитается
-              из ожидаемой кассы (ТЗ: ожидаемая = размен + нал чеков).
-            </p>
+            <div className="rounded-md bg-bg p-3">
+              <p className="text-xs text-danger">
+                Вечерний долг {debts.reduce((s, d) => s + d.amount, 0)} ₽. Размен — фактический пересчёт ящика. Долг не
+                вычитается из ожидаемой кассы.
+              </p>
+              <label className="mt-2 flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={Boolean(topUpId)} onChange={(e) => setTopUpId(e.target.checked ? debts[0]!.id : "")} />
+                Закрыть долг при открытии (выручка вчера и сегодня не меняется)
+              </label>
+            </div>
           ) : null}
           <div>
             <div className="mb-1.5 text-xs font-medium text-muted">Кто в смене</div>
@@ -268,7 +324,8 @@ function OpenDialog({
                 toast.error("Подтвердите старт-лист перед открытием смены");
                 return;
               }
-              onOpen(Number(cash) || 0, ids, startIds);
+              const debt = debts.find((d) => d.id === topUpId);
+              onOpen(Number(cash) || 0, ids, startIds, debt ? { id: debt.id, amount: debt.amount } : undefined);
               setOpen(false);
             }}
           >

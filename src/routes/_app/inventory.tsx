@@ -20,6 +20,7 @@ import { qty, ruDateTime, rub } from "@/lib/format";
 import { notify } from "@/lib/notify";
 import { usePrefs } from "@/lib/prefs";
 import { isWriteScope, WRITE_SCOPE_HINT } from "@/lib/ui/scope";
+import { compareRevisions } from "@/lib/domain/analytics";
 import { api } from "@/lib/api/client";
 import { downloadBase64, downloadText } from "@/lib/reports/download";
 import type { Unit } from "@/lib/domain/types";
@@ -133,10 +134,47 @@ function InventoryPage() {
           options={[
             { value: "stock", label: "Остатки" },
             { value: "mov", label: "Движения" },
+            { value: "cmp", label: "Ревизии" },
           ]}
         />
         <Input className="max-w-xs" placeholder="Поиск продукта" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
+
+      {tab === "cmp" ? <RevisionCompare branchId={canWrite ? branchId : session.branchId} /> : null}
+
+      {tab === "mov" ? (
+        <Card className="overflow-hidden p-0">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-bg text-xs text-muted">
+              <tr>
+                <th className="px-5 py-2 font-medium">Когда</th>
+                <th className="px-3 py-2 font-medium">Тип</th>
+                <th className="px-3 py-2 font-medium">Продукт</th>
+                <th className="px-5 py-2 text-right font-medium">Кол-во</th>
+              </tr>
+            </thead>
+            <tbody>
+              {movs.map((m) => {
+                const p = snap.products.find((x) => x.id === m.productId);
+                return (
+                  <tr key={m.id} className="border-t border-border">
+                    <td className="px-5 py-2.5 text-muted">{ruDateTime(m.at)}</td>
+                    <td className="px-3 py-2.5">
+                      {MOVEMENT_LABEL[m.type]}
+                      {m.reason ? <span className="block text-xs text-subtle">{WRITEOFF_LABEL[m.reason]}</span> : null}
+                    </td>
+                    <td className="px-3 py-2.5">{p?.name}</td>
+                    <td className={`px-5 py-2.5 text-right font-mono tabular-nums ${m.qty < 0 ? "text-danger" : "text-success"}`}>
+                      {m.qty > 0 ? "+" : ""}
+                      {qty(m.qty, p?.unit)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </Card>
+      ) : null}
 
       {tab === "stock" ? (
         <Card className="overflow-hidden p-0">
@@ -172,39 +210,75 @@ function InventoryPage() {
             </table>
           </div>
         </Card>
-      ) : (
-        <Card className="overflow-hidden p-0">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-bg text-xs text-muted">
-              <tr>
-                <th className="px-5 py-2 font-medium">Когда</th>
-                <th className="px-3 py-2 font-medium">Тип</th>
-                <th className="px-3 py-2 font-medium">Продукт</th>
-                <th className="px-5 py-2 text-right font-medium">Кол-во</th>
+      ) : null}
+    </div>
+  );
+}
+
+function RevisionCompare({ branchId }: { branchId: string }) {
+  const snap = useOps((s) => s);
+  const cmp = branchId && branchId !== "all" ? compareRevisions(snap, branchId) : null;
+  if (!branchId || branchId === "all") {
+    return (
+      <Card>
+        <p className="text-sm text-muted">{WRITE_SCOPE_HINT} Сравнение двух последних ревизий — по филиалу.</p>
+      </Card>
+    );
+  }
+  if (!cmp?.left || !cmp.right) {
+    return (
+      <Card>
+        <p className="text-sm text-muted">Нужны две закрытые ревизии филиала. В учебной сети они есть на Южном.</p>
+      </Card>
+    );
+  }
+  return (
+    <div className="space-y-4">
+      <Card>
+        <div className="text-sm font-medium">
+          {cmp.left.date} → {cmp.right.date}
+        </div>
+        <p className="mt-1 text-sm text-muted">
+          Недостачи относительно книги новой ревизии
+          {cmp.shift ? ` · смена ${cmp.shift.date}` : ""}.
+        </p>
+        {cmp.byCategory?.length ? (
+          <ul className="mt-3 flex flex-wrap gap-2 text-xs">
+            {cmp.byCategory.map((c) => (
+              <Badge key={c.category} tone={c.shortage < 0 ? "danger" : "muted"}>
+                {c.category || "Прочее"}: {c.count} поз. / {c.shortage.toFixed(1)}
+              </Badge>
+            ))}
+          </ul>
+        ) : null}
+      </Card>
+      <Card className="overflow-hidden p-0">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-bg text-xs text-muted">
+            <tr>
+              <th className="px-5 py-2 font-medium">Продукт</th>
+              <th className="px-3 py-2 font-medium">Было</th>
+              <th className="px-3 py-2 font-medium">Стало</th>
+              <th className="px-5 py-2 text-right font-medium">Недостача</th>
+            </tr>
+          </thead>
+          <tbody>
+            {cmp.rows.map((r) => (
+              <tr key={r.productId} className="border-t border-border">
+                <td className="px-5 py-2.5">
+                  {r.name}
+                  <div className="text-xs text-muted">{r.category}</div>
+                </td>
+                <td className="px-3 py-2.5 font-mono tabular-nums">{r.older}</td>
+                <td className="px-3 py-2.5 font-mono tabular-nums">{r.newer}</td>
+                <td className={`px-5 py-2.5 text-right font-mono tabular-nums ${r.shortage < 0 ? "text-danger" : ""}`}>
+                  {r.shortage}
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {movs.map((m) => {
-                const p = snap.products.find((x) => x.id === m.productId);
-                return (
-                  <tr key={m.id} className="border-t border-border">
-                    <td className="px-5 py-2.5 text-muted">{ruDateTime(m.at)}</td>
-                    <td className="px-3 py-2.5">
-                      {MOVEMENT_LABEL[m.type]}
-                      {m.reason ? <span className="block text-xs text-subtle">{WRITEOFF_LABEL[m.reason]}</span> : null}
-                    </td>
-                    <td className="px-3 py-2.5">{p?.name}</td>
-                    <td className={`px-5 py-2.5 text-right font-mono tabular-nums ${m.qty < 0 ? "text-danger" : "text-success"}`}>
-                      {m.qty > 0 ? "+" : ""}
-                      {qty(m.qty, p?.unit)}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </Card>
-      )}
+            ))}
+          </tbody>
+        </table>
+      </Card>
     </div>
   );
 }

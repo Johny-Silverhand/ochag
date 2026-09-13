@@ -3,7 +3,7 @@ import { Kpi, PageHeader } from "@/components/layout/page";
 import { Card } from "@/components/ui/card";
 import { useOps, useSessionUser } from "@/lib/data/store";
 import { filterByBranch, filterPeriod, periodStart } from "@/lib/domain/engine";
-import { ROLE_LABEL, today, type Role } from "@/lib/domain/types";
+import { PAYROLL_ADJ_LABEL, ROLE_LABEL, today, type PayrollAdjKind, type Role } from "@/lib/domain/types";
 import { ruDate, rub } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
@@ -12,6 +12,9 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { canInviteStaff } from "@/lib/domain/permissions";
 import { isWriteScope, WRITE_SCOPE_HINT } from "@/lib/ui/scope";
+import { periodPayroll } from "@/lib/domain/analytics";
+import { api } from "@/lib/api/client";
+import { downloadText } from "@/lib/reports/download";
 
 export const Route = createFileRoute("/_app/staff")({ component: StaffPage });
 
@@ -24,15 +27,10 @@ function StaffPage() {
   const rows = filterPeriod(filterByBranch(snap.payroll, scope), from, today());
   const user = useSessionUser()!;
   const inviteStaff = useOps((s) => s.inviteStaff);
-  const total = rows.reduce((s, r) => s + r.total, 0);
+  const adjustPayroll = useOps((s) => s.adjustPayroll);
+  const sheet = periodPayroll(snap, period, scope);
+  const total = sheet.reduce((s, r) => s + r.payable, 0);
   const staff = snap.users.filter((u) => u.role !== "owner" && (scope === "all" || u.branchId === scope));
-
-  const byUser = staff.map((u) => {
-    const accruals = rows.filter((r) => r.userId === u.id);
-    const sum = accruals.reduce((s, r) => s + r.total, 0);
-    const bonus = accruals.reduce((s, r) => s + r.bonus, 0);
-    return { u, sum, bonus, shifts: accruals.length };
-  });
 
   return (
     <div>
@@ -41,20 +39,41 @@ function StaffPage() {
         title="Сотрудники и зарплаты"
         description="Ставка за смену плюс процент с выручки у официантов. Начисление — в момент закрытия кассы."
         actions={
-          canInviteStaff(user.role) ? (
-            <InviteStaff
-              branches={snap.branches}
-              defaultBranch={isWriteScope(scope) ? scope : snap.branches[0]?.id ?? ""}
-              onInvite={(input) => {
-                if (!input.branchId) {
-                  toast.error(WRITE_SCOPE_HINT);
-                  return;
-                }
-                inviteStaff(input);
-                toast.success("Сотрудник приглашён");
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                void api<{ filename: string; csv: string }>(`reports/csv?kind=payroll&period=${period}`, { method: "GET" })
+                  .then((r) => downloadText(r.filename, r.csv, "text/csv;charset=utf-8"))
+                  .catch((err) => toast.error(err instanceof Error ? err.message : "Ведомость недоступна"));
               }}
-            />
-          ) : null
+            >
+              Ведомость CSV
+            </Button>
+            {canInviteStaff(user.role) && isWriteScope(scope) ? (
+              <AdjustPayroll
+                staff={staff}
+                onSave={(input) => {
+                  adjustPayroll(input);
+                  toast.success("Корректировка записана");
+                }}
+              />
+            ) : null}
+            {canInviteStaff(user.role) ? (
+              <InviteStaff
+                branches={snap.branches}
+                defaultBranch={isWriteScope(scope) ? scope : snap.branches[0]?.id ?? ""}
+                onInvite={(input) => {
+                  if (!input.branchId) {
+                    toast.error(WRITE_SCOPE_HINT);
+                    return;
+                  }
+                  inviteStaff(input);
+                  toast.success("Сотрудник приглашён");
+                }}
+              />
+            ) : null}
+          </div>
         }
       />
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-3">
@@ -70,25 +89,31 @@ function StaffPage() {
               <th className="px-3 py-2 font-medium">Роль</th>
               <th className="px-3 py-2 font-medium">Ставка</th>
               <th className="px-3 py-2 font-medium">Смен</th>
-              <th className="px-5 py-2 text-right font-medium">Начислено</th>
+              <th className="px-3 py-2 font-medium">Доплата</th>
+              <th className="px-3 py-2 font-medium">Штраф</th>
+              <th className="px-3 py-2 font-medium">Аванс</th>
+              <th className="px-5 py-2 text-right font-medium">К выплате</th>
             </tr>
           </thead>
           <tbody>
-            {byUser.map(({ u, sum, bonus, shifts }) => (
-              <tr key={u.id} className="border-t border-border">
+            {sheet.filter((r) => r.user.role !== "owner").map((r) => (
+              <tr key={r.user.id} className="border-t border-border">
                 <td className="px-5 py-2.5">
-                  <div className="font-medium">{u.name}</div>
-                  <div className="text-xs text-muted">{u.position}</div>
+                  <div className="font-medium">{r.user.name}</div>
+                  <div className="text-xs text-muted">{r.user.position}</div>
                 </td>
-                <td className="px-3 py-2.5 text-muted">{ROLE_LABEL[u.role]}</td>
+                <td className="px-3 py-2.5 text-muted">{ROLE_LABEL[r.user.role]}</td>
                 <td className="px-3 py-2.5 font-mono tabular-nums">
-                  {rub(u.shiftPay)}
-                  {u.salesPercent ? <span className="block text-xs">+{u.salesPercent}%</span> : null}
+                  {rub(r.user.shiftPay)}
+                  {r.user.salesPercent ? <span className="block text-xs">+{r.user.salesPercent}%</span> : null}
                 </td>
-                <td className="px-3 py-2.5 font-mono tabular-nums">{shifts}</td>
+                <td className="px-3 py-2.5 font-mono tabular-nums">{r.shifts}</td>
+                <td className="px-3 py-2.5 font-mono tabular-nums">{rub(r.extra)}</td>
+                <td className="px-3 py-2.5 font-mono tabular-nums text-danger">{rub(r.fine)}</td>
+                <td className="px-3 py-2.5 font-mono tabular-nums">{rub(r.advanceOut)}</td>
                 <td className="px-5 py-2.5 text-right">
-                  <div className="font-mono tabular-nums">{rub(sum)}</div>
-                  {bonus ? <div className="text-xs text-muted">в т.ч. бонус {rub(bonus)}</div> : null}
+                  <div className="font-mono tabular-nums">{rub(r.payable)}</div>
+                  {r.bonus ? <div className="text-xs text-muted">в т.ч. бонус {rub(r.bonus)}</div> : null}
                 </td>
               </tr>
             ))}
@@ -110,6 +135,67 @@ function StaffPage() {
         </table>
       </Card>
     </div>
+  );
+}
+
+function AdjustPayroll({
+  staff,
+  onSave,
+}: {
+  staff: { id: string; name: string }[];
+  onSave: (input: { userId: string; kind: PayrollAdjKind; amount: number; note: string }) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [userId, setUserId] = useState(staff[0]?.id ?? "");
+  const [kind, setKind] = useState<PayrollAdjKind>("extra");
+  const [amount, setAmount] = useState("500");
+  const [note, setNote] = useState("");
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="secondary">Штраф / доплата</Button>
+      </DialogTrigger>
+      <DialogContent title="Корректировка ФОТ">
+        <div className="grid gap-3">
+          <Field label="Сотрудник">
+            <NativeSelect value={userId} onChange={(e) => setUserId(e.target.value)}>
+              {staff.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                </option>
+              ))}
+            </NativeSelect>
+          </Field>
+          <Field label="Тип">
+            <NativeSelect value={kind} onChange={(e) => setKind(e.target.value as PayrollAdjKind)}>
+              {Object.entries(PAYROLL_ADJ_LABEL).map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v}
+                </option>
+              ))}
+            </NativeSelect>
+          </Field>
+          <Field label="Сумма, ₽">
+            <Input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="numeric" />
+          </Field>
+          <Field label="Основание">
+            <Input value={note} onChange={(e) => setNote(e.target.value)} />
+          </Field>
+          <Button
+            onClick={() => {
+              if (!userId || !note.trim()) {
+                toast.error("Сотрудник и основание обязательны");
+                return;
+              }
+              onSave({ userId, kind, amount: Number(amount) || 0, note: note.trim() });
+              setOpen(false);
+            }}
+          >
+            Записать
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

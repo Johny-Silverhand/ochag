@@ -25,7 +25,7 @@ import { IosInstallCard, useIosInstall } from "@/components/ios/runtime";
 import { downloadWebClip } from "@/lib/ios-profile";
 import { APP_NAME, APP_VERSION, LABS_NAME, LABS_YEAR, SETUP_EXE } from "@/lib/brand";
 import { useActiveBranch, useOps, useSessionUser } from "@/lib/data/store";
-import { ROLE_LABEL, WRITEOFF_LABEL, type Period, type Role, type WriteoffReason } from "@/lib/domain/types";
+import { NOTIFY_EVENT_LABEL, ROLE_LABEL, WRITEOFF_LABEL, type NotifyEvent, type Period, type Role, type WriteoffReason } from "@/lib/domain/types";
 import { usePrefs } from "@/lib/prefs";
 import { applyThemeChrome, THEMES, type ThemeId } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -358,8 +358,12 @@ function AlertsPanel({ role }: { role: Role }) {
   const showStock = role !== "waiter";
   const showPayroll = role === "owner" || role === "manager";
   const showWriteoff = role !== "waiter";
+  const snap = useOps((s) => s);
+  const updateSettings = useOps((s) => s.updateSettings);
+  const canNet = role === "owner" || role === "manager";
 
   return (
+    <div className="space-y-4">
     <Card>
       <h2 className="text-sm font-medium tracking-tight">Что приходит в контур</h2>
       <p className="mt-1 text-sm text-muted">Сигналы на обзоре и в тостах. На этом срезе они живут в устройстве, без сервера.</p>
@@ -390,6 +394,39 @@ function AlertsPanel({ role }: { role: Role }) {
         </PrefRow>
       </div>
     </Card>
+    {canNet ? (
+      <Card>
+        <h2 className="text-sm font-medium tracking-tight">Канал сети</h2>
+        <p className="mt-1 text-sm text-muted">
+          Telegram или Web Push в момент события. Нет ключей — запись `failed` в очереди, не тихий успех.
+        </p>
+        <div className="mt-4 max-w-xs">
+          <Field label="Куда слать">
+            <NativeSelect
+              value={snap.settings.notifyChannel}
+              onChange={(e) => updateSettings({ notifyChannel: e.target.value as "telegram" | "webpush" | "both" })}
+            >
+              <option value="telegram">Telegram</option>
+              <option value="webpush">Web Push</option>
+              <option value="both">Оба</option>
+            </NativeSelect>
+          </Field>
+        </div>
+        <div className="mt-3 divide-y divide-border">
+          {(Object.keys(NOTIFY_EVENT_LABEL) as NotifyEvent[]).map((ev) => (
+            <PrefRow key={ev} title={NOTIFY_EVENT_LABEL[ev]} hint="В очередь в момент события.">
+              <Switch
+                checked={snap.settings.notifyEvents[ev] !== false}
+                onCheckedChange={(v) =>
+                  updateSettings({ notifyEvents: { ...snap.settings.notifyEvents, [ev]: v } })
+                }
+              />
+            </PrefRow>
+          ))}
+        </div>
+      </Card>
+    ) : null}
+    </div>
   );
 }
 
