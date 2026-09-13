@@ -8,10 +8,12 @@ import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/input";
 import { useOps, useSessionUser } from "@/lib/data/store";
 import { canEditBanquet } from "@/lib/domain/permissions";
-import { BANQUET_LABEL, TODAY, type Banquet, type BanquetStatus } from "@/lib/domain/types";
+import { BANQUET_LABEL, today, type Banquet, type BanquetStatus } from "@/lib/domain/types";
 import { addDays as addIso, ruDate, rub } from "@/lib/format";
 import { notify } from "@/lib/notify";
 import { uid } from "@/lib/utils";
+import { isWriteScope, WRITE_SCOPE_HINT } from "@/lib/ui/scope";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_app/banquets")({ component: BanquetsPage });
 
@@ -29,12 +31,19 @@ function BanquetsPage() {
   const user = useSessionUser()!;
   const upsertBanquet = useOps((s) => s.upsertBanquet);
   const scope = session.branchId;
+  const canWrite = isWriteScope(scope);
+  const [phoneQ, setPhoneQ] = useState("");
   const rows = snap.banquets
     .filter((b) => scope === "all" || b.branchId === scope)
+    .filter((b) => {
+      const digits = phoneQ.replace(/\D/g, "");
+      if (!digits) return true;
+      return b.clientPhone.replace(/\D/g, "").includes(digits);
+    })
     .slice()
     .sort((a, b) => (a.date > b.date ? 1 : -1));
 
-  const [cursor, setCursor] = useState(TODAY.slice(0, 7));
+  const [cursor, setCursor] = useState(today().slice(0, 7));
 
   const days = useMemo(() => monthCells(cursor), [cursor]);
   const byDay = new Map<string, Banquet[]>();
@@ -50,7 +59,15 @@ function BanquetsPage() {
         eyebrow="Банкетный стол"
         title="Банкеты"
         description="Календарь, залог и комплект листов: официантам, шашлычнику и на кухню — из одной карточки."
-        actions={canEditBanquet(user.role) ? <NewBanquet onCreate={upsertBanquet} branchId={scope === "all" ? "br-embank" : scope} /> : null}
+        actions={
+          canEditBanquet(user.role) && canWrite ? (
+            <NewBanquet onCreate={upsertBanquet} branchId={scope} />
+          ) : canEditBanquet(user.role) ? (
+            <Button variant="secondary" onClick={() => toast.error(WRITE_SCOPE_HINT)}>
+              Новый банкет
+            </Button>
+          ) : null
+        }
       />
 
       <div className="mb-4 flex items-center justify-between">
@@ -74,7 +91,7 @@ function BanquetsPage() {
         <div className="mt-1 grid grid-cols-7 gap-1">
           {days.map((d) => {
             const items = d ? byDay.get(d) ?? [] : [];
-            const isToday = d === TODAY;
+            const isToday = d === today();
             return (
               <div
                 key={d ?? Math.random()}
@@ -97,9 +114,16 @@ function BanquetsPage() {
         </div>
       </Card>
 
+      <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+        <Field label="Поиск клиента по телефону" className="max-w-sm">
+          <Input value={phoneQ} onChange={(e) => setPhoneQ(e.target.value)} placeholder="+7 …" inputMode="tel" />
+        </Field>
+      </div>
+      {!canWrite ? <p className="mt-2 text-xs text-muted">{WRITE_SCOPE_HINT}</p> : null}
+
       <div className="mt-4 space-y-2">
         {rows
-          .filter((b) => b.date >= TODAY)
+          .filter((b) => (phoneQ ? true : b.date >= today()))
           .map((b) => (
             <Link key={b.id} to="/banquets/$id" params={{ id: b.id }} className="block">
               <Card className="flex flex-wrap items-center justify-between gap-3 p-4 transition-[box-shadow] duration-150 hover:shadow-(--shadow-border-hover)">
@@ -151,7 +175,7 @@ function NewBanquet({ onCreate, branchId }: { onCreate: (b: Banquet) => void; br
   const [title, setTitle] = useState("");
   const [client, setClient] = useState("");
   const [phone, setPhone] = useState("");
-  const [date, setDate] = useState(addIso(TODAY, 7));
+  const [date, setDate] = useState(addIso(today(), 7));
   const [guests, setGuests] = useState("24");
   const [total, setTotal] = useState("80000");
   const [deposit, setDeposit] = useState("20000");

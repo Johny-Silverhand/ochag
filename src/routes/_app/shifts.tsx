@@ -13,6 +13,9 @@ import { canManageStopList } from "@/lib/domain/permissions";
 import { STOP_REASON_LABEL, type StopListReason } from "@/lib/domain/types";
 import { ruDate, ruDateTime, rub, signedRub } from "@/lib/format";
 import { notify } from "@/lib/notify";
+import { isWriteScope, WRITE_SCOPE_HINT } from "@/lib/ui/scope";
+import { toast } from "sonner";
+import { canOpenShift } from "@/lib/domain/permissions";
 
 export const Route = createFileRoute("/_app/shifts")({ component: ShiftsPage });
 
@@ -23,13 +26,14 @@ function ShiftsPage() {
   const openShift = useOps((s) => s.openShift);
   const closeShift = useOps((s) => s.closeShift);
   const setStopList = useOps((s) => s.setStopList);
-  const branchId = session.branchId === "all" ? "br-pushkin" : session.branchId;
-  const current = openShiftFor(snap.shifts, branchId);
+  const canWrite = isWriteScope(session.branchId);
+  const branchId = canWrite ? session.branchId : "";
+  const current = canWrite ? openShiftFor(snap.shifts, branchId) : undefined;
   const totals = current ? shiftTotals(current, snap.sales) : null;
-  const stopped = activeStopList(snap.stopList, branchId);
-  const available = startList(snap, branchId);
+  const stopped = activeStopList(snap.stopList, canWrite ? branchId : "all");
+  const available = canWrite ? startList(snap, branchId) : snap.recipes;
   const history = snap.shifts
-    .filter((s) => s.branchId === branchId)
+    .filter((s) => !canWrite || s.branchId === branchId)
     .slice()
     .sort((a, b) => (a.date < b.date ? 1 : -1));
 
@@ -40,7 +44,7 @@ function ShiftsPage() {
         title="Смены"
         description="Открытие с разменном, закрытие без ручного подсчёта повара: система считает ожидаемую кассу из чеков."
         actions={
-          current ? (
+          !canWrite ? null : current ? (
             <CloseDialog
               expected={totals?.expected ?? 0}
               onClose={(closeCash, note) => {
@@ -49,19 +53,26 @@ function ShiftsPage() {
                 notify("payroll", "ФОТ начислен по ставке и проценту");
               }}
             />
-          ) : (
+          ) : canOpenShift(user.role) ? (
             <OpenDialog
               staff={snap.users.filter((u) => u.branchId === branchId)}
               defaultStaff={snap.users.filter((u) => u.branchId === branchId).map((u) => u.id)}
-              onOpen={(openCash, staffIds) => {
-                openShift({ openCash, staffIds });
+              recipes={available}
+              debts={snap.debts.filter((d) => d.branchId === branchId && d.status === "open")}
+              onOpen={(openCash, staffIds, startIds) => {
+                if (!startIds.length) {
+                  toast.error("Подтвердите старт-лист перед открытием смены");
+                  return;
+                }
+                openShift({ openCash, staffIds, startList: startIds });
                 notify("shift", "Смена открыта");
               }}
             />
-          )
+          ) : null
         }
       />
 
+      {!canWrite ? <p className="mb-3 text-xs text-muted">{WRITE_SCOPE_HINT}</p> : null}
       {current && totals ? (
         <Card className="mb-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -180,15 +191,20 @@ function ShiftsPage() {
 function OpenDialog({
   staff,
   defaultStaff,
+  recipes,
+  debts,
   onOpen,
 }: {
   staff: { id: string; name: string; position: string }[];
   defaultStaff: string[];
-  onOpen: (openCash: number, staffIds: string[]) => void;
+  recipes: { id: string; name: string }[];
+  debts: { id: string; amount: number }[];
+  onOpen: (openCash: number, staffIds: string[], startList: string[]) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [cash, setCash] = useState("15000");
   const [ids, setIds] = useState<string[]>(defaultStaff);
+  const [startIds, setStartIds] = useState<string[]>(recipes.map((r) => r.id));
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -199,6 +215,12 @@ function OpenDialog({
           <Field label="Наличные в кассе, ₽">
             <Input value={cash} onChange={(e) => setCash(e.target.value)} inputMode="numeric" />
           </Field>
+          {debts.length ? (
+            <p className="text-xs text-danger">
+              Вечерний долг {debts.reduce((s, d) => s + d.amount, 0)} ₽ — довнесите в размен. NOTE: сумма не вычитается
+              из ожидаемой кассы (ТЗ: ожидаемая = размен + нал чеков).
+            </p>
+          ) : null}
           <div>
             <div className="mb-1.5 text-xs font-medium text-muted">Кто в смене</div>
             <ul className="space-y-1">
@@ -220,10 +242,33 @@ function OpenDialog({
               ))}
             </ul>
           </div>
+          <div>
+            <div className="mb-1.5 text-xs font-medium text-muted">Старт-лист (обязателен)</div>
+            <ul className="max-h-40 space-y-1 overflow-auto">
+              {recipes.map((r) => (
+                <li key={r.id}>
+                  <label className="flex h-10 items-center gap-2 rounded-sm px-2 hover:bg-bg">
+                    <input
+                      type="checkbox"
+                      checked={startIds.includes(r.id)}
+                      onChange={(e) =>
+                        setStartIds((prev) => (e.target.checked ? [...prev, r.id] : prev.filter((x) => x !== r.id)))
+                      }
+                    />
+                    <span className="text-sm">{r.name}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </div>
           <Button
             className="w-full"
             onClick={() => {
-              onOpen(Number(cash) || 0, ids);
+              if (!startIds.length) {
+                toast.error("Подтвердите старт-лист перед открытием смены");
+                return;
+              }
+              onOpen(Number(cash) || 0, ids, startIds);
               setOpen(false);
             }}
           >

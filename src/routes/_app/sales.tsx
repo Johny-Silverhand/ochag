@@ -11,12 +11,12 @@ import { Segmented } from "@/components/ui/tabs";
 import { useOps, useSessionUser } from "@/lib/data/store";
 import { canCreateSale, canImportKeeper } from "@/lib/domain/permissions";
 import { filterByBranch, filterPeriod, openShiftFor, periodStart, salePayments, topDishes } from "@/lib/domain/engine";
-import { PAYMENT_LABEL, TODAY, type PaymentType, type Period, type SaleItem } from "@/lib/domain/types";
+import { PAYMENT_LABEL, today, type PaymentType, type Period, type SaleItem } from "@/lib/domain/types";
 import { pct, ruDateTime, rub } from "@/lib/format";
 import { demoKeeperZReport, mapKeeperReceipts } from "@/lib/integrations/keeper";
 import { SAMPLE_KEEPER_XML } from "@/lib/integrations/keeper-xml";
 import { isStopped } from "@/lib/domain/stoplist";
-import { NETWORK_DEFAULT_BRANCH } from "@/lib/authz/actor";
+import { isWriteScope, WRITE_SCOPE_HINT } from "@/lib/ui/scope";
 import { usePrefs } from "@/lib/prefs";
 
 export const Route = createFileRoute("/_app/sales")({ component: SalesPage });
@@ -32,10 +32,11 @@ function SalesPage() {
   const addManualSale = useOps((s) => s.addManualSale);
   const ownSalesOnly = usePrefs((s) => s.waiterOwnSalesOnly);
   const scope = session.branchId;
-  const writeScope = scope === "all" ? NETWORK_DEFAULT_BRANCH : scope;
+  const canWrite = isWriteScope(scope);
+  const writeScope = canWrite ? scope : "";
   const from = periodStart(period);
   const rows = useMemo(() => {
-    let list = filterPeriod(filterByBranch(snap.sales, scope), from, TODAY);
+    let list = filterPeriod(filterByBranch(snap.sales, scope), from, today());
     if (user.role === "waiter" && ownSalesOnly) list = list.filter((s) => s.waiterId === user.id);
     return [...list].sort((a, b) => (a.at < b.at ? 1 : -1));
   }, [snap.sales, scope, from, user, ownSalesOnly]);
@@ -75,7 +76,12 @@ function SalesPage() {
               <>
                 <Button
                   variant="secondary"
+                  disabled={!canWrite}
                   onClick={() => {
+                    if (!canWrite) {
+                      toast.error(WRITE_SCOPE_HINT);
+                      return;
+                    }
                     if (!open) {
                       toast.error("Откройте смену, затем импортируйте отчёт кипера");
                       return;
@@ -88,7 +94,7 @@ function SalesPage() {
                   Z-отчёт
                 </Button>
                 <KeeperXmlDialog
-                  disabled={!open}
+                  disabled={!open || !canWrite}
                   onImport={(xml) => {
                     importKeeperXml(xml);
                     toast.success("XML кипера разобран и проведён");
@@ -98,17 +104,27 @@ function SalesPage() {
             ) : null}
             {canCreateSale(user.role) ? (
               <ManualSaleDialog
-                recipes={snap.recipes.filter((r) => scope === "all" || !isStopped(snap.stopList, scope, r.id))}
+                recipes={snap.recipes.filter((r) => !canWrite || !isStopped(snap.stopList, writeScope, r.id))}
                 onSubmit={addManualSale}
-                disabled={!open}
+                disabled={!open || !canWrite || snap.settings.keeperCashLink}
+                blockedReason={
+                  !canWrite
+                    ? WRITE_SCOPE_HINT
+                    : snap.settings.keeperCashLink
+                      ? "Ручной чек выключен: кассовая связь с кипером. Отключите её в настройках сети."
+                      : !open
+                        ? "Откройте смену перед чеком"
+                        : undefined
+                }
               />
             ) : null}
           </div>
         }
       />
-      {scope === "all" ? (
+      {scope === "all" ? <p className="mb-3 text-xs text-muted">{WRITE_SCOPE_HINT}</p> : null}
+      {canWrite && snap.settings.keeperCashLink ? (
         <p className="mb-3 text-xs text-muted">
-          Сводка по сети. Z-отчёт и ручной чек пишутся на Пушкина, пока в шапке не выбран филиал.
+          Кассовая связь с кипером включена — ручной чек закрыт. Z-отчёт и XML остаются.
         </p>
       ) : null}
 
@@ -173,10 +189,12 @@ function ManualSaleDialog({
   recipes,
   onSubmit,
   disabled,
+  blockedReason,
 }: {
   recipes: { id: string; name: string; price: number }[];
   onSubmit: (items: Omit<SaleItem, "costAtSale">[], payment: PaymentType) => void;
   disabled: boolean;
+  blockedReason?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [recipeId, setRecipeId] = useState(recipes[0]?.id ?? "");
@@ -187,7 +205,15 @@ function ManualSaleDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button disabled={disabled}>Ручной чек</Button>
+        <Button
+          disabled={disabled}
+          title={blockedReason}
+          onClick={() => {
+            if (disabled && blockedReason) toast.error(blockedReason);
+          }}
+        >
+          Ручной чек
+        </Button>
       </DialogTrigger>
       <DialogContent title="Чек без кипера">
         <div className="space-y-3">

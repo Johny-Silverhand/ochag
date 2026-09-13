@@ -19,6 +19,10 @@ import {
 import { qty, ruDateTime, rub } from "@/lib/format";
 import { notify } from "@/lib/notify";
 import { usePrefs } from "@/lib/prefs";
+import { isWriteScope, WRITE_SCOPE_HINT } from "@/lib/ui/scope";
+import { api } from "@/lib/api/client";
+import { downloadBase64, downloadText } from "@/lib/reports/download";
+import type { Unit } from "@/lib/domain/types";
 
 export const Route = createFileRoute("/_app/inventory")({ component: InventoryPage });
 
@@ -30,22 +34,27 @@ function InventoryPage() {
   const completeRevision = useOps((s) => s.completeRevision);
   const transferStock = useOps((s) => s.transferStock);
   const showFoodCost = usePrefs((s) => s.showFoodCost);
-  const branchId = session.branchId === "all" ? "br-pushkin" : session.branchId;
+  const importProducts = useOps((s) => s.importProducts);
+  const canWrite = isWriteScope(session.branchId);
+  const branchId = canWrite ? session.branchId : "";
   const [tab, setTab] = useState("stock");
   const [q, setQ] = useState("");
 
   const stockRows = useMemo(() => {
     return snap.products
       .map((p) => {
-        const have = stockOf(snap.stock, branchId, p.id);
-        return { p, have, status: have < p.minQty * 0.4 ? "crit" : have < p.minQty ? "low" : "ok" };
+        const have = canWrite
+          ? stockOf(snap.stock, branchId, p.id)
+          : snap.stock.filter((s) => s.productId === p.id).reduce((sum, s) => sum + s.qty, 0);
+        const status = !canWrite ? "ok" : have < p.minQty * 0.4 ? "crit" : have < p.minQty ? "low" : "ok";
+        return { p, have, status };
       })
       .filter((r) => r.p.name.toLowerCase().includes(q.toLowerCase()))
       .sort((a, b) => a.have / a.p.minQty - b.have / b.p.minQty);
-  }, [snap, branchId, q]);
+  }, [snap, branchId, q, canWrite]);
 
   const movs = snap.movements
-    .filter((m) => m.branchId === branchId)
+    .filter((m) => !canWrite || m.branchId === branchId)
     .slice()
     .sort((a, b) => (a.at < b.at ? 1 : -1))
     .slice(0, 60);
@@ -58,7 +67,7 @@ function InventoryPage() {
         description="Остатки, списания и ревизия. Продажа автоматически списывает ингредиенты по техкарте."
         actions={
           <div className="flex flex-wrap gap-2">
-            {canWriteoff(user.role) ? (
+            {canWriteoff(user.role) && canWrite ? (
               <WriteoffDialog
                 products={snap.products}
                 onSubmit={(input) => {
@@ -67,7 +76,7 @@ function InventoryPage() {
                 }}
               />
             ) : null}
-            {canTransfer(user.role) ? (
+            {canTransfer(user.role) && canWrite ? (
               <TransferDialog
                 products={snap.products}
                 branches={snap.branches}
@@ -78,7 +87,7 @@ function InventoryPage() {
                 }}
               />
             ) : null}
-            {canWriteoff(user.role) ? (
+            {canWriteoff(user.role) && canWrite ? (
               <RevisionDialog
                 rows={stockRows.map((r) => ({ id: r.p.id, name: r.p.name, unit: r.p.unit, have: r.have }))}
                 onSubmit={(lines) => {
@@ -87,10 +96,36 @@ function InventoryPage() {
                 }}
               />
             ) : null}
+            <NomenclatureImport
+              onImport={(rows) => {
+                importProducts(rows);
+                toast.success(`Импорт: ${rows.length} позиций`);
+              }}
+            />
           </div>
         }
       />
 
+      {!canWrite ? <p className="mb-3 text-xs text-muted">{WRITE_SCOPE_HINT} Остатки ниже — сумма по сети.</p> : null}
+      {canWrite && snap.revisions[0] ? (
+        <p className="mb-3 text-xs text-muted">
+          Последняя ревизия {snap.revisions[0].date}.{" "}
+          <button
+            type="button"
+            className="underline"
+            onClick={() => {
+              void api<{ filename: string; base64: string; mime: string }>(
+                `reports/pdf?kind=revision&id=${snap.revisions[0]!.id}`,
+                { method: "GET" },
+              )
+                .then((r) => downloadBase64(r.filename, r.base64, r.mime))
+                .catch((err) => toast.error(err instanceof Error ? err.message : "PDF недоступен"));
+            }}
+          >
+            Скачать акт PDF
+          </button>
+        </p>
+      ) : null}
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <Segmented
           value={tab}
@@ -345,6 +380,68 @@ function TransferDialog({
             }}
           >
             Провести
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function NomenclatureImport({
+  onImport,
+}: {
+  onImport: (rows: Array<{ name: string; category: string; unit: Unit; minQty: number; avgCost: number }>) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("name;category;unit;minQty;avgCost\nСвинина шея;Мясо;kg;10;420");
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="secondary">Импорт номенклатуры</Button>
+      </DialogTrigger>
+      <DialogContent title="Шаблон номенклатуры">
+        <div className="space-y-3">
+          <p className="text-sm text-muted">Столбцы: name;category;unit;minQty;avgCost. Единицы: kg, l, шт, порц.</p>
+          <Button
+            variant="ghost"
+            className="w-full"
+            onClick={() => {
+              void api<{ filename: string; csv: string }>("nomenclature/template", { method: "GET" })
+                .then((r) => downloadText(r.filename, r.csv, "text/csv;charset=utf-8"))
+                .catch((err) => toast.error(err instanceof Error ? err.message : "Шаблон недоступен"));
+            }}
+          >
+            Скачать шаблон CSV
+          </Button>
+          <Field label="CSV">
+            <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={6} className="font-mono text-xs" />
+          </Field>
+          <Button
+            className="w-full"
+            onClick={() => {
+              const lines = text
+                .split(/\r?\n/)
+                .map((l) => l.trim())
+                .filter(Boolean);
+              const rows = lines.slice(1).map((line) => {
+                const [name, category, unit, minQty, avgCost] = line.split(/[;,]/);
+                return {
+                  name: (name ?? "").trim(),
+                  category: (category ?? "Прочее").trim(),
+                  unit: ((unit ?? "kg").trim() as Unit) || "kg",
+                  minQty: Number(minQty) || 0,
+                  avgCost: Number(avgCost) || 0,
+                };
+              }).filter((r) => r.name);
+              if (!rows.length) {
+                toast.error("Нет строк для импорта");
+                return;
+              }
+              onImport(rows);
+              setOpen(false);
+            }}
+          >
+            Импортировать
           </Button>
         </div>
       </DialogContent>

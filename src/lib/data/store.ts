@@ -1,12 +1,14 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import type {
   Banquet,
   BanquetStatus,
   ExpenseKind,
   InvoiceLine,
   Period,
+  Recipe,
   RequestStatus,
   RevisionLine,
   SaleItem,
@@ -21,19 +23,25 @@ import {
   applyBanquetStatus,
   applyCloseShift,
   applyExpense,
+  applyImportProducts,
+  applyInviteStaff,
   applyInvoice,
   applyKeeperSales,
   applyManualSale,
+  applyOnboard,
   applyOpenShift,
   applyProfile,
   applyRequestFromNeed,
   applyRequestStatus,
   applyRevision,
+  applySettings,
   applyStopList,
   applyTransfer,
+  applyUpsertRecipe,
   applyWriteoff,
 } from "../domain/mutations";
-import { createSeed } from "./seed";
+import { emptySnapshot, isOnboarded } from "./empty";
+import { normalizeSnapshot } from "./normalize";
 import { dbAdapter } from "./adapter";
 import { getOpsStatus } from "@/lib/data/ops";
 import { useSync } from "./sync";
@@ -49,6 +57,16 @@ interface OpsState extends Snapshot {
   login: (email: string, password: string) => Promise<boolean>;
   loginPin: (email: string, pin: string) => Promise<boolean>;
   loginAs: (email: string) => Promise<boolean>;
+  onboard: (input: {
+    ownerName: string;
+    login: string;
+    password: string;
+    pin: string;
+    branchName: string;
+    city: string;
+    address: string;
+  }) => Promise<void>;
+  loadSample: () => Promise<void>;
   logout: () => void;
   setBranch: (branchId: string) => void;
   setPeriod: (period: Period) => void;
@@ -63,7 +81,7 @@ interface OpsState extends Snapshot {
   addInvoice: (input: { supplier: string; number: string; date: string; lines: InvoiceLine[] }) => void;
   createRequestFromNeed: () => void;
   setRequestStatus: (id: string, status: RequestStatus) => void;
-  openShift: (input: { openCash: number; staffIds: string[] }) => void;
+  openShift: (input: { openCash: number; staffIds: string[]; startList: string[] }) => void;
   closeShift: (input: { closeCash: number; note?: string }) => void;
   addManualSale: (items: Omit<SaleItem, "costAtSale">[], payment: "cash" | "card" | "qr") => void;
   importKeeperSales: (
@@ -86,6 +104,24 @@ interface OpsState extends Snapshot {
   }) => void;
   setStopList: (input: { recipeId: string; reason: StopListReason; note?: string; clear?: boolean }) => void;
   addExpense: (input: { category: string; amount: number; note?: string; kind: ExpenseKind; date?: string }) => void;
+  upsertRecipe: (recipe: Recipe) => void;
+  importProducts: (
+    rows: Array<{ name: string; category: string; unit: Snapshot["products"][number]["unit"]; minQty: number; avgCost: number }>,
+  ) => void;
+  inviteStaff: (input: {
+    name: string;
+    login: string;
+    password: string;
+    pin: string;
+    role: Snapshot["users"][number]["role"];
+    branchId: string;
+    shiftPay: number;
+    salesPercent: number;
+    position?: string;
+    phone?: string;
+  }) => void;
+  updateSettings: (patch: Partial<Snapshot["settings"]>) => void;
+  flushNotify: () => Promise<void>;
 }
 
 function actorOf(s: { session: Session | null; users: Snapshot["users"] }): Actor | null {
@@ -102,62 +138,61 @@ async function applyRemote(path: string, body: unknown, local: (snap: Snapshot, 
     applyingRemote = true;
     useOps.setState((s) => ({ ...s, ...res.state, session: session ?? s.session }));
     applyingRemote = false;
-  } catch {
+  } catch (err) {
     const s = useOps.getState();
     const actor = actorOf(s);
-    if (!actor) return;
-    const next = local(snapshotOf(s), actor);
-    useOps.setState({ ...next });
+    if (!actor) {
+      toast.error(err instanceof Error ? err.message : "Нужен вход");
+      return;
+    }
+    try {
+      const next = local(snapshotOf(s), actor);
+      useOps.setState({ ...next });
+    } catch (localErr) {
+      toast.error(localErr instanceof Error ? localErr.message : err instanceof Error ? err.message : "Операция отклонена");
+    }
   }
 }
 
-function snapshotOf(s: OpsState): Snapshot {
-  return {
-    branches: s.branches,
-    users: s.users,
-    products: s.products,
-    recipes: s.recipes,
-    stock: s.stock,
-    movements: s.movements,
-    invoices: s.invoices,
-    sales: s.sales,
-    shifts: s.shifts,
-    requests: s.requests,
-    banquets: s.banquets,
-    expenses: s.expenses,
-    payroll: s.payroll,
-    revisions: s.revisions,
-    stopList: s.stopList,
-  };
+function snapshotOf(s: OpsState | Snapshot): Snapshot {
+  return normalizeSnapshot(s);
 }
 
-function withSeed(): Omit<
-  OpsState,
-  | "login"
-  | "loginPin"
-  | "loginAs"
-  | "logout"
-  | "setBranch"
-  | "setPeriod"
-  | "resetDemo"
-  | "updateProfile"
-  | "addWriteoff"
-  | "addInvoice"
-  | "createRequestFromNeed"
-  | "setRequestStatus"
-  | "openShift"
-  | "closeShift"
-  | "addManualSale"
-  | "importKeeperSales"
-  | "importKeeperXml"
-  | "upsertBanquet"
-  | "setBanquetStatus"
-  | "completeRevision"
-  | "transferStock"
-  | "setStopList"
-  | "addExpense"
-> {
-  return { ...createSeed(), session: null, period: "7d" };
+const ACTION_KEYS = [
+  "login",
+  "loginPin",
+  "loginAs",
+  "onboard",
+  "loadSample",
+  "logout",
+  "setBranch",
+  "setPeriod",
+  "resetDemo",
+  "updateProfile",
+  "addWriteoff",
+  "addInvoice",
+  "createRequestFromNeed",
+  "setRequestStatus",
+  "openShift",
+  "closeShift",
+  "addManualSale",
+  "importKeeperSales",
+  "importKeeperXml",
+  "upsertBanquet",
+  "setBanquetStatus",
+  "completeRevision",
+  "transferStock",
+  "setStopList",
+  "addExpense",
+  "upsertRecipe",
+  "importProducts",
+  "inviteStaff",
+  "updateSettings",
+  "flushNotify",
+] as const;
+
+function withEmpty(): Omit<OpsState, (typeof ACTION_KEYS)[number]> {
+  return { ...emptySnapshot(), session: null, period: "7d" };
 }
 
 let applyingRemote = false;
@@ -167,7 +202,7 @@ let saveTimer: ReturnType<typeof setTimeout> | undefined;
 export const useOps = create<OpsState>()(
   persist(
     (set, get) => ({
-      ...withSeed(),
+      ...withEmpty(),
 
       login: async (email, password) => {
         try {
@@ -211,6 +246,45 @@ export const useOps = create<OpsState>()(
 
       loginAs: async (email) => get().login(email, "ochag"),
 
+      onboard: async (input) => {
+        try {
+          const res = await api<{ user: { userId: string; branchId: string }; state: Snapshot }>("auth/onboard", {
+            method: "POST",
+            body: input,
+          });
+          applyingRemote = true;
+          set({ ...res.state, session: { userId: res.user.userId, branchId: res.user.branchId } });
+          applyingRemote = false;
+        } catch (err) {
+          try {
+            const next = applyOnboard(snapshotOf(get()), input);
+            const owner = next.users[0]!;
+            applyingRemote = true;
+            set({ ...next, session: { userId: owner.id, branchId: next.branches[0]?.id ?? "all" } });
+            applyingRemote = false;
+            void dbAdapter.save(next);
+          } catch (localErr) {
+            throw localErr instanceof Error ? localErr : err;
+          }
+        }
+      },
+
+      loadSample: async () => {
+        try {
+          const res = await api<{ state: Snapshot }>("state/sample", { method: "POST" });
+          setToken(null);
+          applyingRemote = true;
+          set({ ...res.state, session: null });
+          applyingRemote = false;
+        } catch {
+          const snap = await dbAdapter.loadSample();
+          setToken(null);
+          applyingRemote = true;
+          set({ ...snap, session: null });
+          applyingRemote = false;
+        }
+      },
+
       logout: () => {
         setToken(null);
         set({ session: null });
@@ -227,10 +301,10 @@ export const useOps = create<OpsState>()(
 
       resetDemo: async () => {
         useSync.getState().setStatus("saving");
-        const session = get().session;
         const snap = await dbAdapter.reset();
+        setToken(null);
         applyingRemote = true;
-        set({ ...snap, session });
+        set({ ...snap, session: null });
         applyingRemote = false;
         useSync.getState().setMeta({
           source: useSync.getState().source ?? "memory",
@@ -256,7 +330,7 @@ export const useOps = create<OpsState>()(
       },
 
       setRequestStatus: (id, status) => {
-        void applyRemote("procurement/status", { id, status }, (snap) => applyRequestStatus(snap, id, status));
+        void applyRemote("procurement/status", { id, status }, (snap, actor) => applyRequestStatus(snap, actor, id, status));
       },
 
       openShift: (input) => {
@@ -306,10 +380,38 @@ export const useOps = create<OpsState>()(
       addExpense: (input) => {
         void applyRemote("expenses", input, (snap, actor) => applyExpense(snap, actor, input));
       },
+
+      upsertRecipe: (recipe) => {
+        void applyRemote("recipes", recipe, (snap, actor) => applyUpsertRecipe(snap, actor, recipe));
+      },
+
+      importProducts: (rows) => {
+        void applyRemote("nomenclature/import", { rows }, (snap, actor) => applyImportProducts(snap, actor, rows));
+      },
+
+      inviteStaff: (input) => {
+        void applyRemote("staff/invite", input, (snap, actor) => applyInviteStaff(snap, actor, input));
+      },
+
+      updateSettings: (patch) => {
+        void applyRemote("settings/network", patch, (snap, actor) => applySettings(snap, actor, patch));
+      },
+
+      flushNotify: async () => {
+        try {
+          const res = await api<{ state: Snapshot }>("notify/flush", { method: "POST" });
+          const session = get().session;
+          applyingRemote = true;
+          set({ ...res.state, session });
+          applyingRemote = false;
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : "Очередь не отправлена");
+        }
+      },
     }),
     {
-      name: "ochag-session-v2",
-      version: 2,
+      name: "ochag-session-v3",
+      version: 3,
       partialize: (s) => ({ session: s.session, period: s.period }),
     },
   ),
@@ -317,7 +419,7 @@ export const useOps = create<OpsState>()(
 
 if (typeof window !== "undefined") {
   useOps.subscribe((state) => {
-    if (!bootDone || applyingRemote || !state.branches.length) return;
+    if (!bootDone || applyingRemote || !isOnboarded(state)) return;
     useSync.getState().setStatus("saving");
     window.clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
@@ -343,10 +445,10 @@ export function useHydrated() {
     let cancelled = false;
 
     async function boot() {
-      const api = useOps.persist;
-      if (api && !api.hasHydrated()) {
+      const apiPersist = useOps.persist;
+      if (apiPersist && !apiPersist.hasHydrated()) {
         await new Promise<void>((resolve) => {
-          const unsub = api.onFinishHydration(() => {
+          const unsub = apiPersist.onFinishHydration(() => {
             unsub();
             resolve();
           });
@@ -356,7 +458,11 @@ export function useHydrated() {
         const snap = await dbAdapter.load();
         if (cancelled) return;
         applyingRemote = true;
-        useOps.setState((s) => ({ ...s, ...snap }));
+        useOps.setState((s) => {
+          const session =
+            s.session && snap.users.some((u) => u.id === s.session?.userId) ? s.session : null;
+          return { ...s, ...snap, session };
+        });
         applyingRemote = false;
         try {
           const meta = await getOpsStatus();
@@ -399,7 +505,7 @@ export function useSessionUser() {
 }
 
 export function useActiveBranch() {
-  return useOps((s) => s.branches.find((b) => b.id === s.session?.branchId) ?? s.branches[0]);
+  return useOps((s) => s.branches.find((b) => b.id === s.session?.branchId) ?? null);
 }
 
 export function selectSnap(s: OpsState): Snapshot {

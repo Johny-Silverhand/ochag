@@ -249,7 +249,11 @@ export function AppShell() {
         </header>
         <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 py-5 sm:px-6 sm:py-6 md:min-h-0 md:overflow-y-auto md:scroll-touch">
           <div className="flex-1">
-            <Outlet />
+            {current && !can(role, current.module) ? (
+              <p className="text-sm text-muted">Раздел закрыт для вашей роли. Прямой адрес не открывает чужие модули.</p>
+            ) : (
+              <Outlet />
+            )}
           </div>
           <LabsFooter className="mt-12 mb-1" />
         </main>

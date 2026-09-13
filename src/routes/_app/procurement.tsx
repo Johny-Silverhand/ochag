@@ -10,8 +10,9 @@ import { Field, Input, NativeSelect } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/tabs";
 import { useOps } from "@/lib/data/store";
 import { needToBuy } from "@/lib/domain/engine";
-import { REQUEST_LABEL, TODAY, type InvoiceLine } from "@/lib/domain/types";
+import { REQUEST_LABEL, today, type InvoiceLine } from "@/lib/domain/types";
 import { qty, ruDate, rub } from "@/lib/format";
+import { isWriteScope, WRITE_SCOPE_HINT } from "@/lib/ui/scope";
 
 export const Route = createFileRoute("/_app/procurement")({ component: ProcurementPage });
 
@@ -21,11 +22,12 @@ function ProcurementPage() {
   const createRequestFromNeed = useOps((s) => s.createRequestFromNeed);
   const setRequestStatus = useOps((s) => s.setRequestStatus);
   const addInvoice = useOps((s) => s.addInvoice);
-  const branchId = session.branchId === "all" ? "br-pushkin" : session.branchId;
-  const need = needToBuy(snap, branchId);
+  const canWrite = isWriteScope(session.branchId);
+  const branchId = canWrite ? session.branchId : "";
+  const need = canWrite ? needToBuy(snap, branchId) : [];
   const [tab, setTab] = useState("need");
-  const requests = snap.requests.filter((r) => r.branchId === branchId);
-  const invoices = snap.invoices.filter((r) => r.branchId === branchId);
+  const requests = canWrite ? snap.requests.filter((r) => r.branchId === branchId) : snap.requests;
+  const invoices = canWrite ? snap.invoices.filter((r) => r.branchId === branchId) : snap.invoices;
 
   return (
     <div>
@@ -37,7 +39,12 @@ function ProcurementPage() {
           <div className="flex gap-2">
             <Button
               variant="secondary"
+              disabled={!canWrite}
               onClick={() => {
+                if (!canWrite) {
+                  toast.error(WRITE_SCOPE_HINT);
+                  return;
+                }
                 if (!need.length) {
                   toast.message("Всё в норме — заявку собирать не из чего");
                   return;
@@ -48,17 +55,20 @@ function ProcurementPage() {
             >
               Собрать заявку
             </Button>
-            <InvoiceDialog
-              products={snap.products}
-              onSave={(data) => {
-                addInvoice(data);
-                toast.success("Накладная оприходована");
-              }}
-            />
+            {canWrite ? (
+              <InvoiceDialog
+                products={snap.products}
+                onSave={(data) => {
+                  addInvoice(data);
+                  toast.success("Накладная оприходована");
+                }}
+              />
+            ) : null}
           </div>
         }
       />
 
+      {!canWrite ? <p className="mb-3 text-xs text-muted">{WRITE_SCOPE_HINT}</p> : null}
       <Segmented
         className="mb-4"
         value={tab}
@@ -125,8 +135,15 @@ function ProcurementPage() {
                   );
                 })}
               </ul>
-              {r.status === "draft" ? (
-                <Button size="sm" className="mt-3" onClick={() => setRequestStatus(r.id, "sent")}>
+              {r.status === "draft" && canWrite ? (
+                <Button
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => {
+                    setRequestStatus(r.id, "sent");
+                    toast.success("Заявка в очереди. Без Telegram/email ключей — ошибка в журнале сигналов.");
+                  }}
+                >
                   Отправить поставщику
                 </Button>
               ) : null}
@@ -221,7 +238,7 @@ function InvoiceDialog({
           className="mt-4 w-full"
           disabled={!lines.length}
           onClick={() => {
-            onSave({ supplier, number, date: TODAY, lines });
+            onSave({ supplier, number, date: today(), lines });
             setLines([]);
             setOpen(false);
           }}

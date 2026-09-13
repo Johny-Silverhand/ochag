@@ -458,6 +458,11 @@ function WorkspacePanel({ role }: { role: Role }) {
   const branches = useOps((s) => s.branches);
   const users = useOps((s) => s.users);
   const resetDemo = useOps((s) => s.resetDemo);
+  const loadSample = useOps((s) => s.loadSample);
+  const updateSettings = useOps((s) => s.updateSettings);
+  const flushNotify = useOps((s) => s.flushNotify);
+  const logout = useOps((s) => s.logout);
+  const navigate = useNavigate();
   const snap = useOps((s) => s);
   const period = usePrefs((s) => s.defaultPeriod);
   const setDefaultPeriod = usePrefs((s) => s.setDefaultPeriod);
@@ -552,22 +557,73 @@ function WorkspacePanel({ role }: { role: Role }) {
         </div>
       </Card>
       <Card>
+        <h2 className="text-sm font-medium tracking-tight">Касса и кипер</h2>
+        <p className="mt-1 text-sm text-muted">
+          Если связь с кипером включена, ручной чек закрыт. Z-отчёт и XML остаются. По умолчанию связь включена — так безопаснее в зале.
+        </p>
+        <div className="mt-3 divide-y divide-border">
+          <PrefRow title="Кассовая связь с кипером" hint="Выключите, только если зал бьёт чеки вручную.">
+            <Switch
+              checked={snap.settings.keeperCashLink}
+              onCheckedChange={(v) => updateSettings({ keeperCashLink: v })}
+            />
+          </PrefRow>
+        </div>
+      </Card>
+      <Card>
+        <h2 className="text-sm font-medium tracking-tight">Очередь сигналов</h2>
+        <p className="mt-1 text-sm text-muted">
+          Telegram / email / webpush. Без ключей в окружении запись падает в очередь с ошибкой — тихих заглушек нет.
+        </p>
+        <ul className="mt-3 max-h-40 space-y-1 overflow-auto text-xs">
+          {snap.outbox.slice(0, 12).map((o) => (
+            <li key={o.id} className="flex justify-between gap-2">
+              <span>
+                {o.title} · {o.channel} · {o.status}
+                {o.error ? <span className="ml-1 text-danger">{o.error}</span> : null}
+              </span>
+            </li>
+          ))}
+          {snap.outbox.length === 0 ? <li className="text-muted">Пусто</li> : null}
+        </ul>
+        <Button type="button" variant="secondary" className="mt-3" onClick={() => void flushNotify()}>
+          Повторить отправку
+        </Button>
+      </Card>
+      <Card>
         <h2 className="text-sm font-medium tracking-tight">Данные</h2>
-        <p className="mt-1 text-sm text-muted">Выгрузка без паролей. Восстановление возвращает сеть «Очаг» к срезу 2 сентября 2026 и записывает его в базу.</p>
+        <p className="mt-1 text-sm text-muted">
+          Живая сеть пустая, пока вы её не создали. Учебный срез — явная кнопка для приёмки, не основной вход.
+        </p>
         <div className="mt-4 flex flex-wrap gap-2">
           <Button type="button" variant="secondary" onClick={exportJson}>
             Выгрузить JSON
           </Button>
+          {role === "owner" ? (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                void loadSample().then(() => {
+                  logout();
+                  void navigate({ to: "/" });
+                  toast.success("Учебная сеть загружена — войдите owner / ochag");
+                });
+              }}
+            >
+              Загрузить учебную сеть
+            </Button>
+          ) : null}
           {canResetDemo(role) ? (
             <Button type="button" variant="danger" onClick={() => setConfirmReset(true)}>
-              Восстановить срез
+              Очистить сеть
             </Button>
           ) : null}
         </div>
       </Card>
       <Dialog open={confirmReset} onOpenChange={setConfirmReset}>
-        <DialogContent title="Восстановить стартовый срез?">
-          <p className="text-sm text-muted">Чеки, списания и банкеты, которые вы внесли, заменятся исходным срезом сети. Тема на этом устройстве останется.</p>
+        <DialogContent title="Очистить сеть?">
+          <p className="text-sm text-muted">Все чеки, смены и сотрудники будут удалены. Останется пустой контур — создайте сеть заново на входе.</p>
           <div className="mt-5 flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={() => setConfirmReset(false)}>
               Отмена
@@ -578,7 +634,7 @@ function WorkspacePanel({ role }: { role: Role }) {
               onClick={() => {
                 void resetDemo().then(() => {
                   setConfirmReset(false);
-                  toast.success("Срез восстановлен");
+                  toast.success("Сеть очищена");
                 });
               }}
             >

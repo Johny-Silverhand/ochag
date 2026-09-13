@@ -16,6 +16,8 @@ export const Route = createFileRoute("/_app/integrations")({ component: Integrat
 
 function IntegrationsPage() {
   const resetDemo = useOps((s) => s.resetDemo);
+  const loadSample = useOps((s) => s.loadSample);
+  const logout = useOps((s) => s.logout);
   const sync = useSync();
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<{
@@ -120,22 +122,40 @@ function IntegrationsPage() {
 
         <Card className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="text-sm font-medium">Стартовый срез</div>
-            <p className="text-sm text-muted">Вернуть сеть «Очаг» к срезу 2 сентября 2026. Текущие правки в базе заменятся.</p>
+            <div className="text-sm font-medium">Учебная сеть</div>
+            <p className="text-sm text-muted">Явная загрузка примера для приёмки. Очистка возвращает пустой контур.</p>
           </div>
-          <Button
-            variant="secondary"
-            disabled={busy}
-            onClick={() => {
-              setBusy(true);
-              void resetDemo()
-                .then(() => toast.success("Срез восстановлен"))
-                .catch(() => toast.error("Не удалось записать в базу"))
-                .finally(() => setBusy(false));
-            }}
-          >
-            Восстановить срез
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              disabled={busy}
+              onClick={() => {
+                setBusy(true);
+                void loadSample()
+                  .then(() => {
+                    logout();
+                    toast.success("Учебная сеть загружена — войдите owner / ochag");
+                  })
+                  .catch(() => toast.error("Не удалось загрузить пример"))
+                  .finally(() => setBusy(false));
+              }}
+            >
+              Загрузить пример
+            </Button>
+            <Button
+              variant="ghost"
+              disabled={busy}
+              onClick={() => {
+                setBusy(true);
+                void resetDemo()
+                  .then(() => toast.success("Сеть очищена"))
+                  .catch(() => toast.error("Не удалось записать в базу"))
+                  .finally(() => setBusy(false));
+              }}
+            >
+              Очистить
+            </Button>
+          </div>
         </Card>
       </div>
     </div>

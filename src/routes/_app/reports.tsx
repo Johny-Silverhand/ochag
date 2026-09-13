@@ -17,7 +17,9 @@ import {
   periodStart,
   writeoffByReason,
 } from "@/lib/domain/engine";
-import { TODAY, WRITEOFF_LABEL, type WriteoffReason } from "@/lib/domain/types";
+import { today, WRITEOFF_LABEL, type WriteoffReason } from "@/lib/domain/types";
+import { downloadBase64, downloadText } from "@/lib/reports/download";
+import { isWriteScope, WRITE_SCOPE_HINT } from "@/lib/ui/scope";
 import { pct, ruDate, rub } from "@/lib/format";
 
 export const Route = createFileRoute("/_app/reports")({ component: ReportsPage });
@@ -29,11 +31,11 @@ function ReportsPage() {
   const scope = session.branchId;
   const k = computeKpis(snap, { period, branchId: scope });
   const from = periodStart(period);
-  const reasons = writeoffByReason(snap.movements, from, TODAY, scope);
-  const invoices = filterPeriod(filterByBranch(snap.invoices, scope), from, TODAY);
+  const reasons = writeoffByReason(snap.movements, from, today(), scope);
+  const invoices = filterPeriod(filterByBranch(snap.invoices, scope), from, today());
   const user = useSessionUser()!;
   const addExpense = useOps((s) => s.addExpense);
-  const expenses = filterPeriod(filterByBranch(snap.expenses, scope), from, TODAY);
+  const expenses = filterPeriod(filterByBranch(snap.expenses, scope), from, today());
   const [pdfNote, setPdfNote] = useState("");
 
   function csv() {
@@ -51,7 +53,7 @@ function ReportsPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `ochag-${scope}-${from}-${TODAY}.csv`;
+    a.download = `ochag-${scope}-${from}-${today()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -64,19 +66,47 @@ function ReportsPage() {
         description="Любой срез в реальном времени: продажи, приход, списания, ФОТ и чистая прибыль владельца."
         actions={
           <div className="flex flex-wrap gap-2">
-            {canEditExpenses(user.role) ? <ExpenseDialog onSave={addExpense} /> : null}
+            {canEditExpenses(user.role) && isWriteScope(scope) ? (
+              <ExpenseDialog onSave={addExpense} />
+            ) : canEditExpenses(user.role) ? (
+              <Button variant="secondary" onClick={() => toast.error(WRITE_SCOPE_HINT)}>
+                Расход
+              </Button>
+            ) : null}
             <Button variant="secondary" onClick={csv}>
               Выгрузка CSV
             </Button>
             <Button
               variant="secondary"
               onClick={() => {
-                void api<{ note?: string }>(`reports/pdf?period=${period}`, { method: "GET" })
+                void api<{ filename: string; csv: string }>(`reports/csv?period=${period}`, { method: "GET" })
+                  .then((r) => downloadText(r.filename, r.csv, "text/csv;charset=utf-8"))
+                  .catch((err) => toast.error(err instanceof Error ? err.message : "CSV недоступен"));
+              }}
+            >
+              CSV с сервера
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                void api<{ filename: string; base64?: string; mime?: string; error?: string }>(
+                  `reports/pdf?period=${period}`,
+                  { method: "GET" },
+                )
                   .then((r) => {
-                    setPdfNote(r.note ?? "PDF-заглушка");
-                    toast.message(r.note ?? "Серверный PDF пока заглушка");
+                    if (!r.base64 || !r.mime) {
+                      setPdfNote(r.error ?? "PDF не собран");
+                      toast.error(r.error ?? "PDF не собран");
+                      return;
+                    }
+                    downloadBase64(r.filename, r.base64, r.mime);
+                    setPdfNote("");
                   })
-                  .catch(() => toast.message("Серверный PDF пока заглушка"));
+                  .catch((err) => {
+                    const msg = err instanceof Error ? err.message : "PDF недоступен";
+                    setPdfNote(msg);
+                    toast.error(msg);
+                  });
               }}
             >
               PDF

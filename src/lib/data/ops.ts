@@ -32,3 +32,13 @@ export const resetOpsSnapshot = createServerFn({ method: "POST" }).handler(async
   const repo = await getRepo();
   return repo.reset();
 });
+
+export const loadSampleOpsSnapshot = createServerFn({ method: "POST" }).handler(async () => {
+  const { getRepo } = await import("@/lib/repo");
+  const repo = await getRepo();
+  if (repo.loadSample) return repo.loadSample();
+  const { createSeed } = await import("./seed");
+  const seed = createSeed();
+  await repo.save(seed);
+  return seed;
+});
