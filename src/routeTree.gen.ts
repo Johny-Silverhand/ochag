@@ -12,24 +12,24 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as SetupRouteImport } from './routes/setup'
+import { Route as AppAiRouteImport } from './routes/_app/ai'
 import { Route as AppBanquetsRouteImport } from './routes/_app/banquets'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
 import { Route as AppIntegrationsRouteImport } from './routes/_app/integrations'
 import { Route as AppInventoryRouteImport } from './routes/_app/inventory'
+import { Route as AppPlanningRouteImport } from './routes/_app/planning'
 import { Route as AppProcurementRouteImport } from './routes/_app/procurement'
+import { Route as AppQualityRouteImport } from './routes/_app/quality'
 import { Route as AppRecipesRouteImport } from './routes/_app/recipes'
 import { Route as AppReportsRouteImport } from './routes/_app/reports'
 import { Route as AppSalesRouteImport } from './routes/_app/sales'
+import { Route as AppScheduleRouteImport } from './routes/_app/schedule'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppShiftsRouteImport } from './routes/_app/shifts'
 import { Route as AppStaffRouteImport } from './routes/_app/staff'
-import { Route as AppPlanningRouteImport } from './routes/_app/planning'
-import { Route as AppScheduleRouteImport } from './routes/_app/schedule'
-import { Route as AppQualityRouteImport } from './routes/_app/quality'
-import { Route as AppAiRouteImport } from './routes/_app/ai'
 import { Route as AppBanquetsIdRouteImport } from './routes/_app/banquets.$id'
-import { Route as PrintBanquetIdRouteImport } from './routes/print.banquet.$id'
 import { Route as ApiV1SplatRouteImport } from './routes/api/v1.$'
+import { Route as PrintBanquetIdRouteImport } from './routes/print.banquet.$id'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -44,6 +44,11 @@ const SetupRoute = SetupRouteImport.update({
   id: '/setup',
   path: '/setup',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AppAiRoute = AppAiRouteImport.update({
+  id: '/ai',
+  path: '/ai',
+  getParentRoute: () => AppRoute,
 } as any)
 const AppBanquetsRoute = AppBanquetsRouteImport.update({
   id: '/banquets',
@@ -65,9 +70,19 @@ const AppInventoryRoute = AppInventoryRouteImport.update({
   path: '/inventory',
   getParentRoute: () => AppRoute,
 } as any)
+const AppPlanningRoute = AppPlanningRouteImport.update({
+  id: '/planning',
+  path: '/planning',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppProcurementRoute = AppProcurementRouteImport.update({
   id: '/procurement',
   path: '/procurement',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppQualityRoute = AppQualityRouteImport.update({
+  id: '/quality',
+  path: '/quality',
   getParentRoute: () => AppRoute,
 } as any)
 const AppRecipesRoute = AppRecipesRouteImport.update({
@@ -85,6 +100,11 @@ const AppSalesRoute = AppSalesRouteImport.update({
   path: '/sales',
   getParentRoute: () => AppRoute,
 } as any)
+const AppScheduleRoute = AppScheduleRouteImport.update({
+  id: '/schedule',
+  path: '/schedule',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppSettingsRoute = AppSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -100,35 +120,15 @@ const AppStaffRoute = AppStaffRouteImport.update({
   path: '/staff',
   getParentRoute: () => AppRoute,
 } as any)
-const AppPlanningRoute = AppPlanningRouteImport.update({
-  id: '/planning',
-  path: '/planning',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppScheduleRoute = AppScheduleRouteImport.update({
-  id: '/schedule',
-  path: '/schedule',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppQualityRoute = AppQualityRouteImport.update({
-  id: '/quality',
-  path: '/quality',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppAiRoute = AppAiRouteImport.update({
-  id: '/ai',
-  path: '/ai',
-  getParentRoute: () => AppRoute,
+const AppBanquetsIdRoute = AppBanquetsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AppBanquetsRoute,
 } as any)
 const ApiV1SplatRoute = ApiV1SplatRouteImport.update({
   id: '/api/v1/$',
   path: '/api/v1/$',
   getParentRoute: () => rootRouteImport,
-} as any)
-const AppBanquetsIdRoute = AppBanquetsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => AppBanquetsRoute,
 } as any)
 const PrintBanquetIdRoute = PrintBanquetIdRouteImport.update({
   id: '/print/banquet/$id',
@@ -139,45 +139,45 @@ const PrintBanquetIdRoute = PrintBanquetIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/setup': typeof SetupRoute
+  '/ai': typeof AppAiRoute
   '/banquets': typeof AppBanquetsRouteWithChildren
   '/dashboard': typeof AppDashboardRoute
   '/integrations': typeof AppIntegrationsRoute
   '/inventory': typeof AppInventoryRoute
+  '/planning': typeof AppPlanningRoute
   '/procurement': typeof AppProcurementRoute
+  '/quality': typeof AppQualityRoute
   '/recipes': typeof AppRecipesRoute
   '/reports': typeof AppReportsRoute
   '/sales': typeof AppSalesRoute
+  '/schedule': typeof AppScheduleRoute
   '/settings': typeof AppSettingsRoute
   '/shifts': typeof AppShiftsRoute
   '/staff': typeof AppStaffRoute
-  '/planning': typeof AppPlanningRoute
-  '/schedule': typeof AppScheduleRoute
-  '/quality': typeof AppQualityRoute
-  '/ai': typeof AppAiRoute
-  '/api/v1/$': typeof ApiV1SplatRoute
   '/banquets/$id': typeof AppBanquetsIdRoute
+  '/api/v1/$': typeof ApiV1SplatRoute
   '/print/banquet/$id': typeof PrintBanquetIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/setup': typeof SetupRoute
+  '/ai': typeof AppAiRoute
   '/banquets': typeof AppBanquetsRouteWithChildren
   '/dashboard': typeof AppDashboardRoute
   '/integrations': typeof AppIntegrationsRoute
   '/inventory': typeof AppInventoryRoute
+  '/planning': typeof AppPlanningRoute
   '/procurement': typeof AppProcurementRoute
+  '/quality': typeof AppQualityRoute
   '/recipes': typeof AppRecipesRoute
   '/reports': typeof AppReportsRoute
   '/sales': typeof AppSalesRoute
+  '/schedule': typeof AppScheduleRoute
   '/settings': typeof AppSettingsRoute
   '/shifts': typeof AppShiftsRoute
   '/staff': typeof AppStaffRoute
-  '/planning': typeof AppPlanningRoute
-  '/schedule': typeof AppScheduleRoute
-  '/quality': typeof AppQualityRoute
-  '/ai': typeof AppAiRoute
-  '/api/v1/$': typeof ApiV1SplatRoute
   '/banquets/$id': typeof AppBanquetsIdRoute
+  '/api/v1/$': typeof ApiV1SplatRoute
   '/print/banquet/$id': typeof PrintBanquetIdRoute
 }
 export interface FileRoutesById {
@@ -185,23 +185,23 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
   '/setup': typeof SetupRoute
+  '/_app/ai': typeof AppAiRoute
   '/_app/banquets': typeof AppBanquetsRouteWithChildren
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/integrations': typeof AppIntegrationsRoute
   '/_app/inventory': typeof AppInventoryRoute
+  '/_app/planning': typeof AppPlanningRoute
   '/_app/procurement': typeof AppProcurementRoute
+  '/_app/quality': typeof AppQualityRoute
   '/_app/recipes': typeof AppRecipesRoute
   '/_app/reports': typeof AppReportsRoute
   '/_app/sales': typeof AppSalesRoute
+  '/_app/schedule': typeof AppScheduleRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/shifts': typeof AppShiftsRoute
   '/_app/staff': typeof AppStaffRoute
-  '/_app/planning': typeof AppPlanningRoute
-  '/_app/schedule': typeof AppScheduleRoute
-  '/_app/quality': typeof AppQualityRoute
-  '/_app/ai': typeof AppAiRoute
-  '/api/v1/$': typeof ApiV1SplatRoute
   '/_app/banquets/$id': typeof AppBanquetsIdRoute
+  '/api/v1/$': typeof ApiV1SplatRoute
   '/print/banquet/$id': typeof PrintBanquetIdRoute
 }
 export interface FileRouteTypes {
@@ -209,68 +209,68 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/setup'
+    | '/ai'
     | '/banquets'
     | '/dashboard'
     | '/integrations'
     | '/inventory'
+    | '/planning'
     | '/procurement'
+    | '/quality'
     | '/recipes'
     | '/reports'
     | '/sales'
+    | '/schedule'
     | '/settings'
     | '/shifts'
     | '/staff'
-    | '/planning'
-    | '/schedule'
-    | '/quality'
-    | '/ai'
-    | '/api/v1/$'
     | '/banquets/$id'
+    | '/api/v1/$'
     | '/print/banquet/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/setup'
+    | '/ai'
     | '/banquets'
     | '/dashboard'
     | '/integrations'
     | '/inventory'
+    | '/planning'
     | '/procurement'
+    | '/quality'
     | '/recipes'
     | '/reports'
     | '/sales'
+    | '/schedule'
     | '/settings'
     | '/shifts'
     | '/staff'
-    | '/planning'
-    | '/schedule'
-    | '/quality'
-    | '/ai'
-    | '/api/v1/$'
     | '/banquets/$id'
+    | '/api/v1/$'
     | '/print/banquet/$id'
   id:
     | '__root__'
     | '/'
     | '/_app'
     | '/setup'
+    | '/_app/ai'
     | '/_app/banquets'
     | '/_app/dashboard'
     | '/_app/integrations'
     | '/_app/inventory'
+    | '/_app/planning'
     | '/_app/procurement'
+    | '/_app/quality'
     | '/_app/recipes'
     | '/_app/reports'
     | '/_app/sales'
+    | '/_app/schedule'
     | '/_app/settings'
     | '/_app/shifts'
     | '/_app/staff'
-    | '/_app/planning'
-    | '/_app/schedule'
-    | '/_app/quality'
-    | '/_app/ai'
-    | '/api/v1/$'
     | '/_app/banquets/$id'
+    | '/api/v1/$'
     | '/print/banquet/$id'
   fileRoutesById: FileRoutesById
 }
@@ -278,8 +278,8 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
   SetupRoute: typeof SetupRoute
-  PrintBanquetIdRoute: typeof PrintBanquetIdRoute
   ApiV1SplatRoute: typeof ApiV1SplatRoute
+  PrintBanquetIdRoute: typeof PrintBanquetIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -304,6 +304,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/setup'
       preLoaderRoute: typeof SetupRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_app/ai': {
+      id: '/_app/ai'
+      path: '/ai'
+      fullPath: '/ai'
+      preLoaderRoute: typeof AppAiRouteImport
+      parentRoute: typeof AppRoute
     }
     '/_app/banquets': {
       id: '/_app/banquets'
@@ -333,11 +340,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppInventoryRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/planning': {
+      id: '/_app/planning'
+      path: '/planning'
+      fullPath: '/planning'
+      preLoaderRoute: typeof AppPlanningRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/procurement': {
       id: '/_app/procurement'
       path: '/procurement'
       fullPath: '/procurement'
       preLoaderRoute: typeof AppProcurementRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/quality': {
+      id: '/_app/quality'
+      path: '/quality'
+      fullPath: '/quality'
+      preLoaderRoute: typeof AppQualityRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/recipes': {
@@ -361,6 +382,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSalesRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/schedule': {
+      id: '/_app/schedule'
+      path: '/schedule'
+      fullPath: '/schedule'
+      preLoaderRoute: typeof AppScheduleRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/settings': {
       id: '/_app/settings'
       path: '/settings'
@@ -382,33 +410,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppStaffRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/planning': {
-      id: '/_app/planning'
-      path: '/planning'
-      fullPath: '/planning'
-      preLoaderRoute: typeof AppPlanningRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/schedule': {
-      id: '/_app/schedule'
-      path: '/schedule'
-      fullPath: '/schedule'
-      preLoaderRoute: typeof AppScheduleRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/quality': {
-      id: '/_app/quality'
-      path: '/quality'
-      fullPath: '/quality'
-      preLoaderRoute: typeof AppQualityRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/ai': {
-      id: '/_app/ai'
-      path: '/ai'
-      fullPath: '/ai'
-      preLoaderRoute: typeof AppAiRouteImport
-      parentRoute: typeof AppRoute
+    '/_app/banquets/$id': {
+      id: '/_app/banquets/$id'
+      path: '/$id'
+      fullPath: '/banquets/$id'
+      preLoaderRoute: typeof AppBanquetsIdRouteImport
+      parentRoute: typeof AppBanquetsRoute
     }
     '/api/v1/$': {
       id: '/api/v1/$'
@@ -416,13 +423,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/v1/$'
       preLoaderRoute: typeof ApiV1SplatRouteImport
       parentRoute: typeof rootRouteImport
-    }
-    '/_app/banquets/$id': {
-      id: '/_app/banquets/$id'
-      path: '/$id'
-      fullPath: '/banquets/$id'
-      preLoaderRoute: typeof AppBanquetsIdRouteImport
-      parentRoute: typeof AppBanquetsRoute
     }
     '/print/banquet/$id': {
       id: '/print/banquet/$id'
@@ -447,39 +447,39 @@ const AppBanquetsRouteWithChildren = AppBanquetsRoute._addFileChildren(
 )
 
 interface AppRouteChildren {
+  AppAiRoute: typeof AppAiRoute
   AppBanquetsRoute: typeof AppBanquetsRouteWithChildren
   AppDashboardRoute: typeof AppDashboardRoute
   AppIntegrationsRoute: typeof AppIntegrationsRoute
   AppInventoryRoute: typeof AppInventoryRoute
+  AppPlanningRoute: typeof AppPlanningRoute
   AppProcurementRoute: typeof AppProcurementRoute
+  AppQualityRoute: typeof AppQualityRoute
   AppRecipesRoute: typeof AppRecipesRoute
   AppReportsRoute: typeof AppReportsRoute
   AppSalesRoute: typeof AppSalesRoute
+  AppScheduleRoute: typeof AppScheduleRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppShiftsRoute: typeof AppShiftsRoute
   AppStaffRoute: typeof AppStaffRoute
-  AppPlanningRoute: typeof AppPlanningRoute
-  AppScheduleRoute: typeof AppScheduleRoute
-  AppQualityRoute: typeof AppQualityRoute
-  AppAiRoute: typeof AppAiRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppAiRoute: AppAiRoute,
   AppBanquetsRoute: AppBanquetsRouteWithChildren,
   AppDashboardRoute: AppDashboardRoute,
   AppIntegrationsRoute: AppIntegrationsRoute,
   AppInventoryRoute: AppInventoryRoute,
+  AppPlanningRoute: AppPlanningRoute,
   AppProcurementRoute: AppProcurementRoute,
+  AppQualityRoute: AppQualityRoute,
   AppRecipesRoute: AppRecipesRoute,
   AppReportsRoute: AppReportsRoute,
   AppSalesRoute: AppSalesRoute,
+  AppScheduleRoute: AppScheduleRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppShiftsRoute: AppShiftsRoute,
   AppStaffRoute: AppStaffRoute,
-  AppPlanningRoute: AppPlanningRoute,
-  AppScheduleRoute: AppScheduleRoute,
-  AppQualityRoute: AppQualityRoute,
-  AppAiRoute: AppAiRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
@@ -488,8 +488,8 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
   SetupRoute: SetupRoute,
-  PrintBanquetIdRoute: PrintBanquetIdRoute,
   ApiV1SplatRoute: ApiV1SplatRoute,
+  PrintBanquetIdRoute: PrintBanquetIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
