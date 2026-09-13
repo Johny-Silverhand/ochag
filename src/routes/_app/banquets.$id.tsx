@@ -11,6 +11,9 @@ import { banquetBalance } from "@/lib/domain/engine";
 import { BANQUET_LABEL, type BanquetStatus } from "@/lib/domain/types";
 import { ruDate, rub } from "@/lib/format";
 import { notify } from "@/lib/notify";
+import { api } from "@/lib/api/client";
+import { downloadBase64 } from "@/lib/reports/download";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_app/banquets/$id")({ component: BanquetDetail });
 
@@ -42,6 +45,22 @@ function BanquetDetail() {
                 Печать комплекта
               </Link>
             </Button>
+            {(["guest", "waiter", "cook", "grill"] as const).map((sheet) => (
+              <Button
+                key={sheet}
+                variant="ghost"
+                onClick={() => {
+                  void api<{ filename: string; base64: string; mime: string }>(
+                    `reports/pdf?kind=banquet&id=${banquet.id}&sheet=${sheet}`,
+                    { method: "GET" },
+                  )
+                    .then((r) => downloadBase64(r.filename, r.base64, r.mime))
+                    .catch((err) => toast.error(err instanceof Error ? err.message : "PDF недоступен"));
+                }}
+              >
+                PDF {sheet === "guest" ? "лист" : sheet === "waiter" ? "зал" : sheet === "cook" ? "кухня" : "мангал"}
+              </Button>
+            ))}
           </div>
         }
       />

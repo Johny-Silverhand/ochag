@@ -1,10 +1,11 @@
 import type { Snapshot } from "../domain/types";
-import { loadOpsSnapshot, resetOpsSnapshot, saveOpsSnapshot } from "@/lib/data/ops";
+import { loadOpsSnapshot, loadSampleOpsSnapshot, resetOpsSnapshot, saveOpsSnapshot } from "@/lib/data/ops";
 
 export interface DataAdapter {
   load(): Promise<Snapshot>;
   save(snapshot: Snapshot): Promise<void>;
   reset(): Promise<Snapshot>;
+  loadSample(): Promise<Snapshot>;
 }
 
 export const dbAdapter: DataAdapter = {
@@ -13,4 +14,5 @@ export const dbAdapter: DataAdapter = {
     await saveOpsSnapshot({ data: snapshot });
   },
   reset: () => resetOpsSnapshot(),
+  loadSample: () => loadSampleOpsSnapshot(),
 };

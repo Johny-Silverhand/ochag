@@ -14,8 +14,9 @@ import type {
   StockLevel,
   StockMovement,
 } from "../domain/types";
-import { TODAY } from "../domain/types";
+import { TODAY, defaultSettings } from "../domain/types";
 import { applyMovement, deductSaleFromStock, payrollForShift, shiftTotals } from "../domain/engine";
+import { freezeSaleCosts } from "../domain/finance";
 
 function mulberry32(seed: number) {
   return () => {
@@ -67,6 +68,7 @@ export const USERS: StaffUser[] = [
     name: "Кирилл Сорокин",
     email: "owner",
     password: "ochag",
+    pin: "1001",
     role: "owner",
     position: "Собственник",
     branchId: null,
@@ -79,6 +81,7 @@ export const USERS: StaffUser[] = [
     name: "Анна Лебедева",
     email: "manager",
     password: "ochag",
+    pin: "2001",
     role: "manager",
     position: "Управляющий",
     branchId: "br-pushkin",
@@ -91,6 +94,7 @@ export const USERS: StaffUser[] = [
     name: "Павел Орлов",
     email: "manager.south",
     password: "ochag",
+    pin: "2002",
     role: "manager",
     position: "Управляющий",
     branchId: "br-south",
@@ -103,6 +107,7 @@ export const USERS: StaffUser[] = [
     name: "Мария Ким",
     email: "manager.emb",
     password: "ochag",
+    pin: "2003",
     role: "manager",
     position: "Управляющий",
     branchId: "br-embank",
@@ -115,6 +120,7 @@ export const USERS: StaffUser[] = [
     name: "Денис Жуков",
     email: "cook",
     password: "ochag",
+    pin: "3001",
     role: "cook",
     position: "Шеф-повар",
     branchId: "br-pushkin",
@@ -127,6 +133,7 @@ export const USERS: StaffUser[] = [
     name: "Игорь Савельев",
     email: "grill",
     password: "ochag",
+    pin: "3002",
     role: "cook",
     position: "Шашлычник",
     branchId: "br-pushkin",
@@ -139,6 +146,7 @@ export const USERS: StaffUser[] = [
     name: "Роман Белов",
     email: "cook.south",
     password: "ochag",
+    pin: "3003",
     role: "cook",
     position: "Повар",
     branchId: "br-south",
@@ -151,6 +159,7 @@ export const USERS: StaffUser[] = [
     name: "Алина Петрова",
     email: "waiter",
     password: "ochag",
+    pin: "4001",
     role: "waiter",
     position: "Официант",
     branchId: "br-pushkin",
@@ -163,6 +172,7 @@ export const USERS: StaffUser[] = [
     name: "Никита Волков",
     email: "waiter2",
     password: "ochag",
+    pin: "4002",
     role: "waiter",
     position: "Официант",
     branchId: "br-pushkin",
@@ -175,6 +185,7 @@ export const USERS: StaffUser[] = [
     name: "Елена Кравец",
     email: "waiter.south",
     password: "ochag",
+    pin: "4003",
     role: "waiter",
     position: "Официант",
     branchId: "br-south",
@@ -187,6 +198,7 @@ export const USERS: StaffUser[] = [
     name: "Дарья Новикова",
     email: "waiter.emb",
     password: "ochag",
+    pin: "4004",
     role: "waiter",
     position: "Официант",
     branchId: "br-embank",
@@ -199,6 +211,7 @@ export const USERS: StaffUser[] = [
     name: "Артём Шилов",
     email: "grill.emb",
     password: "ochag",
+    pin: "3004",
     role: "cook",
     position: "Шашлычник",
     branchId: "br-embank",
@@ -430,6 +443,22 @@ export function createSeed(): Snapshot {
       userId: MANAGERS[br.id] ?? "u-owner",
     };
     invoices.push(inv);
+    if (br.id === "br-south") {
+      const pork = PRODUCTS.find((p) => p.id === "prd-pork");
+      if (pork) {
+        const upPrice = Math.round(pork.avgCost * 1.14);
+        invoices.push({
+          id: "inv-south-pork-up",
+          number: "НФ-ЮГ-2410",
+          branchId: "br-south",
+          supplier: "Кубанский двор",
+          date: addDays(TODAY, -2),
+          lines: [{ productId: pork.id, qty: 8, price: upPrice }],
+          total: 8 * upPrice,
+          userId: "u-mgr-s",
+        });
+      }
+    }
     for (const line of lines) {
       const mov: StockMovement = {
         id: `m-open-${br.id}-${line.productId}`,
@@ -469,6 +498,7 @@ export function createSeed(): Snapshot {
           category: "Аренда",
           amount: opex.rent,
           note: "Доля аренды за день",
+          kind: "fixed",
         },
         {
           id: `exp-${br.id}-${day}-u`,
@@ -477,6 +507,7 @@ export function createSeed(): Snapshot {
           category: "Коммунальные",
           amount: opex.util,
           note: "Электричество, газ, вода",
+          kind: "fixed",
         },
       );
 
@@ -496,6 +527,7 @@ export function createSeed(): Snapshot {
         cardTotal: 0,
         qrTotal: 0,
         staffIds: STAFF_ON[br.id] ?? [],
+        startList: RECIPES.map((r) => r.id),
       };
 
       const nChecks = int(weekend ? 16 : 11, weekend ? 24 : 18) + (br.id === "br-embank" ? 4 : 0);
@@ -505,11 +537,11 @@ export function createSeed(): Snapshot {
         const hour = 12 + Math.floor((i / nChecks) * 10);
         const minute = int(0, 59);
         const itemCount = int(2, 5);
-        const items = [];
+        const rawItems = [];
         for (let k = 0; k < itemCount; k++) {
           const recipe = pick(RECIPES);
           const qty = recipe.category === "Напитки" || recipe.category === "Бар" ? int(1, 3) : 1;
-          items.push({
+          rawItems.push({
             recipeId: recipe.id,
             name: recipe.name,
             qty,
@@ -517,6 +549,7 @@ export function createSeed(): Snapshot {
             sum: recipe.price * qty,
           });
         }
+        const items = freezeSaleCosts(rawItems, RECIPES, PRODUCTS, stock, br.id);
         const total = items.reduce((s, it) => s + it.sum, 0);
         const method = rng() < 0.38 ? "cash" : rng() < 0.82 ? "card" : "qr";
         const sale: Sale = {
@@ -804,14 +837,103 @@ export function createSeed(): Snapshot {
           factQty: p.id === "prd-pork" ? 16.4 : 20,
         })),
       },
+      {
+        id: "rev-south-2",
+        branchId: "br-south",
+        date: TODAY,
+        status: "done",
+        userId: "u-mgr-s",
+        note: "Закрытие периода",
+        lines: PRODUCTS.slice(0, 8).map((p) => ({
+          productId: p.id,
+          bookQty: 18,
+          factQty: p.id === "prd-pork" ? 14.1 : p.id === "prd-greens" ? 12 : 18,
+        })),
+      },
+    ],
+    suppliers: [
+      { id: "sup-meat", name: "Кубанский двор", email: "zakaz@kuban.example", telegram: "@kuban_opt", channel: "telegram" },
+      { id: "sup-drink", name: "Юг-напитки", email: "opt@yug.example", telegram: "", channel: "email" },
+    ],
+    closedPeriods: [],
+    debts: (() => {
+      const yest = addDays(TODAY, -1);
+      const southYest = shifts.find((s) => s.branchId === "br-south" && s.date === yest && s.status === "closed");
+      const amount = southYest && (southYest.discrepancy ?? 0) < 0 ? Math.abs(southYest.discrepancy ?? 0) : 800;
+      return [
+        {
+          id: "debt-south-1",
+          branchId: "br-south",
+          fromShiftId: southYest?.id ?? shifts.find((s) => s.branchId === "br-south")?.id ?? "sh-south",
+          date: yest,
+          amount,
+          status: "open" as const,
+          note: "Недостача к утреннему довнесению",
+        },
+      ];
+    })(),
+    payrollAdjustments: [
+      {
+        id: "adj-1",
+        userId: "u-wait-p",
+        branchId: "br-pushkin",
+        date: TODAY,
+        kind: "fine",
+        amount: 500,
+        note: "Опоздание",
+        createdBy: "u-mgr-p",
+      },
+    ],
+    revenuePlans: BRANCHES.map((b) => ({
+      id: `plan-${b.id}`,
+      branchId: b.id,
+      month: TODAY.slice(0, 7),
+      target: b.id === "br-embank" ? 900000 : 720000,
+    })),
+    audit: [],
+    outbox: [],
+    pushSubs: [],
+    settings: { ...defaultSettings(), sampleLoaded: true, keeperCashLink: false },
+    stopList: [
+      {
+        id: "sl-south-lyulya",
+        branchId: "br-south",
+        recipeId: "rcp-lyulya",
+        reason: "no_stock",
+        note: "Баранина на стопе до поставки",
+        createdAt: atHour(TODAY, 11, 20),
+        createdBy: "u-cook-s",
+      },
+      {
+        id: "sl-south-pork-old",
+        branchId: "br-south",
+        recipeId: "rcp-pork",
+        reason: "quality",
+        note: "Партия шеи — запах",
+        createdAt: atHour(addDays(TODAY, -18), 12, 10),
+        createdBy: "u-cook-s",
+        clearedAt: atHour(addDays(TODAY, -17), 9, 40),
+        clearedBy: "u-mgr-s",
+      },
+      {
+        id: "sl-push-salad",
+        branchId: "br-pushkin",
+        recipeId: "rcp-salad",
+        reason: "no_stock",
+        note: "Зелень до поставки",
+        createdAt: atHour(addDays(TODAY, -6), 14, 0),
+        createdBy: "u-cook-p",
+        clearedAt: atHour(addDays(TODAY, -5), 11, 0),
+        clearedBy: "u-mgr-p",
+      },
     ],
   };
 }
 
 export const DEMO_ACCOUNTS = [
-  { email: "owner", role: "Владелец", name: "Кирилл Сорокин", hint: "Все филиалы, финансы, интеграции" },
-  { email: "manager", role: "Управляющий", name: "Анна Лебедева", hint: "Пушкина: смена, закупки, банкеты" },
-  { email: "cook", role: "Повар", name: "Денис Жуков", hint: "Склад, техкарты, списания" },
-  { email: "waiter", role: "Официант", name: "Алина Петрова", hint: "Чеки, своя смена, банкет в зале" },
+  { email: "owner", role: "Владелец", name: "Кирилл Сорокин", hint: "Все филиалы, финансы, интеграции", pin: "1001" },
+  { email: "manager", role: "Управляющий", name: "Анна Лебедева", hint: "Пушкина: смена, закупки, банкеты", pin: "2001" },
+  { email: "cook", role: "Повар", name: "Денис Жуков", hint: "Склад, техкарты, списания", pin: "3001" },
+  { email: "waiter", role: "Официант", name: "Алина Петрова", hint: "Чеки, своя смена, банкет в зале", pin: "4001" },
 ] as const;
 

@@ -27,7 +27,7 @@ import {
   topDishes,
 } from "@/lib/domain/engine";
 import type { Insight, Period } from "@/lib/domain/types";
-import { TODAY } from "@/lib/domain/types";
+import { today } from "@/lib/domain/types";
 import { pct, ruDate, rub } from "@/lib/format";
 import { useOps, useSessionUser } from "@/lib/data/store";
 import { usePrefs } from "@/lib/prefs";
@@ -49,8 +49,8 @@ function DashboardPage() {
 
   const kpis = useMemo(() => computeKpis(snap, { period, branchId: scope }), [snap, period, scope]);
   const from = periodStart(period);
-  const sales = filterPeriod(filterByBranch(snap.sales, scope), from, TODAY);
-  const series = dailyRevenue(sales, from, TODAY);
+  const sales = filterPeriod(filterByBranch(snap.sales, scope), from, today());
+  const series = dailyRevenue(sales, from, today());
   const compare = branchCompare(snap, period);
   const dishes = topDishes(sales, 5);
   const alerts = scope === "all"

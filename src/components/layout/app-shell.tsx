@@ -11,7 +11,11 @@ import {
   Plug,
   Receipt,
   Settings,
+  ShieldCheck,
   ShoppingCart,
+  Sparkles,
+  CalendarClock,
+  LineChart,
   Users,
   Wallet,
 } from "lucide-react";
@@ -43,6 +47,10 @@ const NAV: NavItem[] = [
   { to: "/banquets", label: "Банкеты", icon: CalendarDays, module: "banquets" },
   { to: "/staff", label: "Сотрудники", icon: Users, module: "staff" },
   { to: "/reports", label: "Отчёты", icon: ClipboardList, module: "reports" },
+  { to: "/planning", label: "Аналитика", icon: LineChart, module: "planning" },
+  { to: "/schedule", label: "Период", icon: CalendarClock, module: "schedule" },
+  { to: "/quality", label: "Журналы", icon: ShieldCheck, module: "quality" },
+  { to: "/ai", label: "AI", icon: Sparkles, module: "ai" },
   { to: "/integrations", label: "Интеграции", icon: Plug, module: "integrations" },
 ];
 
@@ -206,7 +214,13 @@ export function AppShell() {
                 "hidden items-center gap-1.5 rounded-full px-2 py-1 text-[11px] sm:inline-flex",
                 sync.status === "error" ? "bg-danger-soft text-danger" : "bg-surface text-muted",
               )}
-              title={sync.source === "neon" ? "Neon Postgres" : "Postgres"}
+              title={
+                sync.source === "neon"
+                  ? "Neon Postgres"
+                  : sync.source === "json"
+                    ? "JSON store"
+                    : "Память / контур"
+              }
             >
               <span
                 className={cn(
@@ -235,7 +249,11 @@ export function AppShell() {
         </header>
         <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 py-5 sm:px-6 sm:py-6 md:min-h-0 md:overflow-y-auto md:scroll-touch">
           <div className="flex-1">
-            <Outlet />
+            {current && !can(role, current.module) ? (
+              <p className="text-sm text-muted">Раздел закрыт для вашей роли. Прямой адрес не открывает чужие модули.</p>
+            ) : (
+              <Outlet />
+            )}
           </div>
           <LabsFooter className="mt-12 mb-1" />
         </main>

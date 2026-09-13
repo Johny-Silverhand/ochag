@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RK7Query>
+  <Command>
+    <ZReport date="2026-09-02" cash="860" card="1380">
+      <Receipt number="K-9001" datetime="2026-09-02T14:10:00" pay="card" sum="1380">
+        <Item name="Шашлык из свинины" qty="2" sum="1380"/>
+      </Receipt>
+      <Receipt number="K-9002" datetime="2026-09-02T14:22:00" pay="cash" sum="860">
+        <Item name="Курица на гриле" qty="1" sum="490"/>
+        <Item name="Салат свежий" qty="1" sum="250"/>
+        <Item name="Лаваш" qty="1" sum="70"/>
+        <Item name="Газировка 0.5" qty="1" sum="50"/>
+      </Receipt>
+    </ZReport>
+  </Command>
+</RK7Query>

@@ -16,10 +16,12 @@ export const Route = createFileRoute("/_app/integrations")({ component: Integrat
 
 function IntegrationsPage() {
   const resetDemo = useOps((s) => s.resetDemo);
+  const loadSample = useOps((s) => s.loadSample);
+  const logout = useOps((s) => s.logout);
   const sync = useSync();
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<{
-    source: "neon" | "pglite";
+    source: "neon" | "pglite" | "memory" | "json";
     ready: boolean;
     updatedAt: string | null;
     sales: number;
@@ -32,7 +34,14 @@ function IntegrationsPage() {
   }, [sync.updatedAt]);
 
   const source = status?.source ?? sync.source;
-  const dbLive = source === "neon" ? "Neon Postgres" : "Postgres (локальный контур)";
+  const dbLive =
+    source === "neon"
+      ? "Neon Postgres"
+      : source === "json"
+        ? "JSON-файл"
+        : source === "memory"
+          ? "Память процесса"
+          : "Postgres (локальный контур)";
 
   return (
     <div>
@@ -49,8 +58,8 @@ function IntegrationsPage() {
               <div className="text-xs tracking-wide text-muted uppercase">База</div>
               <h2 className="mt-1 text-lg font-medium">{dbLive}</h2>
               <p className="mt-2 max-w-xl text-sm text-muted">
-                Склад, чеки, смены и банкеты пишутся в Postgres. На проде это Neon; в превью — тот же движок, чтобы
-                ничего не расходилось.
+                Склад и касса живут в репозитории без живого Postgres. Миграции уже лежат в проекте — DATABASE_URL
+                подключите позже, без переписывания контура.
               </p>
             </div>
             <Badge tone={status?.ready || sync.status === "ok" ? "success" : "warning"}>
@@ -113,22 +122,40 @@ function IntegrationsPage() {
 
         <Card className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="text-sm font-medium">Стартовый срез</div>
-            <p className="text-sm text-muted">Вернуть сеть «Очаг» к срезу 2 сентября 2026. Текущие правки в базе заменятся.</p>
+            <div className="text-sm font-medium">Учебная сеть</div>
+            <p className="text-sm text-muted">Явная загрузка примера для приёмки. Очистка возвращает пустой контур.</p>
           </div>
-          <Button
-            variant="secondary"
-            disabled={busy}
-            onClick={() => {
-              setBusy(true);
-              void resetDemo()
-                .then(() => toast.success("Срез восстановлен"))
-                .catch(() => toast.error("Не удалось записать в базу"))
-                .finally(() => setBusy(false));
-            }}
-          >
-            Восстановить срез
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              disabled={busy}
+              onClick={() => {
+                setBusy(true);
+                void loadSample()
+                  .then(() => {
+                    logout();
+                    toast.success("Учебная сеть загружена — войдите owner / ochag");
+                  })
+                  .catch(() => toast.error("Не удалось загрузить пример"))
+                  .finally(() => setBusy(false));
+              }}
+            >
+              Загрузить пример
+            </Button>
+            <Button
+              variant="ghost"
+              disabled={busy}
+              onClick={() => {
+                setBusy(true);
+                void resetDemo()
+                  .then(() => toast.success("Сеть очищена"))
+                  .catch(() => toast.error("Не удалось записать в базу"))
+                  .finally(() => setBusy(false));
+              }}
+            >
+              Очистить
+            </Button>
+          </div>
         </Card>
       </div>
     </div>

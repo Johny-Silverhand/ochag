@@ -25,7 +25,7 @@ import { IosInstallCard, useIosInstall } from "@/components/ios/runtime";
 import { downloadWebClip } from "@/lib/ios-profile";
 import { APP_NAME, APP_VERSION, LABS_NAME, LABS_YEAR, SETUP_EXE } from "@/lib/brand";
 import { useActiveBranch, useOps, useSessionUser } from "@/lib/data/store";
-import { ROLE_LABEL, WRITEOFF_LABEL, type Period, type Role, type WriteoffReason } from "@/lib/domain/types";
+import { NOTIFY_EVENT_LABEL, ROLE_LABEL, WRITEOFF_LABEL, type NotifyEvent, type Period, type Role, type WriteoffReason } from "@/lib/domain/types";
 import { usePrefs } from "@/lib/prefs";
 import { applyThemeChrome, THEMES, type ThemeId } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -358,8 +358,12 @@ function AlertsPanel({ role }: { role: Role }) {
   const showStock = role !== "waiter";
   const showPayroll = role === "owner" || role === "manager";
   const showWriteoff = role !== "waiter";
+  const snap = useOps((s) => s);
+  const updateSettings = useOps((s) => s.updateSettings);
+  const canNet = role === "owner" || role === "manager";
 
   return (
+    <div className="space-y-4">
     <Card>
       <h2 className="text-sm font-medium tracking-tight">Что приходит в контур</h2>
       <p className="mt-1 text-sm text-muted">Сигналы на обзоре и в тостах. На этом срезе они живут в устройстве, без сервера.</p>
@@ -390,6 +394,39 @@ function AlertsPanel({ role }: { role: Role }) {
         </PrefRow>
       </div>
     </Card>
+    {canNet ? (
+      <Card>
+        <h2 className="text-sm font-medium tracking-tight">Канал сети</h2>
+        <p className="mt-1 text-sm text-muted">
+          Telegram или Web Push в момент события. Нет ключей — запись `failed` в очереди, не тихий успех.
+        </p>
+        <div className="mt-4 max-w-xs">
+          <Field label="Куда слать">
+            <NativeSelect
+              value={snap.settings.notifyChannel}
+              onChange={(e) => updateSettings({ notifyChannel: e.target.value as "telegram" | "webpush" | "both" })}
+            >
+              <option value="telegram">Telegram</option>
+              <option value="webpush">Web Push</option>
+              <option value="both">Оба</option>
+            </NativeSelect>
+          </Field>
+        </div>
+        <div className="mt-3 divide-y divide-border">
+          {(Object.keys(NOTIFY_EVENT_LABEL) as NotifyEvent[]).map((ev) => (
+            <PrefRow key={ev} title={NOTIFY_EVENT_LABEL[ev]} hint="В очередь в момент события.">
+              <Switch
+                checked={snap.settings.notifyEvents[ev] !== false}
+                onCheckedChange={(v) =>
+                  updateSettings({ notifyEvents: { ...snap.settings.notifyEvents, [ev]: v } })
+                }
+              />
+            </PrefRow>
+          ))}
+        </div>
+      </Card>
+    ) : null}
+    </div>
   );
 }
 
@@ -458,6 +495,11 @@ function WorkspacePanel({ role }: { role: Role }) {
   const branches = useOps((s) => s.branches);
   const users = useOps((s) => s.users);
   const resetDemo = useOps((s) => s.resetDemo);
+  const loadSample = useOps((s) => s.loadSample);
+  const updateSettings = useOps((s) => s.updateSettings);
+  const flushNotify = useOps((s) => s.flushNotify);
+  const logout = useOps((s) => s.logout);
+  const navigate = useNavigate();
   const snap = useOps((s) => s);
   const period = usePrefs((s) => s.defaultPeriod);
   const setDefaultPeriod = usePrefs((s) => s.setDefaultPeriod);
@@ -552,22 +594,73 @@ function WorkspacePanel({ role }: { role: Role }) {
         </div>
       </Card>
       <Card>
+        <h2 className="text-sm font-medium tracking-tight">Касса и кипер</h2>
+        <p className="mt-1 text-sm text-muted">
+          Если связь с кипером включена, ручной чек закрыт. Z-отчёт и XML остаются. По умолчанию связь включена — так безопаснее в зале.
+        </p>
+        <div className="mt-3 divide-y divide-border">
+          <PrefRow title="Кассовая связь с кипером" hint="Выключите, только если зал бьёт чеки вручную.">
+            <Switch
+              checked={snap.settings.keeperCashLink}
+              onCheckedChange={(v) => updateSettings({ keeperCashLink: v })}
+            />
+          </PrefRow>
+        </div>
+      </Card>
+      <Card>
+        <h2 className="text-sm font-medium tracking-tight">Очередь сигналов</h2>
+        <p className="mt-1 text-sm text-muted">
+          Telegram / email / webpush. Без ключей в окружении запись падает в очередь с ошибкой — тихих заглушек нет.
+        </p>
+        <ul className="mt-3 max-h-40 space-y-1 overflow-auto text-xs">
+          {snap.outbox.slice(0, 12).map((o) => (
+            <li key={o.id} className="flex justify-between gap-2">
+              <span>
+                {o.title} · {o.channel} · {o.status}
+                {o.error ? <span className="ml-1 text-danger">{o.error}</span> : null}
+              </span>
+            </li>
+          ))}
+          {snap.outbox.length === 0 ? <li className="text-muted">Пусто</li> : null}
+        </ul>
+        <Button type="button" variant="secondary" className="mt-3" onClick={() => void flushNotify()}>
+          Повторить отправку
+        </Button>
+      </Card>
+      <Card>
         <h2 className="text-sm font-medium tracking-tight">Данные</h2>
-        <p className="mt-1 text-sm text-muted">Выгрузка без паролей. Восстановление возвращает сеть «Очаг» к срезу 2 сентября 2026 и записывает его в базу.</p>
+        <p className="mt-1 text-sm text-muted">
+          Живая сеть пустая, пока вы её не создали. Учебный срез — явная кнопка для приёмки, не основной вход.
+        </p>
         <div className="mt-4 flex flex-wrap gap-2">
           <Button type="button" variant="secondary" onClick={exportJson}>
             Выгрузить JSON
           </Button>
+          {role === "owner" ? (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                void loadSample().then(() => {
+                  logout();
+                  void navigate({ to: "/" });
+                  toast.success("Учебная сеть загружена — войдите owner / ochag");
+                });
+              }}
+            >
+              Загрузить учебную сеть
+            </Button>
+          ) : null}
           {canResetDemo(role) ? (
             <Button type="button" variant="danger" onClick={() => setConfirmReset(true)}>
-              Восстановить срез
+              Очистить сеть
             </Button>
           ) : null}
         </div>
       </Card>
       <Dialog open={confirmReset} onOpenChange={setConfirmReset}>
-        <DialogContent title="Восстановить стартовый срез?">
-          <p className="text-sm text-muted">Чеки, списания и банкеты, которые вы внесли, заменятся исходным срезом сети. Тема на этом устройстве останется.</p>
+        <DialogContent title="Очистить сеть?">
+          <p className="text-sm text-muted">Все чеки, смены и сотрудники будут удалены. Останется пустой контур — создайте сеть заново на входе.</p>
           <div className="mt-5 flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={() => setConfirmReset(false)}>
               Отмена
@@ -578,7 +671,7 @@ function WorkspacePanel({ role }: { role: Role }) {
               onClick={() => {
                 void resetDemo().then(() => {
                   setConfirmReset(false);
-                  toast.success("Срез восстановлен");
+                  toast.success("Сеть очищена");
                 });
               }}
             >

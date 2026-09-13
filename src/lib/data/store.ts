@@ -1,40 +1,77 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import type {
   Banquet,
   BanquetStatus,
+  ExpenseKind,
   InvoiceLine,
+  PayrollAdjKind,
   Period,
-  PurchaseLine,
+  Recipe,
   RequestStatus,
   RevisionLine,
   SaleItem,
   Snapshot,
+  StopListReason,
   WriteoffReason,
 } from "../domain/types";
-import { TODAY, type Session } from "../domain/types";
+import { type Session } from "../domain/types";
+import { actorFrom, type Actor } from "../authz/actor";
 import {
-  applyMovement,
-  deductSaleFromStock,
-  needToBuy,
-  openShiftFor,
-  payrollForShift,
-  shiftTotals,
-} from "../domain/engine";
-import { createSeed } from "./seed";
+  applyBanquet,
+  applyBanquetStatus,
+  applyCloseShift,
+  applyExpense,
+  applyImportProducts,
+  applyInviteStaff,
+  applyInvoice,
+  applyKeeperSales,
+  applyManualSale,
+  applyOnboard,
+  applyOpenShift,
+  applyProfile,
+  applyRequestFromNeed,
+  applyClosePeriod,
+  applyPayrollAdjustment,
+  applyRequestStatus,
+  applyRevenuePlan,
+  applyRevision,
+  applySettings,
+  applyStopList,
+  applyTopUpDebt,
+  applyTransfer,
+  applyUpsertRecipe,
+  applyWriteoff,
+} from "../domain/mutations";
+import { emptySnapshot, isOnboarded } from "./empty";
+import { normalizeSnapshot } from "./normalize";
 import { dbAdapter } from "./adapter";
 import { getOpsStatus } from "@/lib/data/ops";
 import { useSync } from "./sync";
-import { uid } from "../utils";
+import { api, setToken } from "../api/client";
+import { mapKeeperReceipts } from "../integrations/keeper";
+import { parseKeeperXml } from "../integrations/keeper-xml";
 
 export type BranchFilter = string | "all";
 
 interface OpsState extends Snapshot {
   session: Session | null;
   period: Period;
-  login: (email: string, password: string) => boolean;
-  loginAs: (email: string) => boolean;
+  login: (email: string, password: string) => Promise<boolean>;
+  loginPin: (email: string, pin: string) => Promise<boolean>;
+  loginAs: (email: string) => Promise<boolean>;
+  onboard: (input: {
+    ownerName: string;
+    login: string;
+    password: string;
+    pin: string;
+    branchName: string;
+    city: string;
+    address: string;
+  }) => Promise<void>;
+  loadSample: () => Promise<void>;
   logout: () => void;
   setBranch: (branchId: string) => void;
   setPeriod: (period: Period) => void;
@@ -48,63 +85,133 @@ interface OpsState extends Snapshot {
   }) => void;
   addInvoice: (input: { supplier: string; number: string; date: string; lines: InvoiceLine[] }) => void;
   createRequestFromNeed: () => void;
-  setRequestStatus: (id: string, status: RequestStatus) => void;
-  openShift: (input: { openCash: number; staffIds: string[] }) => void;
+  setRequestStatus: (id: string, status: RequestStatus, supplierId?: string) => void;
+  openShift: (input: {
+    openCash: number;
+    staffIds: string[];
+    startList: string[];
+    topUpDebtId?: string;
+    topUpAmount?: number;
+  }) => void;
   closeShift: (input: { closeCash: number; note?: string }) => void;
-  addManualSale: (items: SaleItem[], payment: "cash" | "card" | "qr") => void;
-  importKeeperSales: (sales: Omit<Snapshot["sales"][number], "shiftId" | "id" | "number" | "branchId">[]) => number;
+  topUpDebt: (debtId: string) => void;
+  closePeriod: (input: { from: string; to: string; revisionId: string }) => void;
+  adjustPayroll: (input: { userId: string; kind: PayrollAdjKind; amount: number; note: string; date?: string }) => void;
+  setPlan: (input: { branchId: string; month: string; target: number }) => void;
+  addManualSale: (items: Omit<SaleItem, "costAtSale">[], payment: "cash" | "card" | "qr") => void;
+  importKeeperSales: (
+    sales: Array<
+      Omit<Snapshot["sales"][number], "shiftId" | "id" | "number" | "branchId" | "items"> & {
+        items: Omit<SaleItem, "costAtSale">[];
+      }
+    >,
+  ) => number;
+  importKeeperXml: (xml: string) => void;
   upsertBanquet: (b: Banquet) => void;
   setBanquetStatus: (id: string, status: BanquetStatus) => void;
   completeRevision: (lines: RevisionLine[], note?: string) => void;
+  transferStock: (input: {
+    fromBranchId: string;
+    toBranchId: string;
+    productId: string;
+    qty: number;
+    note?: string;
+  }) => void;
+  setStopList: (input: { recipeId: string; reason: StopListReason; note?: string; clear?: boolean }) => void;
+  addExpense: (input: { category: string; amount: number; note?: string; kind: ExpenseKind; date?: string }) => void;
+  upsertRecipe: (recipe: Recipe) => void;
+  importProducts: (
+    rows: Array<{ name: string; category: string; unit: Snapshot["products"][number]["unit"]; minQty: number; avgCost: number }>,
+  ) => void;
+  inviteStaff: (input: {
+    name: string;
+    login: string;
+    password: string;
+    pin: string;
+    role: Snapshot["users"][number]["role"];
+    branchId: string;
+    shiftPay: number;
+    salesPercent: number;
+    position?: string;
+    phone?: string;
+  }) => void;
+  updateSettings: (patch: Partial<Snapshot["settings"]>) => void;
+  flushNotify: () => Promise<void>;
 }
 
-function writeBranch(s: { session: Session | null; branches: Snapshot["branches"] }) {
-  const id = s.session?.branchId;
-  if (!id || id === "all") return s.branches[0]?.id ?? "br-pushkin";
-  return id;
+function actorOf(s: { session: Session | null; users: Snapshot["users"] }): Actor | null {
+  if (!s.session) return null;
+  const user = s.users.find((u) => u.id === s.session?.userId);
+  if (!user) return null;
+  return actorFrom(user, s.session);
 }
 
-function snapshotOf(s: OpsState): Snapshot {
-  return {
-    branches: s.branches,
-    users: s.users,
-    products: s.products,
-    recipes: s.recipes,
-    stock: s.stock,
-    movements: s.movements,
-    invoices: s.invoices,
-    sales: s.sales,
-    shifts: s.shifts,
-    requests: s.requests,
-    banquets: s.banquets,
-    expenses: s.expenses,
-    payroll: s.payroll,
-    revisions: s.revisions,
-  };
+async function applyRemote(path: string, body: unknown, local: (snap: Snapshot, actor: Actor) => Snapshot) {
+  const session = useOps.getState().session;
+  try {
+    const res = await api<{ state: Snapshot }>(path, { method: "POST", body });
+    applyingRemote = true;
+    useOps.setState((s) => ({ ...s, ...res.state, session: session ?? s.session }));
+    applyingRemote = false;
+  } catch (err) {
+    const s = useOps.getState();
+    const actor = actorOf(s);
+    if (!actor) {
+      toast.error(err instanceof Error ? err.message : "Нужен вход");
+      return;
+    }
+    try {
+      const next = local(snapshotOf(s), actor);
+      useOps.setState({ ...next });
+    } catch (localErr) {
+      toast.error(localErr instanceof Error ? localErr.message : err instanceof Error ? err.message : "Операция отклонена");
+    }
+  }
 }
 
-function withSeed(): Omit<
-  OpsState,
-  | "login"
-  | "loginAs"
-  | "logout"
-  | "setBranch"
-  | "setPeriod"
-  | "resetDemo"
-  | "updateProfile"
-  | "addWriteoff"
-  | "addInvoice"
-  | "createRequestFromNeed"
-  | "setRequestStatus"
-  | "openShift"
-  | "closeShift"
-  | "addManualSale"
-  | "importKeeperSales"
-  | "upsertBanquet"
-  | "setBanquetStatus"
-  | "completeRevision"
-> {
-  return { ...createSeed(), session: null, period: "7d" };
+function snapshotOf(s: OpsState | Snapshot): Snapshot {
+  return normalizeSnapshot(s);
+}
+
+const ACTION_KEYS = [
+  "login",
+  "loginPin",
+  "loginAs",
+  "onboard",
+  "loadSample",
+  "logout",
+  "setBranch",
+  "setPeriod",
+  "resetDemo",
+  "updateProfile",
+  "addWriteoff",
+  "addInvoice",
+  "createRequestFromNeed",
+  "setRequestStatus",
+  "openShift",
+  "closeShift",
+  "topUpDebt",
+  "closePeriod",
+  "adjustPayroll",
+  "setPlan",
+  "addManualSale",
+  "importKeeperSales",
+  "importKeeperXml",
+  "upsertBanquet",
+  "setBanquetStatus",
+  "completeRevision",
+  "transferStock",
+  "setStopList",
+  "addExpense",
+  "upsertRecipe",
+  "importProducts",
+  "inviteStaff",
+  "updateSettings",
+  "flushNotify",
+] as const;
+
+function withEmpty(): Omit<OpsState, (typeof ACTION_KEYS)[number]> {
+  return { ...emptySnapshot(), session: null, period: "7d" };
 }
 
 let applyingRemote = false;
@@ -114,352 +221,234 @@ let saveTimer: ReturnType<typeof setTimeout> | undefined;
 export const useOps = create<OpsState>()(
   persist(
     (set, get) => ({
-      ...withSeed(),
+      ...withEmpty(),
 
-      login: (email, password) => {
-        const user = get().users.find(
-          (u) => u.email.toLowerCase() === email.trim().toLowerCase() && u.password === password,
-        );
-        if (!user) return false;
-        const branchId = user.branchId ?? "all";
-        set({ session: { userId: user.id, branchId } });
-        return true;
+      login: async (email, password) => {
+        try {
+          const res = await api<{ user: { userId: string; branchId: string }; state: Snapshot }>("auth/login", {
+            method: "POST",
+            body: { login: email, password },
+          });
+          applyingRemote = true;
+          set({ ...res.state, session: { userId: res.user.userId, branchId: res.user.branchId } });
+          applyingRemote = false;
+          return true;
+        } catch {
+          const user = get().users.find(
+            (u) => u.email.toLowerCase() === email.trim().toLowerCase() && u.password === password,
+          );
+          if (!user) return false;
+          set({ session: { userId: user.id, branchId: user.branchId ?? "all" } });
+          return true;
+        }
       },
 
-      loginAs: (email) => {
-        const user = get().users.find((u) => u.email === email);
-        if (!user) return false;
-        const branchId = user.branchId ?? "all";
-        set({ session: { userId: user.id, branchId } });
-        return true;
+      loginPin: async (email, pin) => {
+        try {
+          const res = await api<{ user: { userId: string; branchId: string }; state: Snapshot }>("auth/pin", {
+            method: "POST",
+            body: { login: email, pin },
+          });
+          applyingRemote = true;
+          set({ ...res.state, session: { userId: res.user.userId, branchId: res.user.branchId } });
+          applyingRemote = false;
+          return true;
+        } catch {
+          const user = get().users.find(
+            (u) => u.email.toLowerCase() === email.trim().toLowerCase() && u.pin === pin,
+          );
+          if (!user) return false;
+          set({ session: { userId: user.id, branchId: user.branchId ?? "all" } });
+          return true;
+        }
       },
 
-      logout: () => set({ session: null }),
+      loginAs: async (email) => get().login(email, "ochag"),
+
+      onboard: async (input) => {
+        try {
+          const res = await api<{ user: { userId: string; branchId: string }; state: Snapshot }>("auth/onboard", {
+            method: "POST",
+            body: input,
+          });
+          applyingRemote = true;
+          set({ ...res.state, session: { userId: res.user.userId, branchId: res.user.branchId } });
+          applyingRemote = false;
+        } catch (err) {
+          try {
+            const next = applyOnboard(snapshotOf(get()), input);
+            const owner = next.users[0]!;
+            applyingRemote = true;
+            set({ ...next, session: { userId: owner.id, branchId: next.branches[0]?.id ?? "all" } });
+            applyingRemote = false;
+            void dbAdapter.save(next);
+          } catch (localErr) {
+            throw localErr instanceof Error ? localErr : err;
+          }
+        }
+      },
+
+      loadSample: async () => {
+        try {
+          const res = await api<{ state: Snapshot }>("state/sample", { method: "POST" });
+          setToken(null);
+          applyingRemote = true;
+          set({ ...res.state, session: null });
+          applyingRemote = false;
+        } catch {
+          const snap = await dbAdapter.loadSample();
+          setToken(null);
+          applyingRemote = true;
+          set({ ...snap, session: null });
+          applyingRemote = false;
+        }
+      },
+
+      logout: () => {
+        setToken(null);
+        set({ session: null });
+      },
 
       setBranch: (branchId) => {
         const session = get().session;
         if (!session) return;
         set({ session: { ...session, branchId } });
+        void api("session/branch", { method: "POST", body: { branchId } }).catch(() => undefined);
       },
 
       setPeriod: (period) => set({ period }),
 
       resetDemo: async () => {
         useSync.getState().setStatus("saving");
-        const session = get().session;
         const snap = await dbAdapter.reset();
+        setToken(null);
         applyingRemote = true;
-        set({ ...snap, session });
+        set({ ...snap, session: null });
         applyingRemote = false;
         useSync.getState().setMeta({
-          source: useSync.getState().source ?? "pglite",
+          source: useSync.getState().source ?? "memory",
           updatedAt: new Date().toISOString(),
           sales: snap.sales.length,
         });
       },
 
       updateProfile: (patch) => {
-        const session = get().session;
-        if (!session) return;
-        set((s) => ({
-          users: s.users.map((u) => (u.id === session.userId ? { ...u, ...patch } : u)),
-        }));
+        void applyRemote("profile", patch, (snap, actor) => applyProfile(snap, actor, patch));
       },
 
-      addWriteoff: ({ productId, qty, reason, note }) => {
-        const { session, products } = get();
-        if (!session) return;
-        const branchId = writeBranch(get());
-        const product = products.find((p) => p.id === productId);
-        const q = -Math.abs(qty);
-        const mov = {
-          id: uid("wo"),
-          at: new Date().toISOString(),
-          branchId,
-          productId,
-          type: "writeoff" as const,
-          qty: q,
-          cost: Math.abs(q) * (product?.avgCost ?? 0),
-          reason,
-          note,
-          userId: session.userId,
-        };
-        set((s) => ({
-          movements: [mov, ...s.movements],
-          stock: applyMovement(s.stock, mov),
-        }));
+      addWriteoff: (input) => {
+        void applyRemote("stock/writeoff", input, (snap, actor) => applyWriteoff(snap, actor, input));
       },
 
-      addInvoice: ({ supplier, number, date, lines }) => {
-        const { session } = get();
-        if (!session) return;
-        const branchId = writeBranch(get());
-        const total = lines.reduce((sum, l) => sum + l.qty * l.price, 0);
-        const inv = {
-          id: uid("inv"),
-          number,
-          branchId,
-          supplier,
-          date,
-          lines,
-          total,
-          userId: session.userId,
-        };
-        const movs = lines.map((l) => ({
-          id: uid("m"),
-          at: `${date}T10:00:00.000Z`,
-          branchId,
-          productId: l.productId,
-          type: "receipt" as const,
-          qty: l.qty,
-          cost: l.qty * l.price,
-          refId: inv.id,
-          userId: session.userId,
-          note: supplier,
-        }));
-        set((s) => {
-          let stock = s.stock;
-          for (const m of movs) stock = applyMovement(stock, m);
-          const productsNext = s.products.map((p) => {
-            const line = lines.find((l) => l.productId === p.id);
-            if (!line) return p;
-            return { ...p, avgCost: Math.round((p.avgCost * 0.6 + line.price * 0.4) * 100) / 100 };
-          });
-          return {
-            invoices: [inv, ...s.invoices],
-            movements: [...movs, ...s.movements],
-            stock,
-            products: productsNext,
-          };
-        });
+      addInvoice: (input) => {
+        void applyRemote("stock/receipt", input, (snap, actor) => applyInvoice(snap, actor, input));
       },
 
       createRequestFromNeed: () => {
-        const { session } = get();
-        if (!session) return;
-        const branchId = writeBranch(get());
-        const need = needToBuy(snapshotOf(get()), branchId);
-        if (need.length === 0) return;
-        const lines: PurchaseLine[] = need.map((n) => ({
-          productId: n.product.id,
-          qty: Math.ceil(n.deficit * 10) / 10,
-        }));
-        set((s) => ({
-          requests: [
-            {
-              id: uid("pr"),
-              number: `ЗК-${100 + s.requests.length + 1}`,
-              branchId,
-              date: TODAY,
-              status: "draft",
-              lines,
-              userId: session.userId,
-            },
-            ...s.requests,
-          ],
-        }));
+        void applyRemote("procurement/request", {}, (snap, actor) => applyRequestFromNeed(snap, actor));
       },
 
-      setRequestStatus: (id, status) => {
-        set((s) => ({
-          requests: s.requests.map((r) => (r.id === id ? { ...r, status } : r)),
-        }));
+      setRequestStatus: (id, status, supplierId) => {
+        void applyRemote("procurement/status", { id, status, supplierId }, (snap, actor) =>
+          applyRequestStatus(snap, actor, id, status, supplierId),
+        );
       },
 
-      openShift: ({ openCash, staffIds }) => {
-        const { session, shifts } = get();
-        if (!session) return;
-        const branchId = writeBranch(get());
-        if (openShiftFor(shifts, branchId)) return;
-        set((s) => ({
-          shifts: [
-            {
-              id: uid("sh"),
-              branchId,
-              date: TODAY,
-              status: "open",
-              openedAt: new Date().toISOString(),
-              openedBy: session.userId,
-              openCash,
-              cashTotal: 0,
-              cardTotal: 0,
-              qrTotal: 0,
-              staffIds,
-            },
-            ...s.shifts,
-          ],
-        }));
+      openShift: (input) => {
+        void applyRemote("shifts/open", input, (snap, actor) => applyOpenShift(snap, actor, input));
       },
 
-      closeShift: ({ closeCash, note }) => {
-        const { session } = get();
-        if (!session) return;
-        const branchId = writeBranch(get());
-        const shift = openShiftFor(get().shifts, branchId);
-        if (!shift) return;
-        const totals = shiftTotals(shift, get().sales);
-        const discrepancy = Math.round(closeCash - totals.expected);
-        const pays = payrollForShift(shift, get().sales, get().users);
-        set((s) => ({
-          shifts: s.shifts.map((sh) =>
-            sh.id === shift.id
-              ? {
-                  ...sh,
-                  status: "closed" as const,
-                  closedAt: new Date().toISOString(),
-                  closedBy: session.userId,
-                  closeCash,
-                  expectedCash: totals.expected,
-                  discrepancy,
-                  cashTotal: totals.cash,
-                  cardTotal: totals.card,
-                  qrTotal: totals.qr,
-                  note,
-                }
-              : sh,
-          ),
-          payroll: [
-            ...pays.map((p) => ({
-              id: uid("pay"),
-              userId: p.userId,
-              branchId,
-              date: TODAY,
-              shiftId: shift.id,
-              hours: p.hours,
-              base: p.base,
-              bonus: p.bonus,
-              total: p.total,
-            })),
-            ...s.payroll,
-          ],
-        }));
+      closeShift: (input) => {
+        void applyRemote("shifts/close", input, (snap, actor) => applyCloseShift(snap, actor, input));
+      },
+
+      topUpDebt: (debtId) => {
+        void applyRemote("debts/topup", { debtId }, (snap, actor) => applyTopUpDebt(snap, actor, { debtId }));
+      },
+
+      closePeriod: (input) => {
+        void applyRemote("period/close", input, (snap, actor) => applyClosePeriod(snap, actor, input));
+      },
+
+      adjustPayroll: (input) => {
+        void applyRemote("staff/adjust", input, (snap, actor) => applyPayrollAdjustment(snap, actor, input));
+      },
+
+      setPlan: (input) => {
+        void applyRemote("plan", input, (snap, actor) => applyRevenuePlan(snap, actor, input));
       },
 
       addManualSale: (items, payment) => {
-        const { session, shifts, sales, recipes, products, stock } = get();
-        if (!session) return;
-        const branchId = writeBranch(get());
-        const shift = openShiftFor(shifts, branchId);
-        if (!shift) return;
-        const total = items.reduce((sum, i) => sum + i.sum, 0);
-        const sale = {
-          id: uid("sale"),
-          number: `ЧК-${String(10000 + sales.length + 1).padStart(4, "0")}`,
-          branchId,
-          shiftId: shift.id,
-          at: new Date().toISOString(),
-          items,
-          payments: [{ type: payment, amount: total }],
-          total,
-          waiterId: session.userId,
-          source: "manual" as const,
-        };
-        const deducted = deductSaleFromStock(stock, sale, recipes, products, session.userId);
-        set((s) => ({
-          sales: [sale, ...s.sales],
-          stock: deducted.stock,
-          movements: [...deducted.movements, ...s.movements],
-        }));
+        void applyRemote("sales/manual", { items, payment }, (snap, actor) => applyManualSale(snap, actor, items, payment));
       },
 
       importKeeperSales: (incoming) => {
-        const { session, shifts, recipes, products } = get();
-        if (!session) return 0;
-        const branchId = writeBranch(get());
-        const shift = openShiftFor(shifts, branchId);
-        if (!shift) return 0;
-        let added = 0;
-        set((s) => {
-          let stock = s.stock;
-          const movs = [];
-          const newSales = [];
-          for (const row of incoming) {
-            const sale = {
-              ...row,
-              id: uid("sale"),
-              number: `КПР-${String(s.sales.length + added + 1).padStart(4, "0")}`,
-              shiftId: shift.id,
-              branchId,
-              source: "keeper" as const,
-            };
-            const d = deductSaleFromStock(stock, sale, recipes, products, session.userId);
-            stock = d.stock;
-            movs.push(...d.movements);
-            newSales.push(sale);
-            added += 1;
-          }
-          return {
-            sales: [...newSales, ...s.sales],
-            stock,
-            movements: [...movs, ...s.movements],
-          };
+        void applyRemote("sales/import", { sales: incoming }, (snap, actor) => applyKeeperSales(snap, actor, incoming).snap);
+        return incoming.length;
+      },
+
+      importKeeperXml: (xml) => {
+        void applyRemote("sales/keeper-xml", { xml }, (snap, actor) => {
+          const mapped = mapKeeperReceipts(parseKeeperXml(xml), snap.recipes, actor.userId);
+          return applyKeeperSales(snap, actor, mapped).snap;
         });
-        return added;
       },
 
       upsertBanquet: (b) => {
-        set((s) => {
-          const i = s.banquets.findIndex((x) => x.id === b.id);
-          if (i < 0) return { banquets: [b, ...s.banquets] };
-          const next = s.banquets.slice();
-          next[i] = b;
-          return { banquets: next };
-        });
+        void applyRemote("banquets", b, (snap, actor) => applyBanquet(snap, actor, b));
       },
 
       setBanquetStatus: (id, status) => {
-        set((s) => ({
-          banquets: s.banquets.map((b) => (b.id === id ? { ...b, status } : b)),
-        }));
+        void applyRemote("banquets/status", { id, status }, (snap, actor) => applyBanquetStatus(snap, actor, id, status));
       },
 
       completeRevision: (lines, note) => {
-        const { session, products } = get();
-        if (!session) return;
-        const branchId = writeBranch(get());
-        const movs = lines
-          .filter((l) => l.factQty !== l.bookQty)
-          .map((l) => {
-            const p = products.find((x) => x.id === l.productId);
-            const qty = l.factQty - l.bookQty;
-            return {
-              id: uid("rev"),
-              at: new Date().toISOString(),
-              branchId,
-              productId: l.productId,
-              type: "revision" as const,
-              qty,
-              cost: Math.abs(qty) * (p?.avgCost ?? 0),
-              reason: "revision" as const,
-              note,
-              userId: session.userId,
-            };
-          });
-        set((s) => {
-          let stock = s.stock;
-          for (const m of movs) stock = applyMovement(stock, m);
-          return {
-            stock,
-            movements: [...movs, ...s.movements],
-            revisions: [
-              {
-                id: uid("r"),
-                branchId,
-                date: TODAY,
-                status: "done" as const,
-                lines,
-                userId: session.userId,
-                note,
-              },
-              ...s.revisions,
-            ],
-          };
-        });
+        void applyRemote("stock/revision", { lines, note }, (snap, actor) => applyRevision(snap, actor, lines, note));
+      },
+
+      transferStock: (input) => {
+        void applyRemote("stock/transfer", input, (snap, actor) => applyTransfer(snap, actor, input));
+      },
+
+      setStopList: (input) => {
+        void applyRemote("shifts/stop-list", input, (snap, actor) => applyStopList(snap, actor, input));
+      },
+
+      addExpense: (input) => {
+        void applyRemote("expenses", input, (snap, actor) => applyExpense(snap, actor, input));
+      },
+
+      upsertRecipe: (recipe) => {
+        void applyRemote("recipes", recipe, (snap, actor) => applyUpsertRecipe(snap, actor, recipe));
+      },
+
+      importProducts: (rows) => {
+        void applyRemote("nomenclature/import", { rows }, (snap, actor) => applyImportProducts(snap, actor, rows));
+      },
+
+      inviteStaff: (input) => {
+        void applyRemote("staff/invite", input, (snap, actor) => applyInviteStaff(snap, actor, input));
+      },
+
+      updateSettings: (patch) => {
+        void applyRemote("settings/network", patch, (snap, actor) => applySettings(snap, actor, patch));
+      },
+
+      flushNotify: async () => {
+        try {
+          const res = await api<{ state: Snapshot }>("notify/flush", { method: "POST" });
+          const session = get().session;
+          applyingRemote = true;
+          set({ ...res.state, session });
+          applyingRemote = false;
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : "Очередь не отправлена");
+        }
       },
     }),
     {
-      name: "ochag-session-v2",
-      version: 2,
+      name: "ochag-session-v3",
+      version: 3,
       partialize: (s) => ({ session: s.session, period: s.period }),
     },
   ),
@@ -467,7 +456,7 @@ export const useOps = create<OpsState>()(
 
 if (typeof window !== "undefined") {
   useOps.subscribe((state) => {
-    if (!bootDone || applyingRemote || !state.branches.length) return;
+    if (!bootDone || applyingRemote || !isOnboarded(state)) return;
     useSync.getState().setStatus("saving");
     window.clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
@@ -475,7 +464,7 @@ if (typeof window !== "undefined") {
         .save(snapshotOf(state))
         .then(() => {
           useSync.getState().setMeta({
-            source: useSync.getState().source ?? "pglite",
+            source: useSync.getState().source ?? "memory",
             updatedAt: new Date().toISOString(),
             sales: state.sales.length,
           });
@@ -493,20 +482,35 @@ export function useHydrated() {
     let cancelled = false;
 
     async function boot() {
-      const api = useOps.persist;
-      if (api && !api.hasHydrated()) {
-        await new Promise<void>((resolve) => {
-          const unsub = api.onFinishHydration(() => {
-            unsub();
-            resolve();
-          });
-        });
+      const apiPersist = useOps.persist;
+      if (apiPersist && !apiPersist.hasHydrated()) {
+        await Promise.race([
+          new Promise<void>((resolve) => {
+            if (apiPersist.hasHydrated()) {
+              resolve();
+              return;
+            }
+            const unsub = apiPersist.onFinishHydration(() => {
+              unsub();
+              resolve();
+            });
+            if (apiPersist.hasHydrated()) {
+              unsub();
+              resolve();
+            }
+          }),
+          new Promise<void>((resolve) => setTimeout(resolve, 800)),
+        ]);
       }
       try {
         const snap = await dbAdapter.load();
         if (cancelled) return;
         applyingRemote = true;
-        useOps.setState((s) => ({ ...s, ...snap }));
+        useOps.setState((s) => {
+          const session =
+            s.session && snap.users.some((u) => u.id === s.session?.userId) ? s.session : null;
+          return { ...s, ...snap, session };
+        });
         applyingRemote = false;
         try {
           const meta = await getOpsStatus();
@@ -519,7 +523,7 @@ export function useHydrated() {
           }
         } catch {
           useSync.getState().setMeta({
-            source: "pglite",
+            source: "memory",
             updatedAt: new Date().toISOString(),
             sales: snap.sales.length,
           });
@@ -549,7 +553,7 @@ export function useSessionUser() {
 }
 
 export function useActiveBranch() {
-  return useOps((s) => s.branches.find((b) => b.id === s.session?.branchId) ?? s.branches[0]);
+  return useOps((s) => s.branches.find((b) => b.id === s.session?.branchId) ?? null);
 }
 
 export function selectSnap(s: OpsState): Snapshot {

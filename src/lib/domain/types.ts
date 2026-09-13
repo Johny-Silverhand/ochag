@@ -1,13 +1,38 @@
-export const TODAY = "2026-09-02";
+/** Live civil day in the server/browser locale (YYYY-MM-DD). */
+export function today() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** @deprecated prefer today() — kept so older imports compile; value is the day this module first loaded. */
+export const TODAY = today();
 
 export type Role = "owner" | "manager" | "cook" | "waiter";
 export type Unit = "kg" | "l" | "шт" | "порц";
 export type PaymentType = "cash" | "card" | "qr";
-export type MovementType = "receipt" | "sale" | "writeoff" | "revision" | "prep";
+export type MovementType = "receipt" | "sale" | "writeoff" | "revision" | "prep" | "transfer";
 export type ShiftStatus = "open" | "closed";
 export type BanquetStatus = "inquiry" | "confirmed" | "deposit_paid" | "done" | "cancelled";
 export type RequestStatus = "draft" | "sent" | "received";
+export type NotifyChannel = "telegram" | "webpush" | "email";
+export type NotifyEvent =
+  | "shift_open"
+  | "stop_list"
+  | "purchase_sent"
+  | "writeoff"
+  | "revision"
+  | "cash_mismatch"
+  | "debt";
+export type PayrollAdjKind = "fine" | "advance" | "extra";
+export type DebtStatus = "open" | "topped";
+export type OutboxStatus = "queued" | "sent" | "failed";
+export type SupplierChannel = "telegram" | "email";
 export type WriteoffReason = "spoilage" | "staff_meal" | "error" | "theft" | "revision";
+export type ExpenseKind = "fixed" | "variable";
+export type StopListReason = "no_stock" | "quality" | "manual" | "shift_start";
 
 export type Period = "today" | "7d" | "30d";
 
@@ -26,6 +51,8 @@ export interface StaffUser {
   name: string;
   email: string;
   password: string;
+  /** 4-digit PIN for hall/kitchen terminals. Compared only on the server. */
+  pin: string;
   role: Role;
   position: string;
   branchId: string | null;
@@ -66,6 +93,8 @@ export interface StockLevel {
   branchId: string;
   productId: string;
   qty: number;
+  /** Weighted-average purchase price at this warehouse (TZ §5). */
+  avgCost: number;
 }
 
 export interface StockMovement {
@@ -80,6 +109,8 @@ export interface StockMovement {
   note?: string;
   refId?: string;
   userId: string;
+  /** Opposite warehouse on an inter-branch transfer. */
+  counterpartBranchId?: string;
 }
 
 export interface InvoiceLine {
@@ -105,6 +136,8 @@ export interface SaleItem {
   qty: number;
   price: number;
   sum: number;
+  /** Dish cost frozen at the moment of sale (TZ §5 cost_at_sale). */
+  costAtSale: number;
 }
 
 export interface Sale {
@@ -118,6 +151,8 @@ export interface Sale {
   total: number;
   waiterId: string;
   source: "keeper" | "manual";
+  /** Keeper cheque number + time + branch — skipped on restore. */
+  externalKey?: string;
 }
 
 export interface Shift {
@@ -137,6 +172,8 @@ export interface Shift {
   cardTotal: number;
   qrTotal: number;
   staffIds: string[];
+  /** Recipe ids confirmed as the start-list at open. */
+  startList: string[];
   note?: string;
 }
 
@@ -154,6 +191,9 @@ export interface PurchaseRequest {
   lines: PurchaseLine[];
   note?: string;
   userId: string;
+  supplierId?: string;
+  sentAt?: string;
+  sentChannel?: SupplierChannel;
 }
 
 export interface BanquetLine {
@@ -195,6 +235,19 @@ export interface Expense {
   category: string;
   amount: number;
   note: string;
+  kind: ExpenseKind;
+}
+
+export interface StopListEntry {
+  id: string;
+  branchId: string;
+  recipeId: string;
+  reason: StopListReason;
+  note?: string;
+  createdAt: string;
+  createdBy: string;
+  clearedAt?: string;
+  clearedBy?: string;
 }
 
 export interface PayrollAccrual {
@@ -234,6 +287,112 @@ export interface Insight {
   module: string;
 }
 
+export interface Supplier {
+  id: string;
+  name: string;
+  email: string;
+  telegram: string;
+  channel: SupplierChannel;
+}
+
+export interface ClosedPeriod {
+  id: string;
+  branchId: string;
+  from: string;
+  to: string;
+  closedAt: string;
+  closedBy: string;
+  revisionId: string;
+}
+
+export interface CashDebt {
+  id: string;
+  branchId: string;
+  fromShiftId: string;
+  date: string;
+  amount: number;
+  status: DebtStatus;
+  toppedAt?: string;
+  toppedShiftId?: string;
+  note?: string;
+}
+
+export interface PayrollAdjustment {
+  id: string;
+  userId: string;
+  branchId: string;
+  date: string;
+  kind: PayrollAdjKind;
+  amount: number;
+  note: string;
+  createdBy: string;
+}
+
+export interface RevenuePlan {
+  id: string;
+  branchId: string;
+  month: string;
+  target: number;
+}
+
+export interface AuditEntry {
+  id: string;
+  at: string;
+  userId: string;
+  action: string;
+  entity: string;
+  branchId?: string;
+  detail: string;
+}
+
+export interface OutboxItem {
+  id: string;
+  at: string;
+  channel: NotifyChannel;
+  event: NotifyEvent | "manual";
+  title: string;
+  body: string;
+  status: OutboxStatus;
+  error?: string;
+  to?: string;
+}
+
+export interface PushSubscriptionRecord {
+  id: string;
+  userId: string;
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+  createdAt: string;
+}
+
+export interface NetworkSettings {
+  keeperCashLink: boolean;
+  notifyChannel: "telegram" | "webpush" | "both";
+  supplierChannel: SupplierChannel;
+  notifyEvents: Record<NotifyEvent, boolean>;
+  sampleLoaded: boolean;
+}
+
+export const DEFAULT_NOTIFY_EVENTS: Record<NotifyEvent, boolean> = {
+  shift_open: true,
+  stop_list: true,
+  purchase_sent: true,
+  writeoff: false,
+  revision: true,
+  cash_mismatch: true,
+  debt: true,
+};
+
+export function defaultSettings(): NetworkSettings {
+  return {
+    keeperCashLink: true,
+    notifyChannel: "both",
+    supplierChannel: "telegram",
+    notifyEvents: { ...DEFAULT_NOTIFY_EVENTS },
+    sampleLoaded: false,
+  };
+}
+
 export interface Snapshot {
   branches: Branch[];
   users: StaffUser[];
@@ -249,6 +408,16 @@ export interface Snapshot {
   expenses: Expense[];
   payroll: PayrollAccrual[];
   revisions: Revision[];
+  stopList: StopListEntry[];
+  suppliers: Supplier[];
+  closedPeriods: ClosedPeriod[];
+  debts: CashDebt[];
+  payrollAdjustments: PayrollAdjustment[];
+  revenuePlans: RevenuePlan[];
+  audit: AuditEntry[];
+  outbox: OutboxItem[];
+  pushSubs: PushSubscriptionRecord[];
+  settings: NetworkSettings;
 }
 
 export const ROLE_LABEL: Record<Role, string> = {
@@ -277,6 +446,19 @@ export const MOVEMENT_LABEL: Record<MovementType, string> = {
   writeoff: "Списание",
   revision: "Ревизия",
   prep: "Производство",
+  transfer: "Перемещение",
+};
+
+export const EXPENSE_KIND_LABEL: Record<ExpenseKind, string> = {
+  fixed: "Постоянные",
+  variable: "Переменные",
+};
+
+export const STOP_REASON_LABEL: Record<StopListReason, string> = {
+  no_stock: "Нет продукта",
+  quality: "Качество",
+  manual: "Стоп-лист",
+  shift_start: "Старт-лист",
 };
 
 export const WRITEOFF_LABEL: Record<WriteoffReason, string> = {
@@ -299,4 +481,20 @@ export const REQUEST_LABEL: Record<RequestStatus, string> = {
   draft: "Черновик",
   sent: "Отправлена",
   received: "Оприходована",
+};
+
+export const PAYROLL_ADJ_LABEL: Record<PayrollAdjKind, string> = {
+  fine: "Штраф",
+  advance: "Аванс",
+  extra: "Доплата",
+};
+
+export const NOTIFY_EVENT_LABEL: Record<NotifyEvent, string> = {
+  shift_open: "Открытие смены",
+  stop_list: "Стоп-лист",
+  purchase_sent: "Заявка поставщику",
+  writeoff: "Списание",
+  revision: "Ревизия",
+  cash_mismatch: "Расхождение кассы",
+  debt: "Вечерний долг",
 };

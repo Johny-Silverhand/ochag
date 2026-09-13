@@ -58,8 +58,15 @@ test("non-.sql entries are dropped (readdir also yields the auth/ directory)", (
 
 test("the auth schema ships outside the globbed directory", () => {
   const migrationsDir = join(projectRoot(), "migrations");
-  assert.deepEqual(pendingMigrations(readdirSync(migrationsDir), []), []);
+  const pending = pendingMigrations(readdirSync(migrationsDir), []);
+  // Better Auth stays under migrations/auth/ until sign-in is turned on.
+  assert.ok(!pending.some((m) => m.name === "0001_auth.sql"));
   assert.ok(readdirSync(join(migrationsDir, "auth")).includes("0001_auth.sql"));
+  // Prepared ops / Stage-1 schema — applied only when DATABASE_URL is set later.
+  assert.deepEqual(
+    pending.map((m) => m.name),
+    ["0002_ops.sql", "0003_core.sql"],
+  );
 });
 
 test("this workspace's auth schema copy is byte-identical to its source", () => {
