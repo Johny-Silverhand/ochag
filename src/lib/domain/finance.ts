@@ -14,7 +14,8 @@
  *
  * cost_at_sale is frozen on the cheque line at sale time.
  */
-import type { Product, Recipe, Sale, SaleItem, Snapshot, StockLevel } from "./types";
+import type { Product, Recipe, Sale, SaleItem, Snapshot, StockLevel } from "./types.ts";
+import { defaultSettings } from "./types.ts";
 
 export function roundMoney(value: number, digits = 2) {
   const f = 10 ** digits;
@@ -152,5 +153,14 @@ export function publicSnapshot(snap: Snapshot): Snapshot {
   return {
     ...snap,
     users: snap.users.map((u) => ({ ...u, password: "", pin: "" })),
+    settings: snap.settings ?? defaultSettings(),
+    suppliers: snap.suppliers ?? [],
+    closedPeriods: snap.closedPeriods ?? [],
+    debts: snap.debts ?? [],
+    payrollAdjustments: snap.payrollAdjustments ?? [],
+    revenuePlans: snap.revenuePlans ?? [],
+    audit: snap.audit ?? [],
+    outbox: snap.outbox ?? [],
+    pushSubs: (snap.pushSubs ?? []).map((s) => ({ ...s, keys: { p256dh: "", auth: "" } })),
   };
 }

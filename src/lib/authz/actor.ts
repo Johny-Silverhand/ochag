@@ -28,14 +28,10 @@ export function actorFrom(user: StaffUser, session: Session): Actor {
   };
 }
 
-/** Flagship house when the owner is scoped to «все филиалы». */
-export const NETWORK_DEFAULT_BRANCH = "br-pushkin";
-
 export function writeBranch(actor: Actor): string {
   if (actor.sessionBranchId && actor.sessionBranchId !== "all") return actor.sessionBranchId;
-  if (actor.homeBranchId) return actor.homeBranchId;
-  if (canSeeAllBranches(actor.role)) return NETWORK_DEFAULT_BRANCH;
-  throw new AuthzError("Выберите филиал");
+  if (actor.homeBranchId && actor.sessionBranchId !== "all") return actor.homeBranchId;
+  throw new AuthzError("Выберите филиал — запись по всей сети запрещена");
 }
 
 export function assertBranchScope(actor: Actor, branchId: string) {

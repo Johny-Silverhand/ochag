@@ -14,7 +14,7 @@ import type {
   StockLevel,
   StockMovement,
 } from "../domain/types";
-import { TODAY } from "../domain/types";
+import { TODAY, defaultSettings } from "../domain/types";
 import { applyMovement, deductSaleFromStock, payrollForShift, shiftTotals } from "../domain/engine";
 import { freezeSaleCosts } from "../domain/finance";
 
@@ -511,6 +511,7 @@ export function createSeed(): Snapshot {
         cardTotal: 0,
         qrTotal: 0,
         staffIds: STAFF_ON[br.id] ?? [],
+        startList: RECIPES.map((r) => r.id),
       };
 
       const nChecks = int(weekend ? 16 : 11, weekend ? 24 : 18) + (br.id === "br-embank" ? 4 : 0);
@@ -820,7 +821,48 @@ export function createSeed(): Snapshot {
           factQty: p.id === "prd-pork" ? 16.4 : 20,
         })),
       },
+      {
+        id: "rev-south-2",
+        branchId: "br-south",
+        date: TODAY,
+        status: "done",
+        userId: "u-mgr-s",
+        note: "Закрытие периода",
+        lines: PRODUCTS.slice(0, 8).map((p) => ({
+          productId: p.id,
+          bookQty: 18,
+          factQty: p.id === "prd-pork" ? 14.1 : p.id === "prd-greens" ? 12 : 18,
+        })),
+      },
     ],
+    suppliers: [
+      { id: "sup-meat", name: "Кубанский двор", email: "zakaz@kuban.example", telegram: "@kuban_opt", channel: "telegram" },
+      { id: "sup-drink", name: "Юг-напитки", email: "opt@yug.example", telegram: "", channel: "email" },
+    ],
+    closedPeriods: [],
+    debts: [],
+    payrollAdjustments: [
+      {
+        id: "adj-1",
+        userId: "u-wait-p",
+        branchId: "br-pushkin",
+        date: TODAY,
+        kind: "fine",
+        amount: 500,
+        note: "Опоздание",
+        createdBy: "u-mgr-p",
+      },
+    ],
+    revenuePlans: BRANCHES.map((b) => ({
+      id: `plan-${b.id}`,
+      branchId: b.id,
+      month: TODAY.slice(0, 7),
+      target: b.id === "br-embank" ? 900000 : 720000,
+    })),
+    audit: [],
+    outbox: [],
+    pushSubs: [],
+    settings: { ...defaultSettings(), sampleLoaded: true, keeperCashLink: false },
     stopList: [
       {
         id: "sl-south-lyulya",

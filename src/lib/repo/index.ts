@@ -8,7 +8,7 @@ const globalRef = globalThis as typeof globalThis & {
 };
 
 /**
- * Default is the in-memory seed. Set OCHAG_STORE=json to persist locally.
+ * Default is an empty in-memory snapshot. Set OCHAG_STORE=json to persist locally.
  * Postgres is prepared (migrations + this switch) but not opened yet —
  * DATABASE_URL is ignored on purpose until the owner plugs it in.
  */

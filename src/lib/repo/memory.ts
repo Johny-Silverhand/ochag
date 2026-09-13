@@ -1,3 +1,4 @@
+import { emptySnapshot } from "../data/empty";
 import { createSeed } from "../data/seed";
 import { normalizeSnapshot } from "../data/normalize";
 import { publicSnapshot } from "../domain/finance";
@@ -15,7 +16,7 @@ const globalRef = globalThis as typeof globalThis & {
 
 function slot(): MemorySlot {
   globalRef.__ochagMemory__ ??= {
-    snapshot: createSeed(),
+    snapshot: emptySnapshot(),
     updatedAt: new Date().toISOString(),
   };
   return globalRef.__ochagMemory__;
@@ -33,6 +34,12 @@ export function createMemoryRepository(source: StoreSource = "memory"): OpsRepos
       slot().updatedAt = new Date().toISOString();
     },
     async reset() {
+      const blank = emptySnapshot();
+      slot().snapshot = blank;
+      slot().updatedAt = new Date().toISOString();
+      return structuredClone(blank);
+    },
+    async loadSample() {
       const seed = createSeed();
       slot().snapshot = seed;
       slot().updatedAt = new Date().toISOString();

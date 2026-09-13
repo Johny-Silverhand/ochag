@@ -4,8 +4,16 @@ import type { Actor } from "./actor";
 
 const DEV_SECRET = "ochag-dev-jwt-not-for-production";
 
-function secret() {
+export function isProductionRuntime() {
+  const env = typeof process !== "undefined" ? process.env : undefined;
+  return env?.OCHAG_ENV === "production" || env?.NODE_ENV === "production" || env?.VERCEL_ENV === "production";
+}
+
+function secretBytes() {
   const raw = (typeof process !== "undefined" ? process.env.OCHAG_JWT_SECRET : undefined)?.trim();
+  if (isProductionRuntime() && !raw) {
+    throw new Error("OCHAG_JWT_SECRET обязателен в production");
+  }
   return new TextEncoder().encode(raw || DEV_SECRET);
 }
 
@@ -28,11 +36,11 @@ export async function signActor(actor: Actor, ttl = "12h") {
     .setSubject(actor.userId)
     .setIssuedAt()
     .setExpirationTime(ttl)
-    .sign(secret());
+    .sign(secretBytes());
 }
 
 export async function verifyActor(token: string): Promise<Actor> {
-  const { payload } = await jwtVerify(token, secret());
+  const { payload } = await jwtVerify(token, secretBytes());
   return {
     userId: String(payload.sub ?? ""),
     role: payload.role as Role,

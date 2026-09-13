@@ -7,5 +7,6 @@ export interface OpsRepository {
   load(): Promise<Snapshot>;
   save(snapshot: Snapshot): Promise<void>;
   reset(): Promise<Snapshot>;
+  loadSample?(): Promise<Snapshot>;
   status(): Promise<{ source: StoreSource; ready: boolean; updatedAt: string | null; sales: number }>;
 }

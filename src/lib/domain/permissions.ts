@@ -65,6 +65,22 @@ export function canManageCash(role: Role) {
   return role === "owner" || role === "manager";
 }
 
+export function canOpenShift(role: Role) {
+  return role === "owner" || role === "manager" || role === "cook";
+}
+
+export function canInviteStaff(role: Role) {
+  return role === "owner" || role === "manager";
+}
+
+export function canClosePeriod(role: Role) {
+  return role === "owner" || role === "manager";
+}
+
+export function canEditNomenclature(role: Role) {
+  return role === "owner" || role === "manager" || role === "cook";
+}
+
 export function canSeeAllBranches(role: Role) {
   return role === "owner";
 }

@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { normalizeSnapshot } from "../data/normalize";
-import { createSeed } from "../data/seed";
+import { emptySnapshot } from "../data/empty";
 import type { Snapshot } from "../domain/types";
 import { createMemoryRepository } from "./memory";
 import type { OpsRepository } from "./types";
@@ -26,9 +26,9 @@ export function createJsonRepository(filePath = DEFAULT_PATH): OpsRepository {
     const disk = await readJson(filePath);
     if (disk) await memory.save(disk);
     else {
-      const seed = createSeed();
-      await memory.save(seed);
-      await persist(seed);
+      const blank = emptySnapshot();
+      await memory.save(blank);
+      await persist(blank);
     }
     hydrated = true;
   }
@@ -55,7 +55,13 @@ export function createJsonRepository(filePath = DEFAULT_PATH): OpsRepository {
     },
     async reset() {
       await hydrate();
-      const seed = await memory.reset();
+      const blank = await memory.reset();
+      await persist(blank);
+      return blank;
+    },
+    async loadSample() {
+      await hydrate();
+      const seed = memory.loadSample ? await memory.loadSample() : await memory.reset();
       await persist(seed);
       return seed;
     },

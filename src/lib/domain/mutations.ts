@@ -13,7 +13,16 @@ import type {
   StopListReason,
   WriteoffReason,
 } from "./types";
-import { TODAY } from "./types";
+import { today } from "./types";
+import type {
+  NotifyEvent,
+  OutboxItem,
+  PayrollAdjKind,
+  Recipe,
+  Product,
+  Role,
+  SupplierChannel,
+} from "./types";
 import {
   applyMovement,
   deductSaleFromStock,
@@ -24,7 +33,41 @@ import {
 } from "./engine";
 import { catalogAvgFromStock, freezeSaleCosts } from "./finance";
 import { uid } from "../utils";
-import { assertBranchScope, assertCash, assertExpenses, assertKeeper, assertSale, assertStopList, assertTransfer, assertWriteoff, type Actor, writeBranch } from "../authz/actor";
+import {
+  AuthzError,
+  assertBranchScope,
+  assertCash,
+  assertExpenses,
+  assertKeeper,
+  assertSale,
+  assertStopList,
+  assertTransfer,
+  assertWriteoff,
+  type Actor,
+  writeBranch,
+} from "../authz/actor";
+import { canInviteStaff, canOpenShift, canClosePeriod, canEditNomenclature } from "./permissions";
+import { assertPeriodOpen } from "./period";
+import { appendAudit } from "./audit";
+
+function queueEvent(snap: Snapshot, event: NotifyEvent, title: string, body: string, to?: string): Snapshot {
+  if (snap.settings.notifyEvents[event] === false) return snap;
+  const channels =
+    snap.settings.notifyChannel === "both"
+      ? (["telegram", "webpush"] as const)
+      : ([snap.settings.notifyChannel] as const);
+  const rows: OutboxItem[] = channels.map((channel) => ({
+    id: uid("ob"),
+    at: new Date().toISOString(),
+    channel,
+    event,
+    title,
+    body,
+    status: "queued" as const,
+    to,
+  }));
+  return { ...snap, outbox: [...rows, ...snap.outbox].slice(0, 500) };
+}
 
 export function applyWriteoff(
   snap: Snapshot,
@@ -34,6 +77,7 @@ export function applyWriteoff(
   assertWriteoff(actor);
   const branchId = writeBranch(actor);
   assertBranchScope(actor, branchId);
+  assertPeriodOpen(snap, branchId, today());
   const product = snap.products.find((p) => p.id === input.productId);
   const unit =
     snap.stock.find((s) => s.branchId === branchId && s.productId === input.productId)?.avgCost ??
@@ -52,7 +96,9 @@ export function applyWriteoff(
     note: input.note,
     userId: actor.userId,
   };
-  return { ...snap, movements: [mov, ...snap.movements], stock: applyMovement(snap.stock, mov) };
+  let next = { ...snap, movements: [mov, ...snap.movements], stock: applyMovement(snap.stock, mov) };
+  next = appendAudit(next, actor, "writeoff", "stock", `${input.reason} ${input.qty}`, branchId);
+  return queueEvent(next, "writeoff", "Списание", `${product?.name ?? input.productId}: ${input.qty} (${input.reason})`);
 }
 
 export function applyInvoice(
@@ -62,6 +108,7 @@ export function applyInvoice(
 ): Snapshot {
   const branchId = writeBranch(actor);
   assertBranchScope(actor, branchId);
+  assertPeriodOpen(snap, branchId, input.date);
   const total = input.lines.reduce((sum, l) => sum + l.qty * l.price, 0);
   const inv = {
     id: uid("inv"),
@@ -92,13 +139,20 @@ export function applyInvoice(
     if (!line) return p;
     return { ...p, avgCost: catalogAvgFromStock(stock, p.id, line.price) };
   });
-  return {
-    ...snap,
-    invoices: [inv, ...snap.invoices],
-    movements: [...movs, ...snap.movements],
-    stock,
-    products,
-  };
+  return appendAudit(
+    {
+      ...snap,
+      invoices: [inv, ...snap.invoices],
+      movements: [...movs, ...snap.movements],
+      stock,
+      products,
+    },
+    actor,
+    "receipt",
+    "invoice",
+    `${input.number} ${input.supplier}`,
+    branchId,
+  );
 }
 
 export function applyRequestFromNeed(snap: Snapshot, actor: Actor): Snapshot {
@@ -117,7 +171,7 @@ export function applyRequestFromNeed(snap: Snapshot, actor: Actor): Snapshot {
         id: uid("pr"),
         number: `ЗК-${100 + snap.requests.length + 1}`,
         branchId,
-        date: TODAY,
+        date: today(),
         status: "draft",
         lines,
         userId: actor.userId,
@@ -127,22 +181,59 @@ export function applyRequestFromNeed(snap: Snapshot, actor: Actor): Snapshot {
   };
 }
 
-export function applyRequestStatus(snap: Snapshot, id: string, status: RequestStatus): Snapshot {
-  return { ...snap, requests: snap.requests.map((r) => (r.id === id ? { ...r, status } : r)) };
+export function applyRequestStatus(snap: Snapshot, actor: Actor, id: string, status: RequestStatus): Snapshot {
+  const row = snap.requests.find((r) => r.id === id);
+  if (!row) return snap;
+  assertBranchScope(actor, row.branchId);
+  let next: Snapshot = {
+    ...snap,
+    requests: snap.requests.map((r) =>
+      r.id === id
+        ? {
+            ...r,
+            status,
+            sentAt: status === "sent" ? new Date().toISOString() : r.sentAt,
+            sentChannel: status === "sent" ? snap.settings.supplierChannel : r.sentChannel,
+          }
+        : r,
+    ),
+  };
+  if (status === "sent") {
+    const supplier = snap.suppliers[0];
+    const lines = row.lines
+      .map((l) => `${snap.products.find((p) => p.id === l.productId)?.name ?? l.productId} × ${l.qty}`)
+      .join(", ");
+    next = queueEvent(
+      next,
+      "purchase_sent",
+      `Заявка ${row.number} отправлена`,
+      lines,
+      supplier?.channel === "email" ? supplier.email : supplier?.telegram,
+    );
+    next = appendAudit(next, actor, "purchase_sent", "request", row.number, row.branchId);
+  }
+  return next;
 }
 
-export function applyOpenShift(snap: Snapshot, actor: Actor, input: { openCash: number; staffIds: string[] }): Snapshot {
-  assertCash(actor);
+export function applyOpenShift(
+  snap: Snapshot,
+  actor: Actor,
+  input: { openCash: number; staffIds: string[]; startList: string[]; topUpDebtId?: string; topUpAmount?: number },
+): Snapshot {
+  if (!canOpenShift(actor.role)) throw new AuthzError("Открытие смены недоступно");
   const branchId = writeBranch(actor);
   assertBranchScope(actor, branchId);
+  assertPeriodOpen(snap, branchId, today());
   if (openShiftFor(snap.shifts, branchId)) return snap;
-  return {
+  if (!input.startList?.length) throw new AuthzError("Подтвердите старт-лист перед открытием смены");
+  const shiftId = uid("sh");
+  let next: Snapshot = {
     ...snap,
     shifts: [
       {
-        id: uid("sh"),
+        id: shiftId,
         branchId,
-        date: TODAY,
+        date: today(),
         status: "open",
         openedAt: new Date().toISOString(),
         openedBy: actor.userId,
@@ -151,10 +242,23 @@ export function applyOpenShift(snap: Snapshot, actor: Actor, input: { openCash: 
         cardTotal: 0,
         qrTotal: 0,
         staffIds: input.staffIds,
+        startList: input.startList,
       },
       ...snap.shifts,
     ],
   };
+  if (input.topUpDebtId && (input.topUpAmount ?? 0) > 0) {
+    next = {
+      ...next,
+      debts: next.debts.map((d) =>
+        d.id === input.topUpDebtId
+          ? { ...d, status: "topped" as const, toppedAt: new Date().toISOString(), toppedShiftId: shiftId }
+          : d,
+      ),
+    };
+  }
+  next = appendAudit(next, actor, "shift_open", "shift", `старт-лист ${input.startList.length} блюд`, branchId);
+  return queueEvent(next, "shift_open", "Смена открыта", `${actor.name} открыл смену. Старт-лист: ${input.startList.length} позиций.`);
 }
 
 export function applyCloseShift(snap: Snapshot, actor: Actor, input: { closeCash: number; note?: string }): Snapshot {
@@ -166,7 +270,7 @@ export function applyCloseShift(snap: Snapshot, actor: Actor, input: { closeCash
   const totals = shiftTotals(shift, snap.sales);
   const discrepancy = Math.round(input.closeCash - totals.expected);
   const pays = payrollForShift(shift, snap.sales, snap.users);
-  return {
+  let next: Snapshot = {
     ...snap,
     shifts: snap.shifts.map((sh) =>
       sh.id === shift.id
@@ -190,7 +294,7 @@ export function applyCloseShift(snap: Snapshot, actor: Actor, input: { closeCash
         id: uid("pay"),
         userId: p.userId,
         branchId,
-        date: TODAY,
+        date: today(),
         shiftId: shift.id,
         hours: p.hours,
         base: p.base,
@@ -200,6 +304,28 @@ export function applyCloseShift(snap: Snapshot, actor: Actor, input: { closeCash
       ...snap.payroll,
     ],
   };
+  if (discrepancy < 0) {
+    next = {
+      ...next,
+      debts: [
+        {
+          id: uid("debt"),
+          branchId,
+          fromShiftId: shift.id,
+          date: today(),
+          amount: Math.abs(discrepancy),
+          status: "open",
+          note: "Недостача к утреннему довнесению",
+        },
+        ...next.debts,
+      ],
+    };
+    next = queueEvent(next, "debt", "Вечерний долг", `Недостача ${Math.abs(discrepancy)} ₽. Довнести на следующей смене.`);
+  }
+  if (discrepancy !== 0) {
+    next = queueEvent(next, "cash_mismatch", "Расхождение кассы", `Ожидалось ${totals.expected} ₽, факт ${input.closeCash} ₽.`);
+  }
+  return appendAudit(next, actor, "shift_close", "shift", `факт ${input.closeCash}, ожид. ${totals.expected}`, branchId);
 }
 
 export function applyManualSale(
@@ -211,8 +337,12 @@ export function applyManualSale(
   assertSale(actor);
   const branchId = writeBranch(actor);
   assertBranchScope(actor, branchId);
+  assertPeriodOpen(snap, branchId, today());
+  if (snap.settings.keeperCashLink) {
+    throw new AuthzError("Ручной чек выключен: включена кассовая связь с кипером. Отключите её в настройках сети.");
+  }
   const shift = openShiftFor(snap.shifts, branchId);
-  if (!shift) return snap;
+  if (!shift) throw new AuthzError("Откройте смену перед чеком");
   const total = items.reduce((sum, i) => sum + i.sum, 0);
   const frozen = freezeSaleCosts(items, snap.recipes, snap.products, snap.stock, branchId);
   const sale: Sale = {
@@ -248,6 +378,7 @@ export function applyKeeperSales(
   assertKeeper(actor);
   const branchId = writeBranch(actor);
   assertBranchScope(actor, branchId);
+  assertPeriodOpen(snap, branchId, today());
   const shift = openShiftFor(snap.shifts, branchId);
   if (!shift) return { snap, added: 0 };
   let stock = snap.stock;
@@ -255,6 +386,10 @@ export function applyKeeperSales(
   const newSales: Sale[] = [];
   let added = 0;
   for (const row of incoming) {
+    const externalKey = `${branchId}:${row.at}:${(row as { number?: string }).number ?? row.items.map((i) => i.name).join(",")}`;
+    if (snap.sales.some((s) => s.externalKey === externalKey) || newSales.some((s) => s.externalKey === externalKey)) {
+      continue;
+    }
     const sale: Sale = {
       ...row,
       id: uid("sale"),
@@ -262,6 +397,7 @@ export function applyKeeperSales(
       shiftId: shift.id,
       branchId,
       source: "keeper",
+      externalKey,
       items: freezeSaleCosts(row.items, snap.recipes, snap.products, stock, branchId),
     };
     const d = deductSaleFromStock(stock, sale, snap.recipes, snap.products, actor.userId);
@@ -300,6 +436,7 @@ export function applyRevision(snap: Snapshot, actor: Actor, lines: RevisionLine[
   assertWriteoff(actor);
   const branchId = writeBranch(actor);
   assertBranchScope(actor, branchId);
+  assertPeriodOpen(snap, branchId, today());
   const movs = lines
     .filter((l) => l.factQty !== l.bookQty)
     .map((l) => {
@@ -322,15 +459,17 @@ export function applyRevision(snap: Snapshot, actor: Actor, lines: RevisionLine[
     });
   let stock = snap.stock;
   for (const m of movs) stock = applyMovement(stock, m);
-  return {
+  let nextRev: Snapshot = {
     ...snap,
     stock,
     movements: [...movs, ...snap.movements],
     revisions: [
-      { id: uid("r"), branchId, date: TODAY, status: "done", lines, userId: actor.userId, note },
+      { id: uid("r"), branchId, date: today(), status: "done", lines, userId: actor.userId, note },
       ...snap.revisions,
     ],
   };
+  nextRev = appendAudit(nextRev, actor, "revision", "revision", note ?? "ревизия", branchId);
+  return queueEvent(nextRev, "revision", "Ревизия закрыта", note ?? `Расхождений: ${movs.length}`);
 }
 
 export function applyTransfer(
@@ -340,6 +479,7 @@ export function applyTransfer(
 ): Snapshot {
   assertTransfer(actor);
   assertBranchScope(actor, input.fromBranchId);
+  assertPeriodOpen(snap, input.fromBranchId, today());
   if (input.fromBranchId === input.toBranchId || input.qty <= 0) return snap;
   const unit =
     snap.stock.find((s) => s.branchId === input.fromBranchId && s.productId === input.productId)?.avgCost ??
@@ -363,7 +503,14 @@ export function applyTransfer(
   const inn = { ...out, id: uid("m"), branchId: input.toBranchId, qty: Math.abs(input.qty), counterpartBranchId: input.fromBranchId };
   let stock = applyMovement(snap.stock, out);
   stock = applyMovement(stock, inn);
-  return { ...snap, stock, movements: [inn, out, ...snap.movements] };
+  return appendAudit(
+    { ...snap, stock, movements: [inn, out, ...snap.movements] },
+    actor,
+    "transfer",
+    "stock",
+    `${input.qty} ${input.fromBranchId}→${input.toBranchId}`,
+    input.fromBranchId,
+  );
 }
 
 export function applyStopList(
@@ -386,21 +533,27 @@ export function applyStopList(
     };
   }
   if (snap.stopList.some((e) => e.recipeId === input.recipeId && e.branchId === branchId && !e.clearedAt)) return snap;
-  return {
-    ...snap,
-    stopList: [
-      {
-        id: uid("sl"),
-        branchId,
-        recipeId: input.recipeId,
-        reason: input.reason,
-        note: input.note,
-        createdAt: now,
-        createdBy: actor.userId,
-      },
-      ...snap.stopList,
-    ],
-  };
+  const recipeName = snap.recipes.find((r) => r.id === input.recipeId)?.name ?? input.recipeId;
+  return queueEvent(
+    {
+      ...snap,
+      stopList: [
+        {
+          id: uid("sl"),
+          branchId,
+          recipeId: input.recipeId,
+          reason: input.reason,
+          note: input.note,
+          createdAt: now,
+          createdBy: actor.userId,
+        },
+        ...snap.stopList,
+      ],
+    },
+    "stop_list",
+    "Стоп-лист",
+    `${recipeName}: ${input.reason}`,
+  );
 }
 
 export function applyExpense(
@@ -417,7 +570,7 @@ export function applyExpense(
       {
         id: uid("exp"),
         branchId,
-        date: input.date ?? TODAY,
+        date: input.date ?? today(),
         category: input.category,
         amount: input.amount,
         note: input.note ?? "",
@@ -448,4 +601,232 @@ export function applySessionBranch(actor: Actor, branchId: string): Actor {
 
 function canSeeAllBranchesSafe(actor: Actor) {
   return actor.role === "owner";
+}
+
+export function applyOnboard(
+  snap: Snapshot,
+  input: {
+    ownerName: string;
+    login: string;
+    password: string;
+    pin: string;
+    branchName: string;
+    city: string;
+    address: string;
+  },
+): Snapshot {
+  if (snap.users.some((u) => u.role === "owner")) throw new AuthzError("Сеть уже создана", 400);
+  const login = input.login.trim().toLowerCase();
+  if (!login || input.password.length < 4 || !/^\d{4}$/.test(input.pin)) {
+    throw new AuthzError("Логин, пароль (от 4 знаков) и PIN из 4 цифр обязательны", 400);
+  }
+  const branchId = uid("br");
+  const userId = uid("u");
+  return {
+    ...snap,
+    branches: [
+      {
+        id: branchId,
+        name: input.branchName.trim() || "Филиал 1",
+        short: (input.branchName.trim() || "Филиал").slice(0, 16),
+        city: input.city.trim() || "—",
+        address: input.address.trim() || "—",
+        seats: 40,
+        phone: "",
+      },
+    ],
+    users: [
+      {
+        id: userId,
+        name: input.ownerName.trim() || "Владелец",
+        email: login,
+        password: input.password,
+        pin: input.pin,
+        role: "owner",
+        position: "Собственник",
+        branchId: null,
+        shiftPay: 0,
+        salesPercent: 0,
+        phone: "",
+      },
+    ],
+  };
+}
+
+export function applyInviteStaff(
+  snap: Snapshot,
+  actor: Actor,
+  input: {
+    name: string;
+    login: string;
+    password: string;
+    pin: string;
+    role: Role;
+    branchId: string;
+    shiftPay: number;
+    salesPercent: number;
+    position?: string;
+    phone?: string;
+  },
+): Snapshot {
+  if (!canInviteStaff(actor.role)) throw new AuthzError("Приглашение недоступно");
+  const login = input.login.trim().toLowerCase();
+  if (snap.users.some((u) => u.email.toLowerCase() === login)) throw new AuthzError("Такой логин уже есть");
+  if (!/^\d{4}$/.test(input.pin)) throw new AuthzError("PIN — 4 цифры");
+  const user = {
+    id: uid("u"),
+    name: input.name.trim(),
+    email: login,
+    password: input.password,
+    pin: input.pin,
+    role: input.role,
+    position: input.position ?? input.role,
+    branchId: input.role === "owner" ? null : input.branchId,
+    shiftPay: input.shiftPay,
+    salesPercent: input.salesPercent,
+    phone: input.phone ?? "",
+  };
+  return appendAudit({ ...snap, users: [...snap.users, user] }, actor, "invite", "user", `${user.name} / ${user.role}`);
+}
+
+export function applyUpsertRecipe(snap: Snapshot, actor: Actor, recipe: Recipe): Snapshot {
+  if (!canEditNomenclature(actor.role)) throw new AuthzError("Техкарты недоступны");
+  const i = snap.recipes.findIndex((r) => r.id === recipe.id);
+  const recipes = i < 0 ? [recipe, ...snap.recipes] : snap.recipes.map((r) => (r.id === recipe.id ? recipe : r));
+  return appendAudit({ ...snap, recipes }, actor, "recipe", "recipe", recipe.name);
+}
+
+export function applyDeleteRecipe(snap: Snapshot, actor: Actor, id: string): Snapshot {
+  if (!canEditNomenclature(actor.role)) throw new AuthzError("Техкарты недоступны");
+  return { ...snap, recipes: snap.recipes.filter((r) => r.id !== id) };
+}
+
+export function applyImportProducts(
+  snap: Snapshot,
+  actor: Actor,
+  rows: Array<{ name: string; category: string; unit: Product["unit"]; minQty: number; avgCost: number }>,
+): Snapshot {
+  if (!canEditNomenclature(actor.role)) throw new AuthzError("Номенклатура недоступна");
+  const products = [...snap.products];
+  for (const row of rows) {
+    const existing = products.find((p) => p.name.toLowerCase() === row.name.toLowerCase());
+    if (existing) {
+      Object.assign(existing, row);
+    } else {
+      products.push({ id: uid("prd"), ...row });
+    }
+  }
+  return appendAudit({ ...snap, products }, actor, "import", "product", `${rows.length} позиций`);
+}
+
+export function applyClosePeriod(
+  snap: Snapshot,
+  actor: Actor,
+  input: { from: string; to: string; revisionId: string },
+): Snapshot {
+  if (!canClosePeriod(actor.role)) throw new AuthzError("Закрытие периода недоступно");
+  const branchId = writeBranch(actor);
+  return {
+    ...snap,
+    closedPeriods: [
+      {
+        id: uid("cp"),
+        branchId,
+        from: input.from,
+        to: input.to,
+        closedAt: new Date().toISOString(),
+        closedBy: actor.userId,
+        revisionId: input.revisionId,
+      },
+      ...snap.closedPeriods,
+    ],
+  };
+}
+
+export function applyPayrollAdjustment(
+  snap: Snapshot,
+  actor: Actor,
+  input: { userId: string; kind: PayrollAdjKind; amount: number; note: string; date?: string },
+): Snapshot {
+  if (!canInviteStaff(actor.role)) throw new AuthzError("Корректировка ФОТ недоступна");
+  const branchId = writeBranch(actor);
+  const row = {
+    id: uid("adj"),
+    userId: input.userId,
+    branchId,
+    date: input.date ?? today(),
+    kind: input.kind,
+    amount: input.amount,
+    note: input.note,
+    createdBy: actor.userId,
+  };
+  return appendAudit({ ...snap, payrollAdjustments: [row, ...snap.payrollAdjustments] }, actor, "payroll_adj", "payroll", `${input.kind} ${input.amount}`, branchId);
+}
+
+export function applyRevenuePlan(snap: Snapshot, actor: Actor, input: { branchId: string; month: string; target: number }): Snapshot {
+  if (actor.role !== "owner" && actor.role !== "manager") throw new AuthzError("План недоступен");
+  const existing = snap.revenuePlans.find((p) => p.branchId === input.branchId && p.month === input.month);
+  const row = existing
+    ? { ...existing, target: input.target }
+    : { id: uid("plan"), ...input };
+  return {
+    ...snap,
+    revenuePlans: existing
+      ? snap.revenuePlans.map((p) => (p.id === existing.id ? row : p))
+      : [row, ...snap.revenuePlans],
+  };
+}
+
+export function applySettings(snap: Snapshot, actor: Actor, patch: Partial<Snapshot["settings"]>): Snapshot {
+  if (actor.role !== "owner" && actor.role !== "manager") throw new AuthzError("Настройки сети недоступны");
+  return { ...snap, settings: { ...snap.settings, ...patch, notifyEvents: { ...snap.settings.notifyEvents, ...(patch.notifyEvents ?? {}) } } };
+}
+
+export function applyPushSub(
+  snap: Snapshot,
+  actor: Actor,
+  sub: { endpoint: string; keys: { p256dh: string; auth: string } },
+): Snapshot {
+  if (snap.pushSubs.some((s) => s.endpoint === sub.endpoint)) return snap;
+  return {
+    ...snap,
+    pushSubs: [
+      { id: uid("ps"), userId: actor.userId, endpoint: sub.endpoint, keys: sub.keys, createdAt: new Date().toISOString() },
+      ...snap.pushSubs,
+    ],
+  };
+}
+
+export function applyAddBranch(
+  snap: Snapshot,
+  actor: Actor,
+  input: { name: string; city: string; address: string; short?: string },
+): Snapshot {
+  if (actor.role !== "owner") throw new AuthzError("Филиал добавляет владелец");
+  const row = {
+    id: uid("br"),
+    name: input.name,
+    short: input.short || input.name.slice(0, 16),
+    city: input.city,
+    address: input.address,
+    seats: 40,
+    phone: "",
+  };
+  return { ...snap, branches: [...snap.branches, row] };
+}
+
+export function applyAddSupplier(
+  snap: Snapshot,
+  actor: Actor,
+  input: { name: string; email: string; telegram: string; channel: SupplierChannel },
+): Snapshot {
+  if (actor.role !== "owner" && actor.role !== "manager") throw new AuthzError("Поставщики недоступны");
+  return { ...snap, suppliers: [{ id: uid("sup"), ...input }, ...snap.suppliers] };
+}
+
+export function markOutbox(snap: Snapshot, id: string, status: OutboxItem["status"], error?: string): Snapshot {
+  return {
+    ...snap,
+    outbox: snap.outbox.map((o) => (o.id === id ? { ...o, status, error } : o)),
+  };
 }

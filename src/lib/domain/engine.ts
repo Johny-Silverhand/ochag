@@ -12,7 +12,7 @@ import type {
   StockLevel,
   StockMovement,
 } from "./types";
-import { TODAY } from "./types";
+import { today } from "./types";
 import { addDays } from "../format";
 import {
   dishCost,
@@ -28,10 +28,10 @@ import {
   weightedAvgPurchasePrice,
 } from "./finance";
 
-export function periodStart(period: Period, today = TODAY) {
-  if (period === "today") return today;
-  if (period === "7d") return addDays(today, -6);
-  return addDays(today, -29);
+export function periodStart(period: Period, day = today()) {
+  if (period === "today") return day;
+  if (period === "7d") return addDays(day, -6);
+  return addDays(day, -29);
 }
 
 export function inRange(iso: string, from: string, to: string) {
@@ -96,7 +96,7 @@ export function computeKpis(
   opts: { period: Period; branchId: string | "all" },
 ): KpiBundle {
   const from = periodStart(opts.period);
-  const to = TODAY;
+  const to = today();
   const sales = filterPeriod(filterByBranch(snap.sales, opts.branchId), from, to);
   const expenses = filterPeriod(filterByBranch(snap.expenses, opts.branchId), from, to);
   const payroll = filterPeriod(filterByBranch(snap.payroll, opts.branchId), from, to);
