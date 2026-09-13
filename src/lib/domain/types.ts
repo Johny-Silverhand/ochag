@@ -3,11 +3,13 @@ export const TODAY = "2026-09-02";
 export type Role = "owner" | "manager" | "cook" | "waiter";
 export type Unit = "kg" | "l" | "шт" | "порц";
 export type PaymentType = "cash" | "card" | "qr";
-export type MovementType = "receipt" | "sale" | "writeoff" | "revision" | "prep";
+export type MovementType = "receipt" | "sale" | "writeoff" | "revision" | "prep" | "transfer";
 export type ShiftStatus = "open" | "closed";
 export type BanquetStatus = "inquiry" | "confirmed" | "deposit_paid" | "done" | "cancelled";
 export type RequestStatus = "draft" | "sent" | "received";
 export type WriteoffReason = "spoilage" | "staff_meal" | "error" | "theft" | "revision";
+export type ExpenseKind = "fixed" | "variable";
+export type StopListReason = "no_stock" | "quality" | "manual" | "shift_start";
 
 export type Period = "today" | "7d" | "30d";
 
@@ -26,6 +28,8 @@ export interface StaffUser {
   name: string;
   email: string;
   password: string;
+  /** 4-digit PIN for hall/kitchen terminals. Compared only on the server. */
+  pin: string;
   role: Role;
   position: string;
   branchId: string | null;
@@ -66,6 +70,8 @@ export interface StockLevel {
   branchId: string;
   productId: string;
   qty: number;
+  /** Weighted-average purchase price at this warehouse (TZ §5). */
+  avgCost: number;
 }
 
 export interface StockMovement {
@@ -80,6 +86,8 @@ export interface StockMovement {
   note?: string;
   refId?: string;
   userId: string;
+  /** Opposite warehouse on an inter-branch transfer. */
+  counterpartBranchId?: string;
 }
 
 export interface InvoiceLine {
@@ -105,6 +113,8 @@ export interface SaleItem {
   qty: number;
   price: number;
   sum: number;
+  /** Dish cost frozen at the moment of sale (TZ §5 cost_at_sale). */
+  costAtSale: number;
 }
 
 export interface Sale {
@@ -195,6 +205,19 @@ export interface Expense {
   category: string;
   amount: number;
   note: string;
+  kind: ExpenseKind;
+}
+
+export interface StopListEntry {
+  id: string;
+  branchId: string;
+  recipeId: string;
+  reason: StopListReason;
+  note?: string;
+  createdAt: string;
+  createdBy: string;
+  clearedAt?: string;
+  clearedBy?: string;
 }
 
 export interface PayrollAccrual {
@@ -249,6 +272,7 @@ export interface Snapshot {
   expenses: Expense[];
   payroll: PayrollAccrual[];
   revisions: Revision[];
+  stopList: StopListEntry[];
 }
 
 export const ROLE_LABEL: Record<Role, string> = {
@@ -277,6 +301,19 @@ export const MOVEMENT_LABEL: Record<MovementType, string> = {
   writeoff: "Списание",
   revision: "Ревизия",
   prep: "Производство",
+  transfer: "Перемещение",
+};
+
+export const EXPENSE_KIND_LABEL: Record<ExpenseKind, string> = {
+  fixed: "Постоянные",
+  variable: "Переменные",
+};
+
+export const STOP_REASON_LABEL: Record<StopListReason, string> = {
+  no_stock: "Нет продукта",
+  quality: "Качество",
+  manual: "Стоп-лист",
+  shift_start: "Старт-лист",
 };
 
 export const WRITEOFF_LABEL: Record<WriteoffReason, string> = {

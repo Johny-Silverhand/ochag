@@ -11,7 +11,11 @@ export type ModuleKey =
   | "staff"
   | "reports"
   | "integrations"
-  | "settings";
+  | "settings"
+  | "planning"
+  | "schedule"
+  | "quality"
+  | "ai";
 
 const ALL: Role[] = ["owner", "manager", "cook", "waiter"];
 
@@ -27,7 +31,23 @@ export const MODULE_ROLES: Record<ModuleKey, Role[]> = {
   reports: ["owner", "manager"],
   integrations: ["owner"],
   settings: ALL,
+  planning: ["owner", "manager"],
+  schedule: ["owner", "manager"],
+  quality: ["owner", "manager", "cook"],
+  ai: ["owner", "manager"],
 };
+
+export function canTransfer(role: Role) {
+  return role === "owner" || role === "manager";
+}
+
+export function canManageStopList(role: Role) {
+  return role === "owner" || role === "manager" || role === "cook";
+}
+
+export function canEditExpenses(role: Role) {
+  return role === "owner" || role === "manager";
+}
 
 export function can(role: Role, module: ModuleKey) {
   return MODULE_ROLES[module].includes(role);

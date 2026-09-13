@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type {
   Banquet,
   BanquetStatus,
+  ExpenseKind,
   InvoiceLine,
   Period,
   PurchaseLine,
@@ -11,6 +12,7 @@ import type {
   RevisionLine,
   SaleItem,
   Snapshot,
+  StopListReason,
   WriteoffReason,
 } from "../domain/types";
 import { TODAY, type Session } from "../domain/types";
@@ -21,7 +23,9 @@ import {
   openShiftFor,
   payrollForShift,
   shiftTotals,
+  stockOf,
 } from "../domain/engine";
+import { catalogAvgFromStock, freezeSaleCosts } from "../domain/finance";
 import { createSeed } from "./seed";
 import { dbAdapter } from "./adapter";
 import { getOpsStatus } from "@/lib/data/ops";
@@ -51,11 +55,20 @@ interface OpsState extends Snapshot {
   setRequestStatus: (id: string, status: RequestStatus) => void;
   openShift: (input: { openCash: number; staffIds: string[] }) => void;
   closeShift: (input: { closeCash: number; note?: string }) => void;
-  addManualSale: (items: SaleItem[], payment: "cash" | "card" | "qr") => void;
+  addManualSale: (items: Omit<SaleItem, "costAtSale">[], payment: "cash" | "card" | "qr") => void;
   importKeeperSales: (sales: Omit<Snapshot["sales"][number], "shiftId" | "id" | "number" | "branchId">[]) => number;
   upsertBanquet: (b: Banquet) => void;
   setBanquetStatus: (id: string, status: BanquetStatus) => void;
   completeRevision: (lines: RevisionLine[], note?: string) => void;
+  transferStock: (input: {
+    fromBranchId: string;
+    toBranchId: string;
+    productId: string;
+    qty: number;
+    note?: string;
+  }) => void;
+  setStopList: (input: { recipeId: string; reason: StopListReason; note?: string; clear?: boolean }) => void;
+  addExpense: (input: { category: string; amount: number; note?: string; kind: ExpenseKind; date?: string }) => void;
 }
 
 function writeBranch(s: { session: Session | null; branches: Snapshot["branches"] }) {
@@ -80,6 +93,7 @@ function snapshotOf(s: OpsState): Snapshot {
     expenses: s.expenses,
     payroll: s.payroll,
     revisions: s.revisions,
+    stopList: s.stopList,
   };
 }
 
@@ -103,6 +117,9 @@ function withSeed(): Omit<
   | "upsertBanquet"
   | "setBanquetStatus"
   | "completeRevision"
+  | "transferStock"
+  | "setStopList"
+  | "addExpense"
 > {
   return { ...createSeed(), session: null, period: "7d" };
 }
@@ -171,6 +188,9 @@ export const useOps = create<OpsState>()(
         if (!session) return;
         const branchId = writeBranch(get());
         const product = products.find((p) => p.id === productId);
+        const unit = stockOf(get().stock, branchId, productId) >= 0
+          ? (get().stock.find((s) => s.branchId === branchId && s.productId === productId)?.avgCost ?? product?.avgCost ?? 0)
+          : (product?.avgCost ?? 0);
         const q = -Math.abs(qty);
         const mov = {
           id: uid("wo"),
@@ -179,7 +199,7 @@ export const useOps = create<OpsState>()(
           productId,
           type: "writeoff" as const,
           qty: q,
-          cost: Math.abs(q) * (product?.avgCost ?? 0),
+          cost: Math.abs(q) * unit,
           reason,
           note,
           userId: session.userId,
@@ -223,7 +243,7 @@ export const useOps = create<OpsState>()(
           const productsNext = s.products.map((p) => {
             const line = lines.find((l) => l.productId === p.id);
             if (!line) return p;
-            return { ...p, avgCost: Math.round((p.avgCost * 0.6 + line.price * 0.4) * 100) / 100 };
+            return { ...p, avgCost: catalogAvgFromStock(stock, p.id, line.price) };
           });
           return {
             invoices: [inv, ...s.invoices],
@@ -342,13 +362,14 @@ export const useOps = create<OpsState>()(
         const shift = openShiftFor(shifts, branchId);
         if (!shift) return;
         const total = items.reduce((sum, i) => sum + i.sum, 0);
+        const frozen = freezeSaleCosts(items, recipes, products, stock, branchId);
         const sale = {
           id: uid("sale"),
           number: `ЧК-${String(10000 + sales.length + 1).padStart(4, "0")}`,
           branchId,
           shiftId: shift.id,
           at: new Date().toISOString(),
-          items,
+          items: frozen,
           payments: [{ type: payment, amount: total }],
           total,
           waiterId: session.userId,
@@ -381,6 +402,7 @@ export const useOps = create<OpsState>()(
               shiftId: shift.id,
               branchId,
               source: "keeper" as const,
+              items: freezeSaleCosts(row.items, recipes, products, stock, branchId),
             };
             const d = deductSaleFromStock(stock, sale, recipes, products, session.userId);
             stock = d.stock;
@@ -421,6 +443,10 @@ export const useOps = create<OpsState>()(
           .filter((l) => l.factQty !== l.bookQty)
           .map((l) => {
             const p = products.find((x) => x.id === l.productId);
+            const unit =
+              get().stock.find((s) => s.branchId === branchId && s.productId === l.productId)?.avgCost ??
+              p?.avgCost ??
+              0;
             const qty = l.factQty - l.bookQty;
             return {
               id: uid("rev"),
@@ -429,7 +455,7 @@ export const useOps = create<OpsState>()(
               productId: l.productId,
               type: "revision" as const,
               qty,
-              cost: Math.abs(qty) * (p?.avgCost ?? 0),
+              cost: Math.abs(qty) * unit,
               reason: "revision" as const,
               note,
               userId: session.userId,
@@ -455,6 +481,98 @@ export const useOps = create<OpsState>()(
             ],
           };
         });
+      },
+
+      transferStock: ({ fromBranchId, toBranchId, productId, qty, note }) => {
+        const { session, products } = get();
+        if (!session || fromBranchId === toBranchId || qty <= 0) return;
+        const unit =
+          get().stock.find((s) => s.branchId === fromBranchId && s.productId === productId)?.avgCost ??
+          products.find((p) => p.id === productId)?.avgCost ??
+          0;
+        const refId = uid("tr");
+        const at = new Date().toISOString();
+        const out = {
+          id: uid("m"),
+          at,
+          branchId: fromBranchId,
+          productId,
+          type: "transfer" as const,
+          qty: -Math.abs(qty),
+          cost: Math.abs(qty) * unit,
+          note,
+          refId,
+          userId: session.userId,
+          counterpartBranchId: toBranchId,
+        };
+        const inn = {
+          ...out,
+          id: uid("m"),
+          branchId: toBranchId,
+          qty: Math.abs(qty),
+          counterpartBranchId: fromBranchId,
+        };
+        set((s) => {
+          let stock = applyMovement(s.stock, out);
+          stock = applyMovement(stock, inn);
+          return { stock, movements: [inn, out, ...s.movements] };
+        });
+      },
+
+      setStopList: ({ recipeId, reason, note, clear }) => {
+        const { session } = get();
+        if (!session) return;
+        const branchId = writeBranch(get());
+        const now = new Date().toISOString();
+        set((s) => {
+          if (clear) {
+            return {
+              stopList: s.stopList.map((e) =>
+                e.recipeId === recipeId && e.branchId === branchId && !e.clearedAt
+                  ? { ...e, clearedAt: now, clearedBy: session.userId }
+                  : e,
+              ),
+            };
+          }
+          const exists = s.stopList.some(
+            (e) => e.recipeId === recipeId && e.branchId === branchId && !e.clearedAt,
+          );
+          if (exists) return {};
+          return {
+            stopList: [
+              {
+                id: uid("sl"),
+                branchId,
+                recipeId,
+                reason,
+                note,
+                createdAt: now,
+                createdBy: session.userId,
+              },
+              ...s.stopList,
+            ],
+          };
+        });
+      },
+
+      addExpense: ({ category, amount, note, kind, date }) => {
+        const { session } = get();
+        if (!session) return;
+        const branchId = writeBranch(get());
+        set((s) => ({
+          expenses: [
+            {
+              id: uid("exp"),
+              branchId,
+              date: date ?? TODAY,
+              category,
+              amount,
+              note: note ?? "",
+              kind,
+            },
+            ...s.expenses,
+          ],
+        }));
       },
     }),
     {

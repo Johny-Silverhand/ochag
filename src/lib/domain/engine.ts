@@ -14,6 +14,19 @@ import type {
 } from "./types";
 import { TODAY } from "./types";
 import { addDays } from "../format";
+import {
+  dishCost,
+  dishFoodCostPct,
+  expectedCash,
+  foodcostPct,
+  netProfit,
+  payrollAccrual,
+  roundMoney,
+  roundQty,
+  saleCogsFrozen,
+  unitCostOf,
+  weightedAvgPurchasePrice,
+} from "./finance";
 
 export function periodStart(period: Period, today = TODAY) {
   if (period === "today") return today;
@@ -33,24 +46,21 @@ export function salePayments(sale: Sale) {
   return { cash, card, qr };
 }
 
-export function recipeCost(recipe: Recipe, products: Product[]) {
-  return recipe.items.reduce((sum, item) => {
-    const p = products.find((x) => x.id === item.productId);
-    return sum + (p ? p.avgCost * item.qty : 0);
-  }, 0);
+export function recipeCost(recipe: Recipe, products: Product[], stock: StockLevel[] = [], branchId?: string) {
+  return dishCost(recipe, products, stock, branchId);
 }
 
-export function recipeFoodCostPct(recipe: Recipe, products: Product[]) {
-  const cost = recipeCost(recipe, products);
-  return recipe.price <= 0 ? 0 : (cost / recipe.price) * 100;
+export function recipeFoodCostPct(
+  recipe: Recipe,
+  products: Product[],
+  stock: StockLevel[] = [],
+  branchId?: string,
+) {
+  return dishFoodCostPct(recipe, recipeCost(recipe, products, stock, branchId));
 }
 
-export function saleCogs(sale: Sale, recipes: Recipe[], products: Product[]) {
-  return sale.items.reduce((sum, item) => {
-    const recipe = recipes.find((r) => r.id === item.recipeId);
-    if (!recipe) return sum;
-    return sum + recipeCost(recipe, products) * item.qty;
-  }, 0);
+export function saleCogs(sale: Sale, recipes: Recipe[], products: Product[], stock: StockLevel[] = []) {
+  return saleCogsFrozen(sale, recipes, products, stock);
 }
 
 export function filterByBranch<T extends { branchId: string }>(rows: T[], branchId: string | "all") {
@@ -109,7 +119,7 @@ export function computeKpis(
   let cogs = 0;
   for (const s of sales) {
     revenue += s.total;
-    cogs += saleCogs(s, snap.recipes, snap.products);
+    cogs += saleCogs(s, snap.recipes, snap.products, snap.stock);
     const p = salePayments(s);
     cash += p.cash;
     card += p.card;
@@ -127,11 +137,11 @@ export function computeKpis(
     checks: sales.length,
     avgCheck: sales.length ? revenue / sales.length : 0,
     cogs,
-    foodCost: revenue ? (cogs / revenue) * 100 : 0,
+    foodCost: foodcostPct(cogs, revenue),
     writeoffs: writeoffSum,
     opex,
     payroll: pay,
-    net: revenue - cogs - writeoffSum - opex - pay,
+    net: netProfit({ revenue, cogs, writeoffs: writeoffSum, opex, payroll: pay }),
     guestsBanquet: banquets.reduce((s, b) => s + b.guests, 0),
     banquetRevenue,
   };
@@ -175,11 +185,24 @@ export function needToBuy(snap: Snapshot, branchId: string) {
 
 export function applyMovement(stock: StockLevel[], mov: StockMovement): StockLevel[] {
   const i = stock.findIndex((s) => s.branchId === mov.branchId && s.productId === mov.productId);
+  const incoming = unitCostOf(mov);
   if (i < 0) {
-    return [...stock, { branchId: mov.branchId, productId: mov.productId, qty: mov.qty }];
+    return [
+      ...stock,
+      {
+        branchId: mov.branchId,
+        productId: mov.productId,
+        qty: roundQty(mov.qty),
+        avgCost: mov.qty > 0 ? incoming : 0,
+      },
+    ];
   }
+  const row = stock[i];
   const next = stock.slice();
-  next[i] = { ...next[i], qty: Math.round((next[i].qty + mov.qty) * 1000) / 1000 };
+  const qty = roundQty(row.qty + mov.qty);
+  const avgCost =
+    mov.qty > 0 ? weightedAvgPurchasePrice(row.qty, row.avgCost, mov.qty, incoming) : row.avgCost;
+  next[i] = { ...row, qty, avgCost };
   return next;
 }
 
@@ -196,9 +219,11 @@ export function deductSaleFromStock(
     const recipe = recipes.find((r) => r.id === item.recipeId);
     if (!recipe) continue;
     for (const ing of recipe.items) {
+      const onHand = stock.find((s) => s.branchId === sale.branchId && s.productId === ing.productId);
       const product = products.find((p) => p.id === ing.productId);
+      const unit = onHand?.avgCost || product?.avgCost || 0;
       const qty = -(ing.qty * item.qty);
-      const cost = (product?.avgCost ?? 0) * Math.abs(qty);
+      const cost = unit * Math.abs(qty);
       const mov: StockMovement = {
         id: `m_${sale.id}_${ing.productId}`,
         at: sale.at,
@@ -228,23 +253,29 @@ export function shiftTotals(shift: Shift, sales: Sale[]) {
     card += p.card;
     qr += p.qr;
   }
-  const expected = shift.openCash + cash;
+  const expected = expectedCash(shift.openCash, cash);
   return { cash, card, qr, expected, checks: rows.length, revenue: cash + card + qr };
+}
+
+export function shiftHours(shift: Shift) {
+  if (!shift.closedAt) return 11;
+  const ms = new Date(shift.closedAt).getTime() - new Date(shift.openedAt).getTime();
+  if (!Number.isFinite(ms) || ms <= 0) return 11;
+  return Math.max(1, Math.round(ms / 3_600_000));
 }
 
 export function payrollForShift(shift: Shift, sales: Sale[], users: Snapshot["users"]) {
   const { revenue } = shiftTotals(shift, sales);
-  const hours = 11;
+  const hours = shiftHours(shift);
   return shift.staffIds.map((userId) => {
     const u = users.find((x) => x.id === userId);
-    const base = u?.shiftPay ?? 0;
-    const bonus = u ? (u.salesPercent / 100) * revenue : 0;
+    const pay = payrollAccrual(u?.shiftPay ?? 0, u?.salesPercent ?? 0, revenue);
     return {
       userId,
       hours,
-      base,
-      bonus: Math.round(bonus),
-      total: Math.round(base + bonus),
+      base: pay.base,
+      bonus: pay.bonus,
+      total: pay.total,
     };
   });
 }
