@@ -23,7 +23,7 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { IosInstallCard, useIosInstall } from "@/components/ios/runtime";
 import { downloadWebClip } from "@/lib/ios-profile";
-import { APP_NAME, APP_VERSION, LABS_NAME, LABS_YEAR, SETUP_EXE } from "@/lib/brand";
+import { APP_NAME, APP_VERSION, LABS_NAME, LABS_YEAR } from "@/lib/brand";
 import { useActiveBranch, useOps, useSessionUser } from "@/lib/data/store";
 import { NOTIFY_EVENT_LABEL, ROLE_LABEL, WRITEOFF_LABEL, type NotifyEvent, type Period, type Role, type WriteoffReason } from "@/lib/domain/types";
 import { usePrefs } from "@/lib/prefs";
@@ -760,20 +760,7 @@ function AboutPanel() {
             </p>
             {ios.apple ? (
               <p className="mt-4 text-sm text-muted">Установка на iPhone — в разделе «iPhone» слева. App Store не нужен.</p>
-            ) : (
-              <>
-                <a
-                  href="/downloads/test-v1.0-Setup.exe"
-                  download
-                  className="mt-4 inline-flex h-10 items-center rounded-sm bg-primary px-4 text-sm text-primary-fg"
-                >
-                  Скачать {SETUP_EXE}
-                </a>
-                <p className="mt-2 text-xs text-muted">
-                  Установщик Windows: ярлыки, «Программы и компоненты», подпись {LABS_NAME}.
-                </p>
-              </>
-            )}
+            ) : null}
           </div>
         </div>
         <Separator className="my-5" />
