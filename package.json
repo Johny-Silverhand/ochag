@@ -16,7 +16,7 @@
     "preview:stop": "node scripts/preview.mjs stop",
     "typecheck": "tsc --noEmit",
     "check:auth": "node scripts/check-auth-invariant.mjs",
-    "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/auth/gate-identity.test.ts src/lib/data/bootstrap.test.ts src/lib/data/secrets.test.ts src/lib/domain/credentials.test.ts src/lib/domain/finance.test.ts src/lib/domain/ops-log.test.ts src/lib/domain/permissions.test.ts src/lib/integrations/keeper-xml.test.ts",
+    "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/auth/gate-identity.test.ts src/lib/billing/simulate.test.ts src/lib/data/bootstrap.test.ts src/lib/data/secrets.test.ts src/lib/domain/credentials.test.ts src/lib/domain/finance.test.ts src/lib/domain/ops-log.test.ts src/lib/domain/permissions.test.ts src/lib/integrations/keeper-xml.test.ts src/lib/repo/store-source.test.ts",
     "lint": "eslint .",
     "format": "prettier --write .",
     "build:win": "python3 desktop/pack-media.py && node desktop/build.mjs",

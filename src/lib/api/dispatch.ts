@@ -18,6 +18,7 @@ import {
   applyKeeperSales,
   applyManualSale,
   applyBootstrap,
+  applyOnboard,
   applyOpenShift,
   applyPayrollAdjustment,
   applyProfile,
@@ -40,6 +41,9 @@ import { today } from "../domain/types";
 import { getRepo } from "../repo";
 import { mapKeeperReceipts } from "../integrations/keeper";
 import { parseKeeperXml } from "../integrations/keeper-xml";
+import { fetchKeeperReceipts, publicKeeperStatus } from "../integrations/keeper-http";
+import { applySimulatePayment, billingPublic, canSelfOnboard } from "../billing/simulate";
+import { isTariffId } from "../billing/plans";
 import { askMetrics, periodNarrative, recommendMetrics } from "../ai";
 import { safeMetrics } from "../ai/safe-context";
 import { flushOutbox, notifyReady } from "../notify/send";
@@ -96,16 +100,29 @@ async function persistOpsLog(entry: Parameters<typeof appendOpsLog>[1]) {
   }
 }
 
-async function mutate(request: Request, fn: (snap: Snapshot, actor: ReturnType<typeof actorFrom>) => Snapshot | Promise<Snapshot>) {
+async function mutate(
+  request: Request,
+  fn: (snap: Snapshot, actor: ReturnType<typeof actorFrom>) => Snapshot | Promise<Snapshot>,
+) {
+  return mutateWith(request, async (snap, actor) => ({ snap: await fn(snap, actor) }));
+}
+
+async function mutateWith(
+  request: Request,
+  fn: (
+    snap: Snapshot,
+    actor: ReturnType<typeof actorFrom>,
+  ) => { snap: Snapshot; added?: number; skipped?: number } | Promise<{ snap: Snapshot; added?: number; skipped?: number }>,
+) {
   const path = pathOf(request);
   try {
     const actor = await requireActor(request);
     const repo = await getRepo();
     const snap = await repo.load();
-    let next = await fn(snap, actor);
-    next = await flushOutbox(next);
+    const result = await fn(snap, actor);
+    const next = await flushOutbox(result.snap);
     await repo.save(next);
-    return json({ ok: true, state: publicSnapshot(next) });
+    return json({ ok: true, state: publicSnapshot(next), added: result.added ?? 0, skipped: result.skipped ?? 0 });
   } catch (err) {
     if (err instanceof AuthzError) {
       await persistOpsLog({ level: "warn", event: "api", detail: err.message, path });
@@ -134,11 +151,42 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
         onboarded: isOnboarded(snap),
         store: status,
         notify: notifyReady(),
+        billing: billingPublic(snap),
       });
     }
 
+    if (method === "GET" && path === "billing") {
+      return json(billingPublic(await repo.load()));
+    }
+
+    if (method === "POST" && path === "billing/simulate") {
+      const snap = await repo.load();
+      if (!isTariffId(body.tariff)) throw new AuthzError("Выберите тариф", 400);
+      const next = applySimulatePayment(snap, body.tariff);
+      await repo.save(next);
+      return json({ ok: true, billing: billingPublic(next), simulated: true, state: publicSnapshot(next) });
+    }
+
     if (method === "POST" && path === "auth/onboard") {
-      throw new AuthzError("Публичная регистрация закрыта. Обратитесь к администратору.", 403);
+      const snap = await repo.load();
+      if (snap.users.length > 0) throw new AuthzError("Сеть уже создана", 400);
+      if (!canSelfOnboard(snap)) {
+        throw new AuthzError("Сначала выберите тариф и подтвердите оплату (симуляция).", 403);
+      }
+      const next = applyOnboard(snap, {
+        ownerName: String(body.ownerName ?? body.name ?? ""),
+        login: String(body.login ?? body.email ?? ""),
+        password: String(body.password ?? ""),
+        pin: String(body.pin ?? ""),
+        branchName: String(body.branchName ?? "Филиал 1"),
+        city: String(body.city ?? ""),
+        address: String(body.address ?? ""),
+      });
+      await repo.save(next);
+      const owner = next.users[0]!;
+      const actor = actorFrom(owner, { userId: owner.id, branchId: next.branches[0]?.id ?? "all" });
+      const token = await signActor(actor);
+      return json({ token, user: publicActor(actor), state: publicSnapshot(next) });
     }
 
     if (method === "POST" && path === "auth/bootstrap") {
@@ -262,26 +310,43 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
       );
     }
 
+    if (method === "GET" && path === "integrations/keeper") {
+      await requireActor(request);
+      const status = await repo.status();
+      return json({ ...publicKeeperStatus(), store: status.source });
+    }
+
     if (method === "POST" && path === "sales/import") {
-      return mutate(request, (snap, actor) => applyKeeperSales(snap, actor, (body.sales as never) ?? []).snap);
+      return mutateWith(request, (snap, actor) => applyKeeperSales(snap, actor, (body.sales as never) ?? []));
     }
 
     if (method === "POST" && path === "sales/z-report") {
-      return mutate(request, (snap, actor) => {
+      return mutateWith(request, (snap, actor) => {
         const mapped = mapKeeperReceipts(
           (body.receipts as never) ?? [],
           snap.recipes,
           actor.userId,
         );
-        return applyKeeperSales(snap, actor, mapped).snap;
+        return applyKeeperSales(snap, actor, mapped);
+      });
+    }
+
+    if (method === "POST" && path === "sales/keeper-pull") {
+      return mutateWith(request, async (snap, actor) => {
+        const receipts = await fetchKeeperReceipts();
+        const mapped = mapKeeperReceipts(receipts, snap.recipes, actor.userId);
+        return applyKeeperSales(snap, actor, mapped);
       });
     }
 
     if (method === "POST" && path === "sales/keeper-xml") {
-      return mutate(request, (snap, actor) => {
+      return mutateWith(request, (snap, actor) => {
         const receipts = parseKeeperXml(String(body.xml ?? ""));
+        if (receipts.length === 0) {
+          throw new AuthzError("В XML нет чеков. Нужны узлы Receipt/Check/Order с блюдами Item или Dish.", 400);
+        }
         const mapped = mapKeeperReceipts(receipts, snap.recipes, actor.userId);
-        return applyKeeperSales(snap, actor, mapped).snap;
+        return applyKeeperSales(snap, actor, mapped);
       });
     }
 

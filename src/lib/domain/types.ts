@@ -401,6 +401,8 @@ export interface NetworkSettings {
   supplierChannel: SupplierChannel;
   notifyEvents: Record<NotifyEvent, boolean>;
   sampleLoaded: boolean;
+  tariff: "trial" | "basic" | "mid" | "pro" | null;
+  paymentSimulatedAt: string | null;
 }
 
 export const DEFAULT_NOTIFY_EVENTS: Record<NotifyEvent, boolean> = {
@@ -420,6 +422,8 @@ export function defaultSettings(): NetworkSettings {
     supplierChannel: "telegram",
     notifyEvents: { ...DEFAULT_NOTIFY_EVENTS },
     sampleLoaded: false,
+    tariff: null,
+    paymentSimulatedAt: null,
   };
 }
 

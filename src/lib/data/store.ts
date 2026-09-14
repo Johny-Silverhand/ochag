@@ -28,7 +28,6 @@ import {
   applyImportProducts,
   applyInviteStaff,
   applyInvoice,
-  applyKeeperSales,
   applyManualSale,
   applyOpenShift,
   applyProfile,
@@ -52,8 +51,6 @@ import { dbAdapter } from "./adapter";
 import { getOpsStatus } from "@/lib/data/ops";
 import { useSync } from "./sync";
 import { api, setToken } from "../api/client";
-import { mapKeeperReceipts } from "../integrations/keeper";
-import { parseKeeperXml } from "../integrations/keeper-xml";
 import { createSeed, USERS } from "./seed";
 import {
   applyPublicState,
@@ -108,8 +105,9 @@ interface OpsState extends Snapshot {
         items: Omit<SaleItem, "costAtSale">[];
       }
     >,
-  ) => number;
-  importKeeperXml: (xml: string) => void;
+  ) => Promise<number>;
+  importKeeperXml: (xml: string) => Promise<number>;
+  pullKeeperSales: () => Promise<number>;
   upsertBanquet: (b: Banquet) => void;
   setBanquetStatus: (id: string, status: BanquetStatus) => void;
   completeRevision: (lines: RevisionLine[], note?: string) => void;
@@ -155,6 +153,16 @@ interface OpsState extends Snapshot {
   deleteStaff: (input: { userId: string }) => Promise<boolean>;
   updateSettings: (patch: Partial<Snapshot["settings"]>) => void;
   flushNotify: () => Promise<void>;
+  simulatePayment: (tariff: "trial" | "basic" | "mid" | "pro") => Promise<boolean>;
+  onboardNetwork: (input: {
+    ownerName: string;
+    login: string;
+    password: string;
+    pin: string;
+    branchName: string;
+    city: string;
+    address: string;
+  }) => Promise<{ ok: true } | { ok: false; reason: string }>;
 }
 
 function actorOf(s: { session: Session | null; users: Snapshot["users"] }): Actor | null {
@@ -235,6 +243,7 @@ const ACTION_KEYS = [
   "addManualSale",
   "importKeeperSales",
   "importKeeperXml",
+  "pullKeeperSales",
   "upsertBanquet",
   "setBanquetStatus",
   "completeRevision",
@@ -248,6 +257,8 @@ const ACTION_KEYS = [
   "deleteStaff",
   "updateSettings",
   "flushNotify",
+  "simulatePayment",
+  "onboardNetwork",
 ] as const;
 
 function withEmpty(): Omit<OpsState, (typeof ACTION_KEYS)[number]> {
@@ -256,7 +267,6 @@ function withEmpty(): Omit<OpsState, (typeof ACTION_KEYS)[number]> {
 
 let applyingRemote = false;
 let bootDone = false;
-let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
 export const useOps = create<OpsState>()(
   persist(
@@ -443,16 +453,34 @@ export const useOps = create<OpsState>()(
         void applyRemote("sales/manual", { items, payment }, (snap, actor) => applyManualSale(snap, actor, items, payment));
       },
 
-      importKeeperSales: (incoming) => {
-        void applyRemote("sales/import", { sales: incoming }, (snap, actor) => applyKeeperSales(snap, actor, incoming).snap);
-        return incoming.length;
+      importKeeperSales: async (incoming) => {
+        const session = get().session;
+        const res = await api<{ state: Snapshot; added?: number }>("sales/import", {
+          method: "POST",
+          body: { sales: incoming },
+        });
+        applyingRemote = true;
+        set({ ...applyIncoming(get(), res.state), session: session ?? get().session });
+        applyingRemote = false;
+        return res.added ?? incoming.length;
       },
 
-      importKeeperXml: (xml) => {
-        void applyRemote("sales/keeper-xml", { xml }, (snap, actor) => {
-          const mapped = mapKeeperReceipts(parseKeeperXml(xml), snap.recipes, actor.userId);
-          return applyKeeperSales(snap, actor, mapped).snap;
-        });
+      importKeeperXml: async (xml) => {
+        const session = get().session;
+        const res = await api<{ state: Snapshot; added?: number }>("sales/keeper-xml", { method: "POST", body: { xml } });
+        applyingRemote = true;
+        set({ ...applyIncoming(get(), res.state), session: session ?? get().session });
+        applyingRemote = false;
+        return res.added ?? 0;
+      },
+
+      pullKeeperSales: async () => {
+        const session = get().session;
+        const res = await api<{ state: Snapshot; added?: number }>("sales/keeper-pull", { method: "POST", body: {} });
+        applyingRemote = true;
+        set({ ...applyIncoming(get(), res.state), session: session ?? get().session });
+        applyingRemote = false;
+        return res.added ?? 0;
       },
 
       upsertBanquet: (b) => {
@@ -508,6 +536,37 @@ export const useOps = create<OpsState>()(
           toast.error(err instanceof Error ? err.message : "Очередь не отправлена");
         }
       },
+
+      simulatePayment: async (tariff) => {
+        try {
+          const res = await api<{ state: Snapshot }>("billing/simulate", { method: "POST", body: { tariff } });
+          applyingRemote = true;
+          set({ ...applyIncoming(get(), res.state), session: get().session });
+          applyingRemote = false;
+          return true;
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : "Не удалось зафиксировать тариф");
+          return false;
+        }
+      },
+
+      onboardNetwork: async (input) => {
+        try {
+          const res = await api<{ user: { userId: string; branchId: string }; state: Snapshot }>("auth/onboard", {
+            method: "POST",
+            body: input,
+          });
+          applyingRemote = true;
+          set({
+            ...applyIncoming(get(), res.state),
+            session: { userId: res.user.userId, branchId: res.user.branchId },
+          });
+          applyingRemote = false;
+          return { ok: true as const };
+        } catch (err) {
+          return { ok: false as const, reason: err instanceof Error ? err.message : "Не удалось создать сеть" };
+        }
+      },
     }),
     {
       name: "ochag-session-v3",
@@ -520,22 +579,11 @@ export const useOps = create<OpsState>()(
 if (typeof window !== "undefined") {
   useOps.subscribe((state) => {
     if (!bootDone || applyingRemote || !isOnboarded(state)) return;
-    useSync.getState().setStatus("saving");
-    window.clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      void dbAdapter
-        .save(snapshotOf(state))
-        .then(() => {
-          useSync.getState().setMeta({
-            source: useSync.getState().source ?? "memory",
-            updatedAt: new Date().toISOString(),
-            sales: state.sales.length,
-          });
-        })
-        .catch((err: unknown) => {
-          useSync.getState().setError(err instanceof Error ? err.message : "Не удалось записать");
-        });
-    }, 500);
+    // Mutations persist through /api/v1. Do not PUT the browser snapshot back:
+    // publicSnapshot blanks secrets, and a stale dump drops newly created users
+    // (the production "accounts disappear" bug on top of the memory store).
+    if (useSync.getState().status === "loading") return;
+    useSync.getState().setStatus("ok");
   });
 }
 
