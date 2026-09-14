@@ -85,8 +85,9 @@ function AccountsPage() {
             defaultBranch={defaultBranch}
             roles={roles}
             preferOwner={hasAbsoluteAccess(user.role)}
-            onCreate={(input) => {
-              inviteStaff(input);
+            onCreate={async (input) => {
+              const ok = await inviteStaff(input);
+              if (!ok) return false;
               setIssued({
                 name: input.name,
                 login: input.login,
@@ -94,6 +95,7 @@ function AccountsPage() {
                 pin: input.pin,
                 role: input.role,
               });
+              return true;
             }}
           />
         }
@@ -134,8 +136,9 @@ function AccountsPage() {
                     type="button"
                     variant={row.disabled ? "secondary" : "danger"}
                     onClick={() => {
-                      updateStaff({ userId: row.id, disabled: !row.disabled });
-                      toast.success(row.disabled ? "Учётка включена" : "Учётка отключена");
+                      void updateStaff({ userId: row.id, disabled: !row.disabled }).then((ok) => {
+                        if (ok) toast.success(row.disabled ? "Учётка включена" : "Учётка отключена");
+                      });
                     }}
                   >
                     {row.disabled ? "Включить" : "Отключить"}
@@ -158,19 +161,21 @@ function AccountsPage() {
             if (!open) setEditing(null);
           }}
           onSave={(patch) => {
-            updateStaff({ userId: editing.id, ...patch });
-            if (patch.password || patch.pin) {
-              setIssued({
-                name: patch.name ?? editing.name,
-                login: patch.login ?? editing.email,
-                password: patch.password || "без изменения",
-                pin: patch.pin || "без изменения",
-                role: patch.role ?? editing.role,
-              });
-            } else {
-              toast.success("Учётка обновлена");
-            }
-            setEditing(null);
+            void updateStaff({ userId: editing.id, ...patch }).then((ok) => {
+              if (!ok) return;
+              if (patch.password || patch.pin) {
+                setIssued({
+                  name: patch.name ?? editing.name,
+                  login: patch.login ?? editing.email,
+                  password: patch.password || "без изменения",
+                  pin: patch.pin || "без изменения",
+                  role: patch.role ?? editing.role,
+                });
+              } else {
+                toast.success("Учётка обновлена");
+              }
+              setEditing(null);
+            });
           }}
         />
       ) : null}
@@ -251,7 +256,7 @@ function CreateAccount({
     branchId: string;
     shiftPay: number;
     salesPercent: number;
-  }) => void;
+  }) => boolean | void | Promise<boolean | void>;
 }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
@@ -345,17 +350,20 @@ function CreateAccount({
                 toast.error("Выберите филиал");
                 return;
               }
-              onCreate({
-                name: name.trim(),
-                login: login.trim().toLowerCase(),
-                password,
-                pin,
-                role,
-                branchId: network ? "" : branchId,
-                shiftPay: 0,
-                salesPercent: 0,
+              void Promise.resolve(
+                onCreate({
+                  name: name.trim(),
+                  login: login.trim().toLowerCase(),
+                  password,
+                  pin,
+                  role,
+                  branchId: network ? "" : branchId,
+                  shiftPay: 0,
+                  salesPercent: 0,
+                }),
+              ).then((ok) => {
+                if (ok !== false) setOpen(false);
               });
-              setOpen(false);
             }}
           >
             Создать и показать доступ

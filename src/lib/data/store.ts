@@ -133,7 +133,7 @@ interface OpsState extends Snapshot {
     salesPercent: number;
     position?: string;
     phone?: string;
-  }) => void;
+  }) => Promise<boolean>;
   updateStaff: (input: {
     userId: string;
     name?: string;
@@ -147,7 +147,7 @@ interface OpsState extends Snapshot {
     position?: string;
     phone?: string;
     disabled?: boolean;
-  }) => void;
+  }) => Promise<boolean>;
   updateSettings: (patch: Partial<Snapshot["settings"]>) => void;
   flushNotify: () => Promise<void>;
 }
@@ -170,18 +170,21 @@ async function applyRemote(path: string, body: unknown, local: (snap: Snapshot, 
       session: session ?? s.session,
     }));
     applyingRemote = false;
+    return true;
   } catch (err) {
     const s = useOps.getState();
     const actor = actorOf(s);
     if (!actor) {
       toast.error(err instanceof Error ? err.message : "Нужен вход");
-      return;
+      return false;
     }
     try {
       const next = local(snapshotOf(s), actor);
       useOps.setState({ ...next });
+      return true;
     } catch (localErr) {
       toast.error(localErr instanceof Error ? localErr.message : err instanceof Error ? err.message : "Операция отклонена");
+      return false;
     }
   }
 }
@@ -445,13 +448,9 @@ export const useOps = create<OpsState>()(
         void applyRemote("nomenclature/import", { rows }, (snap, actor) => applyImportProducts(snap, actor, rows));
       },
 
-      inviteStaff: (input) => {
-        void applyRemote("staff/invite", input, (snap, actor) => applyInviteStaff(snap, actor, input));
-      },
+      inviteStaff: (input) => applyRemote("staff/invite", input, (snap, actor) => applyInviteStaff(snap, actor, input)),
 
-      updateStaff: (input) => {
-        void applyRemote("staff/update", input, (snap, actor) => applyUpdateStaff(snap, actor, input));
-      },
+      updateStaff: (input) => applyRemote("staff/update", input, (snap, actor) => applyUpdateStaff(snap, actor, input)),
 
       updateSettings: (patch) => {
         void applyRemote("settings/network", patch, (snap, actor) => applySettings(snap, actor, patch));
