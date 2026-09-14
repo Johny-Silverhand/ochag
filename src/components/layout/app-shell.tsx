@@ -21,6 +21,7 @@ import {
   Terminal,
   Users,
   Wallet,
+  Scale,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -52,6 +53,7 @@ const NAV: NavItem[] = [
   { to: "/console", label: "Консоль", icon: Terminal, module: "admin" },
   { to: "/journal", label: "Журнал", icon: ScrollText, module: "admin" },
   { to: "/staff", label: "Сотрудники", icon: Users, module: "staff" },
+  { to: "/debts", label: "Долги", icon: Scale, module: "debts" },
   { to: "/reports", label: "Отчёты", icon: ClipboardList, module: "reports" },
   { to: "/planning", label: "Аналитика", icon: LineChart, module: "planning" },
   { to: "/schedule", label: "Период", icon: CalendarClock, module: "schedule" },

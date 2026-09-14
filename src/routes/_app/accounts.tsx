@@ -361,6 +361,7 @@ function CreateAccount({
     branchId: string;
     shiftPay: number;
     salesPercent: number;
+    monthlyPremium?: number;
   }) => boolean | void | Promise<boolean | void>;
 }) {
   const [open, setOpen] = useState(false);
@@ -370,6 +371,9 @@ function CreateAccount({
   const [pin, setPin] = useState(generatePin);
   const [role, setRole] = useState<Role>(preferOwner && roles.includes("owner") ? "owner" : (roles[0] ?? "waiter"));
   const [branchId, setBranchId] = useState(defaultBranch);
+  const [shiftPay, setShiftPay] = useState("0");
+  const [salesPercent, setSalesPercent] = useState("0");
+  const [monthlyPremium, setMonthlyPremium] = useState("0");
   const network = isNetworkAdmin(role);
 
   function resetSecrets() {
@@ -388,6 +392,9 @@ function CreateAccount({
           resetSecrets();
           setRole(preferOwner && roles.includes("owner") ? "owner" : (roles[0] ?? "waiter"));
           setBranchId(defaultBranch);
+          setShiftPay("0");
+          setSalesPercent("0");
+          setMonthlyPremium("0");
         }
       }}
     >
@@ -444,6 +451,17 @@ function CreateAccount({
               </NativeSelect>
             </Field>
           </div>
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="Ставка за смену, ₽">
+              <Input value={shiftPay} onChange={(e) => setShiftPay(e.target.value)} inputMode="numeric" />
+            </Field>
+            <Field label="% с выручки">
+              <Input value={salesPercent} onChange={(e) => setSalesPercent(e.target.value)} inputMode="decimal" />
+            </Field>
+            <Field label="Мес. премия, ₽">
+              <Input value={monthlyPremium} onChange={(e) => setMonthlyPremium(e.target.value)} inputMode="numeric" />
+            </Field>
+          </div>
           {role === "tech_admin" ? (
             <p className="text-xs text-muted">Администратор-техник видит всю сеть и может создавать любые роли.</p>
           ) : null}
@@ -466,8 +484,9 @@ function CreateAccount({
                   pin,
                   role,
                   branchId: network ? "" : branchId,
-                  shiftPay: 0,
-                  salesPercent: 0,
+                  shiftPay: Number(shiftPay) || 0,
+                  salesPercent: Number(salesPercent) || 0,
+                  monthlyPremium: Number(monthlyPremium) || 0,
                 }),
               ).then((ok) => {
                 if (ok !== false) setOpen(false);
@@ -502,6 +521,9 @@ function EditAccount({
     pin?: string;
     role?: Role;
     branchId?: string | null;
+    shiftPay?: number;
+    salesPercent?: number;
+    monthlyPremium?: number;
     disabled?: boolean;
   }) => void;
 }) {
@@ -511,6 +533,9 @@ function EditAccount({
   const [pin, setPin] = useState("");
   const [role, setRole] = useState<Role>(user.role);
   const [branchId, setBranchId] = useState(user.branchId ?? "");
+  const [shiftPay, setShiftPay] = useState(String(user.shiftPay ?? 0));
+  const [salesPercent, setSalesPercent] = useState(String(user.salesPercent ?? 0));
+  const [monthlyPremium, setMonthlyPremium] = useState(String(user.monthlyPremium ?? 0));
   const [disabled, setDisabled] = useState(Boolean(user.disabled));
   const network = isNetworkAdmin(role);
   const roleOptions = roles.includes(user.role) ? roles : [user.role, ...roles];
@@ -557,6 +582,17 @@ function EditAccount({
               </NativeSelect>
             </Field>
           </div>
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="Ставка за смену, ₽">
+              <Input value={shiftPay} onChange={(e) => setShiftPay(e.target.value)} inputMode="numeric" />
+            </Field>
+            <Field label="% с выручки">
+              <Input value={salesPercent} onChange={(e) => setSalesPercent(e.target.value)} inputMode="decimal" />
+            </Field>
+            <Field label="Мес. премия, ₽">
+              <Input value={monthlyPremium} onChange={(e) => setMonthlyPremium(e.target.value)} inputMode="numeric" />
+            </Field>
+          </div>
           <div className="flex min-h-11 items-center justify-between gap-3 rounded-xl bg-bg px-3">
             <span className="text-sm">Заблокировать вход</span>
             <Switch checked={disabled} onCheckedChange={setDisabled} />
@@ -587,6 +623,9 @@ function EditAccount({
                 pin: pin || undefined,
                 role,
                 branchId: network ? null : branchId,
+                shiftPay: Number(shiftPay) || 0,
+                salesPercent: Number(salesPercent) || 0,
+                monthlyPremium: Number(monthlyPremium) || 0,
                 disabled,
               });
             }}

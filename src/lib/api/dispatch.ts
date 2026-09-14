@@ -37,6 +37,15 @@ import {
   applyUpdateStaff,
   applyUpsertRecipe,
   applyWriteoff,
+  applyCreateLedgerDebt,
+  applyPayLedgerDebt,
+  applyUpdateLedgerDebt,
+  applyUpsertHouseholdItem,
+  applyHouseholdMove,
+  applyShiftIncidental,
+  applyVoidSale,
+  applyDiscountSale,
+  applyAccrueMonthlyPremiums,
 } from "../domain/mutations";
 import type { Period, Snapshot } from "../domain/types";
 import { today } from "../domain/types";
@@ -46,15 +55,16 @@ import { parseKeeperXml } from "../integrations/keeper-xml";
 import { fetchKeeperReceipts, publicKeeperStatus } from "../integrations/keeper-http";
 import { applySimulatePayment, billingPublic, canSelfOnboard, showCommercialEntry, snapshotForCommercialOnboard } from "../billing/simulate";
 import { isTariffId } from "../billing/plans";
-import { askMetrics, periodNarrative, recommendMetrics } from "../ai";
+import { askMetrics, periodNarrative, recommendMetrics, ollamaAvailable, resolveOllamaConfig } from "../ai";
 import { safeMetrics } from "../ai/safe-context";
 import { flushOutbox, notifyReady } from "../notify/send";
 import { banquetPdf, periodPdf, revisionActPdf, toCsv } from "../reports/pdf";
 import { advisor } from "../ai/advisor";
 import { abcByRevenue, compareRevisions, deviations, periodPayroll, planVsFact, priceHistory, stockCover, stopListHistory } from "../domain/analytics";
+import { averageCheque, revenueByHour, waiterVoidsAndDiscounts } from "../domain/reports-extra";
 import { isOnboarded } from "../data/empty";
 import { createSeed, USERS } from "../data/seed";
-import { can, canLoadSample, canResetDemo, isNetworkAdmin, isOpsLead } from "../domain/permissions";
+import { can, canLoadSample, canResetDemo, canSeeDebts, isNetworkAdmin, isOpsLead } from "../domain/permissions";
 import { ensureEnvBootstrap, readBootstrapEnv, rematerializeLoginSecrets } from "../data/bootstrap";
 import { assertResetAllowed, assertSampleLoadAllowed } from "../data/sample-guard";
 import { appendOpsLog, recordAuthAttempt, resolveStaffAuth, ACCOUNT_BLOCKED_MSG } from "../domain/ops-log";
@@ -188,7 +198,7 @@ async function mutateWith(
     const result = await fn(snap, actor);
     const next = await flushOutbox(result.snap);
     await repo.save(next);
-    return json({ ok: true, state: publicSnapshot(next), added: result.added ?? 0, skipped: result.skipped ?? 0 });
+    return json({ ok: true, state: publicSnapshot(next, actor.role), added: result.added ?? 0, skipped: result.skipped ?? 0 });
   } catch (err) {
     if (err instanceof AuthzError) {
       await persistOpsLog({ level: "warn", event: "api", detail: err.message, path });
@@ -257,7 +267,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
         : next.branches.at(-1)?.id;
       const actor = actorFrom(owner, { userId: owner.id, branchId: homeBranch ?? "all" });
       const token = await signActor(actor);
-      return json({ token, user: publicActor(actor), state: publicSnapshot(next) });
+      return json({ token, user: publicActor(actor), state: publicSnapshot(next, actor.role) });
     }
 
     if (method === "POST" && path === "auth/bootstrap") {
@@ -280,7 +290,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
       const admin = next.users[0]!;
       const actor = actorFrom(admin, { userId: admin.id, branchId: next.branches[0]?.id ?? "all" });
       const token = await signActor(actor);
-      return json({ token, user: publicActor(actor), state: publicSnapshot(next) });
+      return json({ token, user: publicActor(actor), state: publicSnapshot(next, actor.role) });
     }
 
     if (method === "POST" && (path === "auth/login" || path === "auth/pin")) {
@@ -312,7 +322,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
       return json({
         token,
         user: publicActor(actor),
-        state: publicSnapshot(logged.snap),
+        state: publicSnapshot(logged.snap, actor.role),
       });
     }
 
@@ -322,7 +332,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
 
     if (method === "GET" && path === "state") {
       const actor = await requireActor(request);
-      return json({ user: publicActor(actor), state: publicSnapshot(await repo.load()) });
+      return json({ user: publicActor(actor), state: publicSnapshot(await repo.load(), actor.role) });
     }
 
     if (method === "POST" && path === "state/reset") {
@@ -338,7 +348,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
         path,
       });
       await repo.save(state);
-      return json({ ok: true, state: publicSnapshot(state) });
+      return json({ ok: true, state: publicSnapshot(state, actor.role) });
     }
 
     if (method === "POST" && path === "state/sample") {
@@ -355,7 +365,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
         path,
       });
       await repo.save(state);
-      return json({ ok: true, state: publicSnapshot(state) });
+      return json({ ok: true, state: publicSnapshot(state, actor.role) });
     }
 
     if (method === "POST" && path === "session/branch") {
@@ -430,7 +440,15 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
       return mutate(request, (snap, actor) => applyTransfer(snap, actor, body as never));
     }
     if (method === "POST" && path === "stock/revision") {
-      return mutate(request, (snap, actor) => applyRevision(snap, actor, (body.lines as never) ?? [], body.note as string | undefined));
+      return mutate(request, (snap, actor) =>
+        applyRevision(
+          snap,
+          actor,
+          (body.lines as never) ?? [],
+          body.note as string | undefined,
+          body.photos as never,
+        ),
+      );
     }
     if (method === "POST" && path === "procurement/request") {
       return mutate(request, (snap, actor) => applyRequestFromNeed(snap, actor));
@@ -449,6 +467,30 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     if (method === "POST" && path === "debts/topup") {
       return mutate(request, (snap, actor) => applyTopUpDebt(snap, actor, { debtId: String(body.debtId) }));
     }
+    if (method === "POST" && path === "debts/ledger") {
+      return mutate(request, (snap, actor) => applyCreateLedgerDebt(snap, actor, body as never));
+    }
+    if (method === "POST" && path === "debts/ledger/pay") {
+      return mutate(request, (snap, actor) => applyPayLedgerDebt(snap, actor, body as never));
+    }
+    if (method === "POST" && path === "debts/ledger/update") {
+      return mutate(request, (snap, actor) => applyUpdateLedgerDebt(snap, actor, body as never));
+    }
+    if (method === "POST" && path === "household/item") {
+      return mutate(request, (snap, actor) => applyUpsertHouseholdItem(snap, actor, body as never));
+    }
+    if (method === "POST" && path === "household/move") {
+      return mutate(request, (snap, actor) => applyHouseholdMove(snap, actor, body as never));
+    }
+    if (method === "POST" && path === "shifts/incidental") {
+      return mutate(request, (snap, actor) => applyShiftIncidental(snap, actor, body as never));
+    }
+    if (method === "POST" && path === "sales/void") {
+      return mutate(request, (snap, actor) => applyVoidSale(snap, actor, body as never));
+    }
+    if (method === "POST" && path === "sales/discount") {
+      return mutate(request, (snap, actor) => applyDiscountSale(snap, actor, body as never));
+    }
     if (method === "POST" && path === "shifts/stop-list") {
       return mutate(request, (snap, actor) => applyStopList(snap, actor, body as never));
     }
@@ -465,6 +507,31 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
       return mutate(request, (snap, actor) => applyProfile(snap, actor, body as never));
     }
 
+    if (method === "GET" && path === "ai/status") {
+      const actor = await requireActor(request);
+      if (!can(actor.role, "ai")) throw new AuthzError("AI только для управляющих");
+      const repo = await getRepo();
+      const snap = await repo.load();
+      const cfg = resolveOllamaConfig(snap.settings);
+      const ping = cfg.configured ? await ollamaAvailable(cfg) : { ok: false, error: "Ollama не настроена" };
+      return json({
+        configured: cfg.configured,
+        source: cfg.source,
+        model: cfg.model,
+        base: cfg.configured ? cfg.base : "",
+        reachable: ping.ok,
+        error: ping.ok ? undefined : ping.error,
+      });
+    }
+
+    if (method === "GET" && path === "debts/ledger") {
+      const actor = await requireActor(request);
+      if (!canSeeDebts(actor.role)) throw new AuthzError("Учёт долгов доступен только владельцу");
+      const repo = await getRepo();
+      const snap = await repo.load();
+      return json({ rows: snap.ledgerDebts ?? [] });
+    }
+
     if (method === "POST" && path.startsWith("ai/")) {
       const actor = await requireActor(request);
       if (!can(actor.role, "ai")) throw new AuthzError("AI только для управляющих");
@@ -473,18 +540,30 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
       const period = (body.period as Period) ?? "7d";
       const branchId = String(body.branchId ?? actor.sessionBranchId);
       const metrics = safeMetrics(snap, period, branchId);
+      const cfg = resolveOllamaConfig(snap.settings);
+      if (path === "ai/status") {
+        const ping = cfg.configured ? await ollamaAvailable(cfg) : { ok: false, error: "Ollama не настроена" };
+        return json({
+          configured: cfg.configured,
+          source: cfg.source,
+          model: cfg.model,
+          base: cfg.configured ? cfg.base : "",
+          reachable: ping.ok,
+          error: ping.ok ? undefined : ping.error,
+        });
+      }
       if (path === "ai/narrative") {
-        const out = await periodNarrative(metrics);
+        const out = await periodNarrative(metrics, snap.settings);
         return json({ ...out, metrics });
       }
       if (path === "ai/ask") {
-        const out = await askMetrics(String(body.question ?? ""), metrics);
+        const out = await askMetrics(String(body.question ?? ""), metrics, snap.settings);
         return json({ ...out, metrics });
       }
       if (path === "ai/recommend") {
-        const out = await recommendMetrics(metrics);
+        const out = await recommendMetrics(metrics, snap.settings);
         const local = await advisor.analyze(snap, branchId);
-        return json({ provider: out.provider, value: [...out.value, ...local].slice(0, 8), metrics });
+        return json({ ...out, value: [...out.value, ...local].slice(0, 8), metrics });
       }
     }
 
@@ -508,6 +587,9 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     }
     if (method === "POST" && path === "staff/adjust") {
       return mutate(request, (snap, actor) => applyPayrollAdjustment(snap, actor, body as never));
+    }
+    if (method === "POST" && path === "staff/premiums") {
+      return mutate(request, (snap, actor) => applyAccrueMonthlyPremiums(snap, actor, body as never));
     }
     if (method === "POST" && path === "period/close") {
       return mutate(request, (snap, actor) => applyClosePeriod(snap, actor, body as never));
@@ -600,13 +682,40 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
         rows: periodPayroll(await repo.load(), (url.searchParams.get("period") ?? "30d") as Period, url.searchParams.get("branch") ?? actor.sessionBranchId),
       });
     }
+    if (method === "GET" && path === "analytics/avg-check") {
+      const actor = await requireActor(request);
+      if (!can(actor.role, "reports")) throw new AuthzError("Отчёты недоступны");
+      const repo = await getRepo();
+      const snap = await repo.load();
+      const period = (url.searchParams.get("period") ?? "7d") as Period;
+      const branchId = url.searchParams.get("branch") ?? actor.sessionBranchId;
+      return json(averageCheque(snap, period, branchId));
+    }
+    if (method === "GET" && path === "analytics/hourly") {
+      const actor = await requireActor(request);
+      if (!can(actor.role, "reports")) throw new AuthzError("Отчёты недоступны");
+      const repo = await getRepo();
+      const snap = await repo.load();
+      const period = (url.searchParams.get("period") ?? "7d") as Period;
+      const branchId = url.searchParams.get("branch") ?? actor.sessionBranchId;
+      return json(revenueByHour(snap, period, branchId));
+    }
+    if (method === "GET" && path === "analytics/waiter-voids") {
+      const actor = await requireActor(request);
+      if (!can(actor.role, "reports")) throw new AuthzError("Отчёты недоступны");
+      const repo = await getRepo();
+      const snap = await repo.load();
+      const period = (url.searchParams.get("period") ?? "7d") as Period;
+      const branchId = url.searchParams.get("branch") ?? actor.sessionBranchId;
+      return json({ rows: waiterVoidsAndDiscounts(snap, period, branchId) });
+    }
 
     if (method === "POST" && path === "notify/flush") {
       const actor = await requireActor(request);
       if (!isOpsLead(actor.role)) throw new AuthzError("Очередь недоступна");
       const next = await flushOutbox(await repo.load());
       await repo.save(next);
-      return json({ ok: true, state: publicSnapshot(next), notify: notifyReady() });
+      return json({ ok: true, state: publicSnapshot(next, actor.role), notify: notifyReady() });
     }
 
     if (method === "GET" && path === "reports/pdf") {
@@ -645,8 +754,8 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
         return json({
           filename: "ochag-payroll.csv",
           csv: toCsv(
-            ["Сотрудник", "Смен", "Ставка", "Бонус", "Доплата", "Штраф", "Аванс", "К выплате"],
-            rows.map((r) => [r.user.name, r.shifts, r.base, r.bonus, r.extra, r.fine, r.advanceOut, r.payable]),
+            ["Сотрудник", "Смен", "Ставка", "Бонус", "Премия", "Доплата", "Штраф", "Аванс", "К выплате"],
+            rows.map((r) => [r.user.name, r.shifts, r.base, r.bonus, r.premium, r.extra, r.fine, r.advanceOut, r.payable]),
           ),
         });
       }

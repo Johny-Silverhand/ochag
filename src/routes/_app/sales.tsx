@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { Field, Input, NativeSelect, Textarea } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/tabs";
 import { useOps, useSessionUser } from "@/lib/data/store";
-import { canCreateSale, canImportKeeper } from "@/lib/domain/permissions";
+import { canCreateSale, canDiscountSale, canImportKeeper, canVoidSale } from "@/lib/domain/permissions";
 import { filterByBranch, filterPeriod, openShiftFor, periodStart, salePayments, topDishes } from "@/lib/domain/engine";
 import { PAYMENT_LABEL, today, type PaymentType, type Period, type SaleItem } from "@/lib/domain/types";
 import { pct, ruDateTime, rub } from "@/lib/format";
@@ -29,6 +29,8 @@ function SalesPage() {
   const importKeeperXml = useOps((s) => s.importKeeperXml);
   const pullKeeperSales = useOps((s) => s.pullKeeperSales);
   const addManualSale = useOps((s) => s.addManualSale);
+  const voidSale = useOps((s) => s.voidSale);
+  const discountSale = useOps((s) => s.discountSale);
   const ownSalesOnly = usePrefs((s) => s.waiterOwnSalesOnly);
   const scope = session.branchId;
   const canWrite = isWriteScope(scope);
@@ -39,9 +41,9 @@ function SalesPage() {
     if (user.role === "waiter" && ownSalesOnly) list = list.filter((s) => s.waiterId === user.id);
     return [...list].sort((a, b) => (a.at < b.at ? 1 : -1));
   }, [snap.sales, scope, from, user, ownSalesOnly]);
-
-  const revenue = rows.reduce((s, r) => s + r.total, 0);
-  const pays = rows.reduce(
+  const live = rows.filter((s) => !s.voided);
+  const revenue = live.reduce((s, r) => s + r.total, 0);
+  const pays = live.reduce(
     (acc, s) => {
       const p = salePayments(s);
       acc.cash += p.cash;
@@ -52,7 +54,7 @@ function SalesPage() {
     },
     { cash: 0, card: 0, qr: 0, transfer: 0 },
   );
-  const dishes = topDishes(rows, 6);
+  const dishes = topDishes(live, 6);
   const open = openShiftFor(snap.shifts, writeScope);
 
   return (
@@ -157,7 +159,11 @@ function SalesPage() {
                 {rows.slice(0, 80).map((s) => (
                   <tr key={s.id} className="border-t border-border">
                     <td className="px-5 py-2.5">
-                      <div className="font-medium">{s.number}</div>
+                      <div className="font-medium">
+                        {s.number}
+                        {s.voided ? <Badge className="ml-2">отмена</Badge> : null}
+                        {s.discount ? <span className="ml-2 text-xs text-muted">скидка {rub(s.discount)}</span> : null}
+                      </div>
                       <div className="text-xs text-muted">{s.items.map((i) => i.name).join(", ")}</div>
                     </td>
                     <td className="px-3 py-2.5 whitespace-nowrap text-muted">{ruDateTime(s.at)}</td>
@@ -165,7 +171,30 @@ function SalesPage() {
                       <Badge>{PAYMENT_LABEL[s.payments[0]?.type ?? "card"]}</Badge>
                       {s.source === "keeper" ? <span className="ml-2 text-[10px] tracking-wide text-subtle uppercase">кипер</span> : null}
                     </td>
-                    <td className="px-5 py-2.5 text-right font-mono tabular-nums">{rub(s.total)}</td>
+                    <td className="px-5 py-2.5 text-right">
+                      <div className={`font-mono tabular-nums ${s.voided ? "text-muted line-through" : ""}`}>{rub(s.total)}</div>
+                      {canWrite && !s.voided && (canVoidSale(user.role) || canDiscountSale(user.role)) ? (
+                        <div className="mt-1 flex justify-end gap-1">
+                          {canDiscountSale(user.role) ? (
+                            <DiscountDialog
+                              max={s.total}
+                              onSave={(amount, reason) => {
+                                discountSale({ saleId: s.id, amount, reason });
+                                toast.success("Скидка записана");
+                              }}
+                            />
+                          ) : null}
+                          {canVoidSale(user.role) ? (
+                            <VoidDialog
+                              onSave={(reason) => {
+                                voidSale({ saleId: s.id, reason });
+                                toast.success("Чек отменён, склад возвращён");
+                              }}
+                            />
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -355,6 +384,88 @@ function KeeperXmlDialog({
             </Button>
           </div>
         </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DiscountDialog({
+  max,
+  onSave,
+}: {
+  max: number;
+  onSave: (amount: number, reason: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [amount, setAmount] = useState("100");
+  const [reason, setReason] = useState("скидка зала");
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="ghost">
+          Скидка
+        </Button>
+      </DialogTrigger>
+      <DialogContent title="Скидка по чеку">
+        <p className="text-sm text-muted">Не больше суммы чека ({rub(max)}). Склад не трогаем.</p>
+        <Field label="Сумма, ₽" className="mt-3">
+          <Input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="numeric" />
+        </Field>
+        <Field label="Основание" className="mt-3">
+          <Input value={reason} onChange={(e) => setReason(e.target.value)} />
+        </Field>
+        <Button
+          className="mt-4 w-full"
+          onClick={() => {
+            const n = Number(amount);
+            if (!(n > 0)) {
+              toast.error("Сумма скидки должна быть больше нуля");
+              return;
+            }
+            if (n > max) {
+              toast.error("Скидка больше чека");
+              return;
+            }
+            onSave(n, reason.trim() || "скидка");
+            setOpen(false);
+          }}
+        >
+          Записать скидку
+        </Button>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function VoidDialog({ onSave }: { onSave: (reason: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("ошибка");
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="ghost">
+          Отмена
+        </Button>
+      </DialogTrigger>
+      <DialogContent title="Отмена чека">
+        <p className="text-sm text-muted">Списание по чеку вернётся на склад. Выручка смены уменьшится.</p>
+        <Field label="Причина" className="mt-3">
+          <Input value={reason} onChange={(e) => setReason(e.target.value)} />
+        </Field>
+        <Button
+          className="mt-4 w-full"
+          variant="danger"
+          onClick={() => {
+            if (!reason.trim()) {
+              toast.error("Укажите причину отмены");
+              return;
+            }
+            onSave(reason.trim());
+            setOpen(false);
+          }}
+        >
+          Отменить чек
+        </Button>
       </DialogContent>
     </Dialog>
   );

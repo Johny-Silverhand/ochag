@@ -19,8 +19,9 @@ import {
 } from "@/lib/domain/engine";
 import { today, WRITEOFF_LABEL, type WriteoffReason } from "@/lib/domain/types";
 import { downloadBase64, downloadText } from "@/lib/reports/download";
-import { isWriteScope, WRITE_SCOPE_HINT } from "@/lib/ui/scope";
+import { averageCheque, revenueByHour, waiterVoidsAndDiscounts } from "@/lib/domain/reports-extra";
 import { pct, ruDate, rub } from "@/lib/format";
+import { isWriteScope, WRITE_SCOPE_HINT } from "@/lib/ui/scope";
 
 export const Route = createFileRoute("/_app/reports")({ component: ReportsPage });
 
@@ -36,6 +37,9 @@ function ReportsPage() {
   const user = useSessionUser()!;
   const addExpense = useOps((s) => s.addExpense);
   const expenses = filterPeriod(filterByBranch(snap.expenses, scope), from, today());
+  const avg = averageCheque(snap, period, scope);
+  const hourly = revenueByHour(snap, period, scope);
+  const waiterRows = waiterVoidsAndDiscounts(snap, period, scope);
   const [pdfNote, setPdfNote] = useState("");
 
   function csv() {
@@ -116,8 +120,8 @@ function ReportsPage() {
       />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi label="Выручка" value={rub(k.revenue)} />
+        <Kpi label="Средний чек" value={rub(avg.avgCheck)} hint={`${avg.checks} чеков · ${avg.itemsPerCheck} поз.`} />
         <Kpi label="Себестоимость" value={rub(k.cogs)} hint={pct(k.foodCost)} />
-        <Kpi label="Расходы + ФОТ" value={rub(k.opex + k.payroll)} />
         <Kpi label="Чистыми" value={rub(k.net)} tone={k.net >= 0 ? "good" : "bad"} />
       </div>
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
@@ -145,6 +149,50 @@ function ReportsPage() {
                 <span className="font-mono tabular-nums">{rub(inv.total)}</span>
               </li>
             ))}
+          </ul>
+        </Card>
+      </div>
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <Card>
+          <div className="text-sm font-medium">Выручка по часам</div>
+          <p className="mt-1 text-xs text-muted">
+            Пик по Москве: {hourly.peakLabel ?? "нет данных"}
+            {hourly.peakRevenue ? ` · ${rub(hourly.peakRevenue)}` : ""}. Час берётся из времени чека, для планирования
+            смен.
+          </p>
+          <ul className="mt-3 max-h-56 space-y-1 overflow-auto text-sm">
+            {hourly.rows
+              .filter((r) => r.checks > 0)
+              .map((r) => (
+                <li key={r.hour} className="flex justify-between">
+                  <span>{r.label}</span>
+                  <span className="font-mono tabular-nums">
+                    {rub(r.revenue)} · {r.checks}
+                  </span>
+                </li>
+              ))}
+            {hourly.rows.every((r) => r.checks === 0) ? <li className="text-muted">Нет чеков за период.</li> : null}
+          </ul>
+        </Card>
+        <Card>
+          <div className="text-sm font-medium">Отмены и скидки по официантам</div>
+          <p className="mt-1 text-xs text-muted">Каскад: отмена возвращает склад; скидка уменьшает сумму чека.</p>
+          <ul className="mt-3 space-y-2 text-sm">
+            {waiterRows.map((r) => (
+              <li key={r.waiterId} className="flex justify-between gap-2">
+                <span>
+                  {r.name}
+                  <span className="block text-xs text-muted">
+                    чеков {r.checks} · отмен {r.voids} · скидок {r.discounts}
+                  </span>
+                </span>
+                <span className="font-mono text-right tabular-nums">
+                  {rub(r.voidSum)}
+                  <span className="block text-xs text-muted">{rub(r.discountSum)}</span>
+                </span>
+              </li>
+            ))}
+            {waiterRows.length === 0 ? <li className="text-muted">Пока нет отмен и скидок.</li> : null}
           </ul>
         </Card>
       </div>

@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import {
   Bell,
@@ -676,6 +676,18 @@ function WorkspacePanel({ role }: { role: Role }) {
         </div>
       </Card>
       <Card>
+        <h2 className="text-sm font-medium tracking-tight">Локальный AI (Ollama)</h2>
+        <p className="mt-1 text-sm text-muted">
+          Облачной модели в Очаге нет. Если включить и указать адрес, сводки в разделе AI идут в вашу Ollama. Если сервис
+          недоступен — честная эвристика по цифрам, не «как будто модель ответила».
+        </p>
+        {isNetworkAdmin(role) ? (
+          <OllamaSettings />
+        ) : (
+          <p className="mt-3 text-xs text-muted">Адрес модели задаёт владелец.</p>
+        )}
+      </Card>
+      <Card>
         <h2 className="text-sm font-medium tracking-tight">Очередь сигналов</h2>
         <p className="mt-1 text-sm text-muted">
           Telegram / email / webpush. Без ключей в окружении запись падает в очередь с ошибкой — тихих заглушек нет.
@@ -969,6 +981,55 @@ function PrefRow({
         {hint ? <p className="mt-0.5 text-xs leading-relaxed text-muted">{hint}</p> : null}
       </div>
       <div className="shrink-0">{children}</div>
+    </div>
+  );
+}
+
+function OllamaSettings() {
+  const snap = useOps((s) => s);
+  const updateSettings = useOps((s) => s.updateSettings);
+  const [base, setBase] = useState(snap.settings.ollamaBaseUrl ?? "");
+  const [model, setModel] = useState(snap.settings.ollamaModel || "llama3.2");
+  useEffect(() => {
+    setBase(snap.settings.ollamaBaseUrl ?? "");
+    setModel(snap.settings.ollamaModel || "llama3.2");
+  }, [snap.settings.ollamaBaseUrl, snap.settings.ollamaModel]);
+  return (
+    <div className="mt-4 space-y-3">
+      <PrefRow title="Включить Ollama" hint="Выключено — только эвристика, без запросов к модели.">
+        <Switch
+          checked={Boolean(snap.settings.ollamaEnabled)}
+          onCheckedChange={(v) => updateSettings({ ollamaEnabled: v })}
+        />
+      </PrefRow>
+      <Field label="Базовый URL">
+        <Input
+          value={base}
+          onChange={(e) => setBase(e.target.value)}
+          placeholder="http://127.0.0.1:11434"
+        />
+      </Field>
+      <Field label="Модель">
+        <Input value={model} onChange={(e) => setModel(e.target.value)} placeholder="llama3.2" />
+      </Field>
+      <Button
+        type="button"
+        variant="secondary"
+        onClick={() => {
+          updateSettings({
+            ollamaEnabled: true,
+            ollamaBaseUrl: base.trim(),
+            ollamaModel: model.trim() || "llama3.2",
+          });
+          toast.success("Адрес Ollama сохранён в сети");
+        }}
+      >
+        Сохранить адрес модели
+      </Button>
+      <p className="text-xs text-muted">
+        С Vercel localhost кафе не достучаться — нужен туннель (Cloudflare Tunnel, Tailscale, ngrok) до машины с
+        Ollama. CORS браузеру не нужен: запросы идут с сервера приложения.
+      </p>
     </div>
   );
 }
