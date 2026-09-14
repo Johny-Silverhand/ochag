@@ -16,7 +16,7 @@
  */
 import type { Product, Recipe, Role, Sale, SaleItem, Snapshot, StockLevel } from "./types.ts";
 import { defaultSettings } from "./types.ts";
-import { canSeeDebts } from "./permissions.ts";
+import { canSeeDebts, canSeeOpsLog } from "./permissions.ts";
 import { snapshotForActor, type TenantActor } from "./tenancy.ts";
 
 export function roundMoney(value: number, digits = 2) {
@@ -173,9 +173,9 @@ export function publicSnapshot(snap: Snapshot, roleOrActor?: Role | TenantActor)
     payrollAdjustments: scoped.payrollAdjustments ?? [],
     revenuePlans: scoped.revenuePlans ?? [],
     audit: scoped.audit ?? [],
-    opsLogs: scoped.opsLogs ?? [],
-    outbox: scoped.outbox ?? [],
-    pushSubs: (scoped.pushSubs ?? []).map((s) => ({ ...s, keys: { p256dh: "", auth: "" } })),
+    opsLogs: role && canSeeOpsLog(role) ? (scoped.opsLogs ?? []) : [],
+    outbox: (scoped.outbox ?? []).map((o) => ({ ...o, to: undefined })),
+    pushSubs: (scoped.pushSubs ?? []).map((s) => ({ ...s, keys: { p256dh: "", auth: "" }, endpoint: "" })),
     deviceSessions: (scoped.deviceSessions ?? []).map((s) => ({ ...s })),
   };
   if (role && !canSeeDebts(role)) {

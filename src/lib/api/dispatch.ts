@@ -65,7 +65,7 @@ import { abcByRevenue, compareRevisions, deviations, periodPayroll, planVsFact, 
 import { averageCheque, revenueByHour, waiterVoidsAndDiscounts } from "../domain/reports-extra";
 import { isOnboarded } from "../data/empty";
 import { createSeed, USERS } from "../data/seed";
-import { can, canLoadSample, canResetDemo, canSeeDebts, isNetworkAdmin, isOpsLead } from "../domain/permissions";
+import { can, canLoadSample, canResetDemo, hasAbsoluteAccess, isOpsLead } from "../domain/permissions";
 import { ensureEnvBootstrap, readBootstrapEnv, rematerializeLoginSecrets } from "../data/bootstrap";
 import { assertResetAllowed, assertSampleLoadAllowed } from "../data/sample-guard";
 import { appendOpsLog, recordAuthAttempt, resolveStaffAuth, ACCOUNT_BLOCKED_MSG, AUTH_LOCKED_MSG } from "../domain/ops-log";
@@ -78,8 +78,17 @@ import {
   sessionsVisibleTo,
   touchSession,
 } from "../domain/sessions";
-import { assertReadableBranch, canSwitchOwner, ownerSummaries, snapshotForActor } from "../domain/tenancy";
-import { assertAuthRate, assertPayloadSize, assertSameOriginOrNone, assertWriteRate, opaqueApiError, securityHeaders } from "../security/http";
+import { assertReadableBranch, ownerSummaries, snapshotForActor } from "../domain/tenancy";
+import {
+  assertAuthFieldSizes,
+  assertAuthRate,
+  assertPayloadSize,
+  assertSameOriginOrNone,
+  assertWriteRate,
+  opaqueApiError,
+  securityHeaders,
+} from "../security/http";
+import { assertApiAuthz, isPrivilegedWrite } from "../security/authz-routes";
 import { secretsEqual } from "../security/secrets";
 import {
   DB_UNAVAILABLE_MSG,
@@ -110,7 +119,16 @@ async function readBody(request: Request): Promise<Record<string, unknown>> {
   const text = await request.text();
   assertPayloadSize(request, text);
   if (!text) return {};
-  return JSON.parse(text) as Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new AuthzError("Некорректное тело запроса", 400);
+    }
+    return parsed as Record<string, unknown>;
+  } catch (err) {
+    if (err instanceof AuthzError) throw err;
+    throw new AuthzError("Некорректное тело запроса", 400);
+  }
 }
 
 async function requireLiveActor(request: Request, snap: Snapshot) {
@@ -222,10 +240,20 @@ async function mutateWith(
     const repo = await getRepo();
     let snap = await repo.load();
     const actor = await requireLiveActor(request, snap);
+    assertApiAuthz(request.method, path, actor);
     assertWriteRate(request, actor.userId);
     snap = touchSession(snap, actor.sessionId);
     const result = await fn(snap, actor);
-    const next = await flushOutbox(result.snap);
+    let next = await flushOutbox(result.snap);
+    if (hasAbsoluteAccess(actor.role) && isPrivilegedWrite(path)) {
+      next = appendOpsLog(next, {
+        level: "info",
+        event: "api",
+        detail: `техник ${path} · контур ${actor.actingOwnerId ?? "все"}`,
+        userId: actor.userId,
+        path,
+      });
+    }
     await repo.save(next);
     return json(
       { ok: true, state: publicSnapshot(next, actor), added: result.added ?? 0, skipped: result.skipped ?? 0 },
@@ -235,7 +263,7 @@ async function mutateWith(
   } catch (err) {
     if (err instanceof AuthzError) {
       await persistOpsLog({ level: "warn", event: "api", detail: err.message, path });
-      return json({ error: err.message }, err.status);
+      return json({ error: err.message }, err.status, request);
     }
     throw err;
   }
@@ -264,14 +292,22 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     }
 
     if (method === "POST" && path === "billing/simulate") {
+      assertAuthRate(request);
       const snap = await repo.load();
       if (!isTariffId(body.tariff)) throw new AuthzError("Выберите тариф", 400);
       const next = applySimulatePayment(snap, body.tariff);
       await repo.save(next);
-      return json({ ok: true, billing: billingPublic(next), simulated: true, state: publicSnapshot(next) });
+      return json({ ok: true, billing: billingPublic(next), simulated: true }, 200, request);
     }
 
     if (method === "POST" && path === "auth/onboard") {
+      const login = String(body.login ?? body.email ?? "");
+      assertAuthRate(request, login);
+      assertAuthFieldSizes({
+        login,
+        password: String(body.password ?? ""),
+        pin: String(body.pin ?? ""),
+      });
       const snap = await repo.load();
       if (!canSelfOnboard(snap)) {
         throw new AuthzError(
@@ -281,7 +317,6 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
           showCommercialEntry(snap) ? 403 : 400,
         );
       }
-      const login = String(body.login ?? body.email ?? "");
       const next = applyOnboard(snapshotForCommercialOnboard(snap), {
         ownerName: String(body.ownerName ?? body.name ?? ""),
         login,
@@ -311,12 +346,18 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     }
 
     if (method === "POST" && path === "auth/bootstrap") {
+      assertAuthRate(request);
       const snap = await repo.load();
       if (snap.users.length > 0) throw new AuthzError("Сеть уже создана", 400);
       const expected = readBootstrapEnv().token;
       if (!expected) throw new AuthzError("Bootstrap выключен", 403);
       const got = String(body.token ?? request.headers.get("x-ochag-bootstrap") ?? "");
-      if (got !== expected) throw new AuthzError("Неверный токен", 403);
+      assertAuthFieldSizes({
+        login: String(body.login ?? body.email ?? ""),
+        password: String(body.password ?? ""),
+        pin: String(body.pin ?? ""),
+      });
+      if (!secretsEqual(got, expected)) throw new AuthzError("Неверный токен", 403);
       const next = applyBootstrap(snap, {
         name: String(body.name ?? "Администратор-техник"),
         login: String(body.login ?? body.email ?? ""),
@@ -337,11 +378,13 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     }
 
     if (method === "POST" && (path === "auth/login" || path === "auth/pin")) {
-      assertAuthRate(request, String(body.login ?? body.email ?? ""));
-      const snap = authSnapshot(await repo.load());
-      const login = String(body.login ?? body.email ?? "").trim().toLowerCase();
+      const loginRaw = String(body.login ?? body.email ?? "");
       const password = body.password != null ? String(body.password) : "";
       const pin = body.pin != null ? String(body.pin) : "";
+      assertAuthRate(request, loginRaw);
+      assertAuthFieldSizes({ login: loginRaw, password, pin });
+      const snap = authSnapshot(await repo.load());
+      const login = loginRaw.trim().toLowerCase();
       const via = path === "auth/pin" ? "pin" : "password";
       const user = snap.users.find((u) => u.email.toLowerCase() === login);
       const dummy = "\0".repeat(Math.max(password.length, pin.length, 12));
@@ -437,7 +480,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     if (method === "POST" && path === "session/owner") {
       const snap = await repo.load();
       const actor = await requireLiveActor(request, snap);
-      if (!canSwitchOwner(actor.role)) throw new AuthzError("Контур владельца переключает только администратор-техник");
+      assertApiAuthz(method, path, actor);
       const next = applySessionOwner(actor, body.ownerId != null ? String(body.ownerId) : null, snap);
       const token = await signActor(next);
       await persistOpsLog({
@@ -467,7 +510,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     if (method === "GET" && path === "owners") {
       const snap = await repo.load();
       const actor = await requireLiveActor(request, snap);
-      if (!canSwitchOwner(actor.role)) throw new AuthzError("Список владельцев только для администратора-техника");
+      assertApiAuthz(method, path, actor);
       return json(
         {
           rows: ownerSummaries(snap),
@@ -630,7 +673,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
 
     if (method === "GET" && path === "debts/ledger") {
       const { actor, view } = await loadScoped(request);
-      if (!canSeeDebts(actor.role)) throw new AuthzError("Учёт долгов доступен только владельцу");
+      assertApiAuthz(method, path, actor);
       return json({ rows: view.ledgerDebts ?? [] }, 200, request);
     }
 
@@ -869,10 +912,10 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
       if (path !== "auth/login" && path !== "auth/pin") {
         await persistOpsLog({ level: "warn", event: "api", detail: err.message, path });
       }
-      return json({ error: err.message }, err.status);
+      return json({ error: err.message }, err.status, request);
     }
     if (err instanceof StoreUnavailableError || isDbUnavailableError(err)) {
-      return json({ error: DB_UNAVAILABLE_MSG }, 503);
+      return json({ error: DB_UNAVAILABLE_MSG }, 503, request);
     }
     const message = opaqueApiError(err);
     await persistOpsLog({ level: "error", event: "api", detail: message, path });

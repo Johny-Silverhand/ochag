@@ -81,6 +81,9 @@ export function assignOwnerIds(snap: Snapshot): Snapshot {
 export function scopeSnapshot(snap: Snapshot, ownerId: string): Snapshot {
   const ids = ownerBranchIds(snap, ownerId);
   const inBranch = <T extends { branchId?: string }>(row: T) => !row.branchId || ids.has(row.branchId);
+  const ownerUsers = new Set(
+    snap.users.filter((u) => u.id === ownerId || u.ownerId === ownerId || u.role === "tech_admin").map((u) => u.id),
+  );
   return {
     ...snap,
     branches: snap.branches.filter((b) => b.ownerId === ownerId),
@@ -104,7 +107,11 @@ export function scopeSnapshot(snap: Snapshot, ownerId: string): Snapshot {
     householdMovements: (snap.householdMovements ?? []).filter((m) => ids.has(m.branchId)),
     payrollAdjustments: (snap.payrollAdjustments ?? []).filter(inBranch),
     revenuePlans: (snap.revenuePlans ?? []).filter((p) => ids.has(p.branchId)),
+    closedPeriods: (snap.closedPeriods ?? []).filter(inBranch),
     suppliers: snap.suppliers ?? [],
+    audit: (snap.audit ?? []).filter((e) => !e.branchId || ids.has(e.branchId)),
+    outbox: snap.outbox ?? [],
+    pushSubs: (snap.pushSubs ?? []).filter((s) => ownerUsers.has(s.userId)),
     deviceSessions: (snap.deviceSessions ?? []).filter((s) => {
       const user = snap.users.find((u) => u.id === s.userId);
       return user?.id === ownerId || user?.ownerId === ownerId || user?.role === "tech_admin";
@@ -112,7 +119,40 @@ export function scopeSnapshot(snap: Snapshot, ownerId: string): Snapshot {
   };
 }
 
+/** Tech with no contour selected: directory only — no other owner's sales/stock/debts. */
+export function directorySnapshot(snap: Snapshot): Snapshot {
+  return {
+    ...snap,
+    stock: [],
+    movements: [],
+    invoices: [],
+    sales: [],
+    shifts: [],
+    requests: [],
+    banquets: [],
+    expenses: [],
+    payroll: [],
+    revisions: [],
+    stopList: [],
+    debts: [],
+    ledgerDebts: [],
+    householdStock: [],
+    householdMovements: [],
+    payrollAdjustments: [],
+    revenuePlans: [],
+    closedPeriods: [],
+    outbox: [],
+    pushSubs: [],
+    deviceSessions: [],
+  };
+}
+
 export function snapshotForActor(snap: Snapshot, actor: TenantActor): Snapshot {
+  if (hasAbsoluteAccess(actor.role)) {
+    const ownerId = actor.actingOwnerId?.trim() || null;
+    if (!ownerId) return directorySnapshot(snap);
+    return scopeSnapshot(snap, ownerId);
+  }
   const ownerId = effectiveOwnerId(actor, snap);
   if (!ownerId) return snap;
   return scopeSnapshot(snap, ownerId);

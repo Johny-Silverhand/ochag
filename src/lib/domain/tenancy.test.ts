@@ -101,6 +101,34 @@ describe("owner tenancy", () => {
           source: "manual",
         },
       ],
+      ledgerDebts: [
+        {
+          id: "ld-a",
+          kind: "client" as const,
+          status: "open" as const,
+          partyName: "Мария банкет",
+          branchId: mariaBr,
+          amount: 1000,
+          paid: 0,
+          note: "",
+          createdAt: "2026-09-01T12:00:00.000Z",
+          createdBy: mariaId,
+          payments: [],
+        },
+        {
+          id: "ld-b",
+          kind: "supplier" as const,
+          status: "open" as const,
+          partyName: "Иван опт",
+          branchId: ivanBr,
+          amount: 5000,
+          paid: 0,
+          note: "",
+          createdAt: "2026-09-01T13:00:00.000Z",
+          createdBy: ivanId,
+          payments: [],
+        },
+      ],
     };
     const mariaView = scopeSnapshot(live, mariaId);
     assert.equal(mariaView.sales.length, 1);
@@ -119,6 +147,17 @@ describe("owner tenancy", () => {
     });
     assert.equal(pub.sales.length, 1);
     assert.equal(pub.sales[0]?.id, "s-a");
+    assert.equal(pub.ledgerDebts.map((d) => d.id).join(), "ld-a");
+    const unscopedTech = publicSnapshot(live, {
+      userId: "u-tech",
+      role: "tech_admin",
+      homeBranchId: null,
+      sessionBranchId: "all",
+    });
+    assert.equal(unscopedTech.sales.length, 0);
+    assert.equal(unscopedTech.ledgerDebts.length, 0);
+    assert.ok(unscopedTech.users.some((u) => u.email === "ivan"));
+    assert.ok(unscopedTech.users.some((u) => u.email === "maria"));
   });
 
   it("forbids a manager from reading another owner's branch", () => {
@@ -230,6 +269,8 @@ describe("owner tenancy", () => {
     assert.ok(ivanView.branches.every((b) => b.ownerId === ivanId));
     assert.equal(ivanView.sales[0]?.id, "s-b");
     assert.notEqual(ivanView.branches[0]?.id, mariaView.branches[0]?.id);
+    assert.equal(mariaView.sales.some((s) => s.id === "s-b"), false);
+    assert.equal(ivanView.sales.some((s) => s.id === "s-a"), false);
 
     const managerUser = live.users.find((u) => u.email === "maria")!;
     const manager = actorFrom(

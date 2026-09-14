@@ -22,13 +22,20 @@ export function sanitizePhotos(input: unknown, at = new Date().toISOString()): D
     }
     out.push({
       id: row.id && String(row.id).startsWith("ph_") ? String(row.id) : uid("ph"),
-      name: String(row.name ?? "фото").slice(0, 80),
+      name: sanitizePhotoName(row.name),
       mime,
       dataUrl,
       at: row.at && typeof row.at === "string" ? row.at : at,
     });
   }
   return out;
+}
+
+function sanitizePhotoName(raw: unknown) {
+  const s = String(raw ?? "фото").replace(/\\/g, "/");
+  const base = (s.split("/").pop() ?? "фото").replace(/\0/g, "");
+  const cleaned = base.replace(/\.\./g, "").replace(/[^\p{L}\p{N}._\-\s]/gu, "").trim().slice(0, 80);
+  return cleaned || "фото";
 }
 
 function guessMime(dataUrl: string) {

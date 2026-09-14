@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { AuthzError } from "../authz/error.ts";
-import { assertAuthRate, rateLimit, resetRateLimits, securityHeaders } from "./http.ts";
+import { assertAuthRate, assertPayloadSize, MAX_JSON_BYTES, rateLimit, resetRateLimits, securityHeaders } from "./http.ts";
 
 describe("API security helpers", () => {
   it("trips rate limit on login spam", () => {
@@ -14,6 +14,36 @@ describe("API security helpers", () => {
     assert.throws(() => assertAuthRate(req), (err: unknown) => err instanceof AuthzError && (err as AuthzError).status === 429);
   });
 
+  it("trips per-login rate even when IPs differ", () => {
+    resetRateLimits();
+    for (let i = 0; i < 12; i++) {
+      const req = new Request("https://ochag.example/api/v1/auth/login", {
+        method: "POST",
+        headers: { "x-forwarded-for": `203.0.113.${i + 1}` },
+      });
+      assertAuthRate(req, "owner");
+    }
+    const extra = new Request("https://ochag.example/api/v1/auth/login", {
+      method: "POST",
+      headers: { "x-forwarded-for": "198.51.100.8" },
+    });
+    assert.throws(
+      () => assertAuthRate(extra, "owner"),
+      (err: unknown) => err instanceof AuthzError && (err as AuthzError).status === 429,
+    );
+  });
+
+  it("rejects oversized JSON bodies", () => {
+    const req = new Request("https://ochag.example/api/v1/auth/onboard", {
+      method: "POST",
+      headers: { "content-length": String(MAX_JSON_BYTES + 1) },
+    });
+    assert.throws(
+      () => assertPayloadSize(req, "x"),
+      (err: unknown) => err instanceof AuthzError && (err as AuthzError).status === 413,
+    );
+  });
+
   it("sets browser security headers and does not reflect unknown Origin", () => {
     const req = new Request("https://ochag.example/api/v1/state", {
       headers: { origin: "https://evil.example" },
@@ -24,6 +54,7 @@ describe("API security helpers", () => {
     assert.match(headers["content-security-policy"] ?? "", /frame-ancestors 'none'/);
     assert.match(headers["content-security-policy"] ?? "", /https:\/\/grok\.com/);
     assert.equal(headers["access-control-allow-origin"], undefined);
+    assert.equal(headers["strict-transport-security"], "max-age=63072000; includeSubDomains; preload");
   });
 
   it("counts a sliding window", () => {

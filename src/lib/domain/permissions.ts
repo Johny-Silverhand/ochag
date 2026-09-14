@@ -151,6 +151,11 @@ export function canSeeDebts(role: Role) {
   return grants(role, ["owner"]);
 }
 
+/** Журнал операций (консоль) — только администратор-техник. */
+export function canSeeOpsLog(role: Role) {
+  return hasAbsoluteAccess(role);
+}
+
 export function canManageDebts(role: Role) {
   return canSeeDebts(role);
 }

@@ -5,10 +5,14 @@ import { publicErrorMessage } from "../repo/db-errors.ts";
 const buckets = new Map<string, { n: number; t: number }>();
 
 export const AUTH_RATE_MAX = 20;
+export const AUTH_LOGIN_RATE_MAX = 12;
 export const AUTH_RATE_WINDOW_MS = 60_000;
 export const MAX_JSON_BYTES = 1_500_000;
 export const LOGIN_FAIL_LIMIT = 8;
-export const LOGIN_LOCK_MS = 15 * 60 * 1000;
+export const LOGIN_LOCK_MS = 15 * 60_000;
+export const MAX_LOGIN_CHARS = 120;
+export const MAX_PASSWORD_CHARS = 256;
+export const MAX_PIN_CHARS = 16;
 
 export function clientIp(request: Request) {
   const forwarded = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "";
@@ -38,9 +42,15 @@ export function assertAuthRate(request: Request, login?: string) {
   const ipHit = rateLimit(`auth:ip:${ip}`);
   if (!ipHit.ok) throw new AuthzError("Слишком много попыток входа. Подождите минуту.", 429);
   if (login) {
-    const loginHit = rateLimit(`auth:login:${login.toLowerCase()}`, 12, AUTH_RATE_WINDOW_MS);
+    const loginHit = rateLimit(`auth:login:${login.toLowerCase()}`, AUTH_LOGIN_RATE_MAX, AUTH_RATE_WINDOW_MS);
     if (!loginHit.ok) throw new AuthzError("Слишком много попыток для этого логина. Подождите минуту.", 429);
   }
+}
+
+export function assertAuthFieldSizes(input: { login?: string; password?: string; pin?: string }) {
+  if ((input.login ?? "").length > MAX_LOGIN_CHARS) throw new AuthzError("Слишком длинный логин", 400);
+  if ((input.password ?? "").length > MAX_PASSWORD_CHARS) throw new AuthzError("Слишком длинный пароль", 400);
+  if ((input.pin ?? "").length > MAX_PIN_CHARS) throw new AuthzError("Слишком длинный PIN", 400);
 }
 
 export function assertWriteRate(request: Request, userId: string) {
@@ -52,6 +62,8 @@ export function securityHeaders(request?: Request): Record<string, string> {
   const origin = request?.headers.get("origin") ?? "";
   const self = request ? new URL(request.url).origin : "";
   const allowOrigin = origin && (origin === self || allowedOrigin(origin)) ? origin : "";
+  const https =
+    Boolean(request && new URL(request.url).protocol === "https:") || isProductionRuntime();
   return {
     "x-content-type-options": "nosniff",
     "referrer-policy": "strict-origin-when-cross-origin",
@@ -59,9 +71,11 @@ export function securityHeaders(request?: Request): Record<string, string> {
     "x-frame-options": "DENY",
     "content-security-policy":
       "default-src 'self'; script-src 'self' 'unsafe-inline' https://grok.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
+    ...(https ? { "strict-transport-security": "max-age=63072000; includeSubDomains; preload" } : {}),
     ...(allowOrigin
       ? {
           "access-control-allow-origin": allowOrigin,
+          "access-control-allow-credentials": "true",
           vary: "Origin",
           "access-control-allow-headers": "authorization, content-type",
           "access-control-allow-methods": "GET,POST,PUT,DELETE,OPTIONS",
