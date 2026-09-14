@@ -169,9 +169,11 @@ function PlansStep({
           />
         ))}
       </div>
-      <Button type="button" className="mt-4 w-full" onClick={onCheckout}>
-        Перейти к оплате · {tariffById(selected).name}
-      </Button>
+      <div className="sticky bottom-0 z-10 -mx-5 mt-4 bg-inherit px-5 pt-3 max-md:-mx-[var(--page-pad-x)] max-md:px-[var(--page-pad-x)]">
+        <Button type="button" className="w-full" onClick={onCheckout}>
+          Перейти к оплате · {tariffById(selected).name}
+        </Button>
+      </div>
     </div>
   );
 }
