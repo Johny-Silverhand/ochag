@@ -325,14 +325,14 @@ function HandoffCard({ issued, onDismiss }: { issued: Issued; onDismiss: () => v
 
 function HandoffRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex min-h-11 items-center justify-between gap-3 rounded-sm bg-bg px-3">
+    <div className="flex min-h-11 items-center justify-between gap-3 rounded-xl bg-bg px-3">
       <div>
         <div className="text-xs tracking-wide text-muted uppercase">{label}</div>
         <div className="text-fg">{value}</div>
       </div>
       <button
         type="button"
-        className="inline-flex size-11 items-center justify-center rounded-sm text-muted hover:bg-surface hover:text-fg"
+        className="inline-flex size-11 items-center justify-center rounded-xl text-muted hover:bg-surface hover:text-fg"
         onClick={() => void copyText(label, value)}
         aria-label={`Копировать ${label}`}
       >
@@ -409,7 +409,7 @@ function CreateAccount({
             </Field>
             <button
               type="button"
-              className="mt-6 inline-flex size-11 items-center justify-center rounded-sm text-muted hover:bg-bg hover:text-fg"
+              className="mt-6 inline-flex size-11 items-center justify-center rounded-xl text-muted hover:bg-bg hover:text-fg"
               onClick={resetSecrets}
               aria-label="Сгенерировать пароль и PIN"
             >
@@ -558,7 +558,7 @@ function EditAccount({
               </NativeSelect>
             </Field>
           </div>
-          <div className="flex min-h-11 items-center justify-between gap-3 rounded-sm bg-bg px-3">
+          <div className="flex min-h-11 items-center justify-between gap-3 rounded-xl bg-bg px-3">
             <span className="text-sm">Заблокировать вход</span>
             <Switch checked={disabled} onCheckedChange={setDisabled} />
           </div>

@@ -19,7 +19,7 @@ export function ThemeSwitcher({ className }: { className?: string }) {
           type="button"
           aria-label="Сменить тему"
           className={cn(
-            "flex size-11 items-center justify-center rounded-sm text-muted transition-colors duration-150 hover:bg-surface hover:text-fg md:size-9",
+            "flex size-11 items-center justify-center rounded-xl text-muted transition-[color,background-color] duration-200 hover:bg-surface hover:text-fg md:size-10",
             className,
           )}
         >
@@ -49,7 +49,7 @@ export function ThemeSwitcher({ className }: { className?: string }) {
                 onClick={() => setTheme(item.id)}
                 aria-pressed={active}
                 className={cn(
-                  "flex flex-col items-center gap-1.5 rounded-md p-1.5 text-center transition-colors duration-150",
+                  "flex flex-col items-center gap-1.5 rounded-2xl p-1.5 text-center transition-colors duration-200",
                   active ? "bg-bg" : "hover:bg-bg/70",
                 )}
               >

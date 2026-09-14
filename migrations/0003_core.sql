@@ -1,6 +1,6 @@
 -- Normalized schema for the café network (TZ stage 1).
--- Not opened at runtime yet: the app uses the in-memory / JSON repository.
--- Apply these when DATABASE_URL is plugged in, then implement src/lib/repo/postgres.ts.
+-- The running app still persists a Snapshot document in ops_state (0002).
+-- These tables are applied so a later adapter can split the document without a new migration set.
 
 create table if not exists branches (
   id         text primary key,

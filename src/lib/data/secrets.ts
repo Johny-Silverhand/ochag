@@ -1,4 +1,4 @@
-import type { Snapshot, StaffUser } from "../domain/types";
+import type { Snapshot, StaffUser } from "../domain/types.ts";
 
 function sameLogin(a: string, b: string) {
   return a.trim().toLowerCase() === b.trim().toLowerCase();

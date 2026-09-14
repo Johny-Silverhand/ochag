@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { actorFrom, AuthzError } from "../authz/actor.ts";
 import { emptySnapshot } from "../data/empty.ts";
-import { applyBootstrap, applyClosePeriod, applyDeleteStaff, applyInviteStaff, applyManualSale, applyOnboard, applyOpenShift, applyRevision, applyUpdateStaff } from "./mutations.ts";
+import { applyBootstrap, applyClosePeriod, applyDeleteStaff, applyInviteStaff, applyKeeperSales, applyManualSale, applyOnboard, applyOpenShift, applyRevision, applyUpdateStaff } from "./mutations.ts";
 import { defaultSettings } from "./types.ts";
 
 const ownerActor = actorFrom(
@@ -72,6 +72,34 @@ describe("manual cheque vs keeper link", () => {
     assert.throws(
       () => applyManualSale(withShift, actor, [], "cash"),
       (err: unknown) => err instanceof AuthzError && /кипер/i.test(err.message),
+    );
+  });
+
+  it("refuses a keeper import without an open shift", () => {
+    const onboarded = applyOnboard(emptySnapshot(), {
+      ownerName: "Кирилл",
+      login: "owner",
+      password: "ochag",
+      pin: "1001",
+      branchName: "Пушкина",
+      city: "Краснодар",
+      address: "ул. Пушкина, 1",
+    });
+    const branchId = onboarded.branches[0]!.id;
+    const actor = { ...ownerActor, userId: onboarded.users[0]!.id, sessionBranchId: branchId };
+    assert.throws(
+      () =>
+        applyKeeperSales(onboarded, actor, [
+          {
+            at: new Date().toISOString(),
+            items: [{ recipeId: "r1", name: "Чай", qty: 1, price: 50, sum: 50 }],
+            payments: [{ type: "card", amount: 50 }],
+            total: 50,
+            waiterId: actor.userId,
+            source: "keeper",
+          },
+        ]),
+      (err: unknown) => err instanceof AuthzError && /смену/i.test(err.message),
     );
   });
 });

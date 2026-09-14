@@ -1,13 +1,13 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { CommercialGate } from "@/components/auth/commercial";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
 import { isOnboarded } from "@/lib/data/empty";
 import { useHydrated, useOps } from "@/lib/data/store";
 import { BootScreen } from "@/components/layout/app-shell";
-import { LabsCredit } from "@/components/brand/labs-credit";
 import { IosInstallCard, useIosInstall } from "@/components/ios/runtime";
-import { APP_NAME, APP_VERSION } from "@/lib/brand";
+import { NETWORK_NAME } from "@/lib/brand";
 import { usePrefs } from "@/lib/prefs";
 
 export const Route = createFileRoute("/")({
@@ -22,10 +22,14 @@ function LoginPage() {
   const login = useOps((s) => s.login);
   const loginPin = useOps((s) => s.loginPin);
   const setPeriod = useOps((s) => s.setPeriod);
+  const simulatePayment = useOps((s) => s.simulatePayment);
+  const onboardNetwork = useOps((s) => s.onboardNetwork);
   const snap = useOps((s) => s);
   const defaultPeriod = usePrefs((s) => s.defaultPeriod);
   const navigate = useNavigate();
   const ready = hydrated && isOnboarded(snap);
+  const paidTariff = snap.settings.tariff;
+  const canCreateNetwork = snap.users.length === 0 && Boolean(snap.settings.paymentSimulatedAt);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [pin, setPin] = useState("");
@@ -59,62 +63,61 @@ function LoginPage() {
     <main className="max-h-[var(--app-height,100dvh)] min-h-dvh overflow-y-auto scroll-touch bg-bg text-fg lg:max-h-none lg:grid lg:grid-cols-2">
       <section className="relative hidden flex-col justify-between overflow-hidden bg-sidebar px-12 pt-[max(3rem,env(safe-area-inset-top))] pb-12 text-sidebar-fg lg:flex">
         <div>
-          <div className="text-xs font-medium tracking-[0.28em] text-sidebar-muted uppercase">{APP_NAME}</div>
+          <div className="text-xs font-medium tracking-[0.28em] text-sidebar-muted uppercase">{NETWORK_NAME}</div>
           <h1 className="mt-6 max-w-md text-5xl leading-tight font-medium tracking-tight">
-            Контур смены, склада и прибыли. Без таблиц, которые сбивают к пятнице.
+            Товароучёт и управление кафе на продажах r_keeper.
           </h1>
           <p className="mt-5 max-w-md text-sm leading-relaxed text-sidebar-muted">
-            Товароучёт, кипер, касса, зарплаты и банкетные листы — в одном контуре. Вход по логину, который выдаёт администратор.
+            Склад, роли, филиалы, смены, банкеты и прибыль. Новый контур — после тарифа. Выданный логин работает сразу.
           </p>
         </div>
-        <div>
-          <dl className="grid max-w-lg grid-cols-3 gap-6 border-t border-sidebar-fg/10 pt-6">
-            <div>
-              <dt className="text-xs text-sidebar-muted">Роли</dt>
-              <dd className="mt-1 font-mono text-2xl tabular-nums">5</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-sidebar-muted">Модули</dt>
-              <dd className="mt-1 font-mono text-2xl tabular-nums">8</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-sidebar-muted">Этап</dt>
-              <dd className="mt-1 font-mono text-2xl tabular-nums">3</dd>
-            </div>
-          </dl>
-          <LabsCredit tone="sidebar" align="left" className="mt-8" />
-        </div>
+        <img
+          src="/marketing/hero.png"
+          alt="Очаг на планшете в зале кафе"
+          className="mt-8 aspect-video w-full max-w-lg rounded-3xl object-cover"
+        />
       </section>
 
       <section className="relative flex min-h-dvh flex-col justify-center px-5 pt-[max(2.5rem,env(safe-area-inset-top))] pb-[max(2.5rem,env(safe-area-inset-bottom))] sm:px-10">
-        <div className="mx-auto w-full max-w-md pb-16">
-          <div className="mb-8 lg:hidden">
-            <div className="text-xs font-medium tracking-[0.28em] text-muted uppercase">{APP_NAME}</div>
-            <h1 className="mt-2 text-3xl font-medium tracking-tight">Вход в контур</h1>
-          </div>
-          <div className="hidden lg:block">
-            <div className="text-xs font-medium tracking-[0.28em] text-muted uppercase">
-              {APP_NAME} · {APP_VERSION}
-            </div>
-            <h2 className="mt-2 text-3xl font-medium tracking-tight">Вход</h2>
+        <div className="mx-auto w-full max-w-md pb-10">
+          <div className="mb-8">
+            <div className="text-xs font-medium tracking-[0.28em] text-muted uppercase">{NETWORK_NAME}</div>
+            <h1 className="mt-2 text-3xl font-medium tracking-tight lg:hidden">Вход в контур</h1>
+            <h2 className="mt-2 hidden text-3xl font-medium tracking-tight lg:block">Вход</h2>
             <p className="mt-2 text-sm text-muted">
-              Логин и пароль. PIN — для зала и кухни.
+              Новый объект — тариф и «Создать сеть». Сотрудник с выданной учёткой — логин ниже.
             </p>
           </div>
 
           {ios.apple ? (
-            <div className="mt-6">
+            <div className="mb-6">
               <IosInstallCard compact />
             </div>
           ) : null}
 
+          <CommercialGate
+            onboarded={ready}
+            canCreateNetwork={canCreateNetwork}
+            paidTariff={paidTariff}
+            simulatePayment={simulatePayment}
+            onboardNetwork={async (input) => {
+              const result = await onboardNetwork(input);
+              if (result.ok) {
+                setPeriod(defaultPeriod);
+                void navigate({ to: "/dashboard" });
+              }
+              return result;
+            }}
+          />
+
           <form
-            className="mt-8 space-y-3"
+            className="mt-8 space-y-3 border-t border-border pt-6"
             onSubmit={(e) => {
               e.preventDefault();
               void (mode === "pin" ? enter(email, "", pin) : enter(email, password));
             }}
           >
+            <div className="text-xs font-medium tracking-wide text-muted uppercase">Уже есть логин</div>
             <div className="flex gap-2 text-xs">
               <button type="button" className={mode === "password" ? "text-fg" : "text-muted"} onClick={() => setMode("password")}>
                 Пароль
@@ -159,15 +162,14 @@ function LoginPage() {
             )}
             {error ? <p className="text-sm text-danger">{error}</p> : null}
             {!ready ? (
-              <p className="text-sm text-muted">Нет учётки? Обратитесь к администратору.</p>
+              <p className="text-sm text-muted">
+                Нет учётки — сначала тариф и «Создать сеть», либо обратитесь к администратору.
+              </p>
             ) : null}
-            <Button type="submit" className="w-full" disabled={busy}>
+            <Button type="submit" className="w-full" variant={canCreateNetwork ? "secondary" : "default"} disabled={busy}>
               {busy ? "Входим…" : "Войти"}
             </Button>
           </form>
-        </div>
-        <div className="absolute inset-x-0 bottom-[max(1.25rem,env(safe-area-inset-bottom))] px-5 sm:px-10">
-          <LabsCredit />
         </div>
       </section>
     </main>

@@ -13,7 +13,6 @@ import {
   UtensilsCrossed,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/page";
-import { LabsCredit, LabsMark } from "@/components/brand/labs-credit";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -23,7 +22,7 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { IosInstallCard, useIosInstall } from "@/components/ios/runtime";
 import { downloadWebClip } from "@/lib/ios-profile";
-import { APP_NAME, APP_VERSION, LABS_NAME, LABS_YEAR } from "@/lib/brand";
+import { APP_VERSION, LABS_YEAR, NETWORK_NAME } from "@/lib/brand";
 import { useActiveBranch, useOps, useSessionUser } from "@/lib/data/store";
 import { NOTIFY_EVENT_LABEL, ROLE_LABEL, WRITEOFF_LABEL, type NotifyEvent, type Period, type Role, type WriteoffReason } from "@/lib/domain/types";
 import { usePrefs } from "@/lib/prefs";
@@ -72,11 +71,11 @@ function SettingsPage() {
                 type="button"
                 onClick={() => setSection(item.id)}
                 className={cn(
-                  "flex h-11 shrink-0 items-center gap-2 rounded-sm px-3 text-sm transition-colors duration-150",
+                  "flex min-h-11 shrink-0 items-center gap-2.5 rounded-xl px-3 text-sm transition-[color,background-color] duration-200",
                   active ? "bg-surface text-fg shadow-(--shadow-border)" : "text-muted hover:bg-surface/70 hover:text-fg",
                 )}
               >
-                <item.icon className="size-4" strokeWidth={1.75} />
+                <item.icon className="size-5" strokeWidth={2} />
                 {item.label}
               </button>
             );
@@ -212,11 +211,11 @@ function ThemeSwatch({
         active ? "shadow-(--shadow-border-hover) ring-2 ring-ring/50" : "shadow-(--shadow-border) hover:shadow-(--shadow-border-hover)",
       )}
     >
-      <div className="overflow-hidden rounded-md" style={{ background: bg }}>
+      <div className="overflow-hidden rounded-xl" style={{ background: bg }}>
         <div className="flex h-16">
           <div className="w-7" style={{ background: sidebar }} />
           <div className="flex flex-1 flex-col gap-1.5 p-2">
-            <div className="h-6 rounded-sm shadow-(--shadow-border)" style={{ background: surface }} />
+            <div className="h-6 rounded-lg shadow-(--shadow-border)" style={{ background: surface }} />
             <div className="flex gap-1">
               <span className="h-2 w-8 rounded-full" style={{ background: primary }} />
               <span className="h-2 w-5 rounded-full opacity-40" style={{ background: sidebar }} />
@@ -521,9 +520,9 @@ function WorkspacePanel({ role }: { role: Role }) {
   function exportJson() {
     const payload = {
       exportedAt: new Date().toISOString(),
-      app: APP_NAME,
+      app: NETWORK_NAME,
       version: APP_VERSION,
-      studio: LABS_NAME,
+      product: NETWORK_NAME,
       branches: snap.branches,
       users: snap.users.map(({ password: _p, ...u }) => u),
       products: snap.products,
@@ -596,7 +595,8 @@ function WorkspacePanel({ role }: { role: Role }) {
       <Card>
         <h2 className="text-sm font-medium tracking-tight">Касса и кипер</h2>
         <p className="mt-1 text-sm text-muted">
-          Если связь с кипером включена, ручной чек закрыт. Z-отчёт и XML остаются. По умолчанию связь включена — так безопаснее в зале.
+          Если связь с кипером включена, ручной чек закрыт. Импорт XML и забор с кассы остаются. Как подключить r_keeper —
+          в разделе Интеграции.
         </p>
         <div className="mt-3 divide-y divide-border">
           <PrefRow title="Кассовая связь с кипером" hint="Выключите, только если зал бьёт чеки вручную.">
@@ -716,7 +716,7 @@ function IphonePanel() {
         <a
           href="/downloads/Ochag-iOS-Xcode.zip"
           download
-          className="mt-4 inline-flex h-11 items-center rounded-sm bg-primary px-4 text-sm text-primary-fg"
+          className="mt-4 inline-flex h-11 items-center rounded-xl bg-primary px-4 text-sm text-primary-fg"
         >
           Скачать проект Xcode
         </a>
@@ -750,9 +750,8 @@ function AboutPanel() {
     <div className="space-y-4">
       <Card>
         <div className="flex items-start gap-3">
-          <LabsMark className="size-11 text-primary" />
           <div>
-            <div className="text-xs tracking-[0.22em] text-muted uppercase">{APP_NAME}</div>
+            <div className="text-xs tracking-[0.22em] text-muted uppercase">{NETWORK_NAME}</div>
             <h2 className="mt-1 text-lg font-medium tracking-tight">Операционный контур общепита</h2>
             <p className="mt-2 max-w-lg text-sm text-muted">
               Версия {APP_VERSION}. Ваш доступ: {ROLE_LABEL[user.role]} — {modules}.
@@ -766,7 +765,7 @@ function AboutPanel() {
         <dl className="grid gap-3 text-sm sm:grid-cols-3">
           <div>
             <dt className="text-xs text-muted">Продукт</dt>
-            <dd className="mt-0.5 font-medium">{LABS_NAME}</dd>
+            <dd className="mt-0.5 font-medium">{NETWORK_NAME}</dd>
           </div>
           <div>
             <dt className="text-xs text-muted">Год</dt>
@@ -779,9 +778,9 @@ function AboutPanel() {
         </dl>
       </Card>
       <Card className="bg-sidebar text-sidebar-fg">
-        <LabsCredit tone="sidebar" align="left" />
+        <p className="text-sm font-medium">{NETWORK_NAME}</p>
         <p className="mt-3 text-xs leading-relaxed text-sidebar-muted">
-          Контур «Очаг»: копирование, разбор и перепродажа — только с письменного согласия.
+          Товароучёт и управление кафе. Копирование, разбор и перепродажа контура — только с согласия правообладателя.
         </p>
       </Card>
     </div>

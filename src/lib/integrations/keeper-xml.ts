@@ -1,6 +1,7 @@
 /**
- * Stub parser for an r_keeper 7 XML dump / Z-report.
- * Live RK7 is out of scope — this only understands a small documented subset.
+ * Parser for r_keeper 7 XML dumps / Z-reports / RK7 XML interface replies.
+ * Live HTTP still needs a reachable RK7 host; this understands the shapes we
+ * can actually import on Vercel (file upload and XML-interface responses).
  */
 import type { KeeperReceipt } from "./keeper";
 
@@ -9,45 +10,130 @@ function decode(text: string) {
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"');
+    .replace(/&quot;/g, '"')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)));
 }
 
 function attr(tag: string, name: string) {
-  const m = tag.match(new RegExp(`${name}="([^"]*)"`, "i")) ?? tag.match(new RegExp(`${name}='([^']*)'`, "i"));
+  const m =
+    tag.match(new RegExp(`${name}\\s*=\\s*"([^"]*)"`, "i")) ??
+    tag.match(new RegExp(`${name}\\s*=\\s*'([^']*)'`, "i"));
   return m ? decode(m[1] ?? "") : "";
+}
+
+function firstAttr(tag: string, names: string[]) {
+  for (const name of names) {
+    const v = attr(tag, name);
+    if (v) return v;
+  }
+  return "";
 }
 
 function payType(raw: string): KeeperReceipt["payType"] {
   const v = raw.toLowerCase();
-  if (v.includes("cash") || v.includes("нал")) return "cash";
-  if (v.includes("qr")) return "qr";
+  if (v.includes("cash") || v.includes("нал") || v.includes("наллич") || v === "1") return "cash";
+  if (v.includes("qr") || v.includes("сбп") || v.includes("sbp")) return "qr";
   return "card";
 }
 
+function num(raw: string, fallback = 0) {
+  const n = Number(String(raw).replace(",", ".").replace(/\s/g, ""));
+  return Number.isFinite(n) ? n : fallback;
+}
+
+/** RK7 XML interface often stores qty in 1/1000 and money in kopecks. File dumps use pieces and rubles. */
+export function normalizeRk7Units(qty: number, sum: number): { qty: number; sum: number } {
+  let q = qty;
+  let s = sum;
+  const thousandths = q >= 100 && Math.abs(q % 1000) < 0.001;
+  if (thousandths) q = q / 1000;
+  if (thousandths && s >= 10000 && Number.isInteger(s)) s = s / 100;
+  return { qty: q > 0 ? q : 1, sum: s };
+}
+
+function itemFromTag(tag: string): KeeperReceipt["items"][number] | null {
+  const name =
+    firstAttr(tag, ["name", "Name", "NAME", "code", "Code"]) ||
+    decode((tag.match(/>([^<]+)</)?.[1] ?? "").trim());
+  if (!name && !firstAttr(tag, ["qty", "quantity", "Quantity", "amount", "sum"])) return null;
+  const rawQty = num(firstAttr(tag, ["qty", "quantity", "Quantity", "count", "Count"]), 1);
+  const rawSum = num(firstAttr(tag, ["sum", "amount", "Amount", "SUM", "price"]));
+  const units = normalizeRk7Units(rawQty, rawSum);
+  return {
+    name: name || "Блюдо",
+    qty: units.qty,
+    sum: units.sum || 0,
+  };
+}
+
+function payFromBlock(block: string): KeeperReceipt["payType"] {
+  const payTag =
+    block.match(/<Pay\b[^>]*\/?>/i)?.[0] ??
+    block.match(/<PAY\b[^>]*\/?>/i)?.[0] ??
+    block.match(/<Payment\b[^>]*\/?>/i)?.[0] ??
+    "";
+  const fromChild = firstAttr(payTag, ["type", "Type", "name", "Name", "paytype", "code"]);
+  const open = block.match(/<(Receipt|Check|CHECK|Order)\b[^>]*>/i)?.[0] ?? "";
+  return payType(fromChild || firstAttr(open, ["pay", "paytype", "type", "PayType", "paid"]));
+}
+
+function datetimeOf(open: string) {
+  const date = firstAttr(open, ["datetime", "date", "Date", "closedatetime", "CreateTime"]);
+  const time = firstAttr(open, ["time", "Time"]);
+  if (date && time && !date.includes("T")) return `${date}T${time}`;
+  return date || new Date().toISOString();
+}
+
+function blocksOf(xml: string, tag: string) {
+  const re = new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?<\\/${tag}>`, "gi");
+  return xml.match(re) ?? [];
+}
+
+function parseBlock(block: string, fallbackNumber: string): KeeperReceipt | null {
+  const open = block.match(/<(Receipt|Check|CHECK|Order)\b[^>]*>/i)?.[0] ?? "";
+  const itemTags = [
+    ...(block.match(/<Item\b[^>]*\/?>/gi) ?? []),
+    ...(block.match(/<ITEM\b[^>]*\/?>/gi) ?? []),
+    ...(block.match(/<Dish\b[^>]*\/?>/gi) ?? []),
+    ...(block.match(/<DISH\b[^>]*\/?>/gi) ?? []),
+    ...(block.match(/<(Item|Dish|ITEM|DISH)\b[^>]*>[\s\S]*?<\/\1>/gi) ?? []),
+  ];
+  const seen = new Set<string>();
+  const items: KeeperReceipt["items"] = [];
+  for (const tag of itemTags) {
+    const key = tag.slice(0, 180);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const item = itemFromTag(tag);
+    if (item) items.push(item);
+  }
+  if (items.length === 0) return null;
+  const rawSum = num(firstAttr(open, ["sum", "amount", "Amount", "SUM"]));
+  const sum = rawSum > 0 ? normalizeRk7Units(1, rawSum).sum : items.reduce((s, i) => s + i.sum, 0);
+  return {
+    number:
+      firstAttr(open, ["number", "code", "Code", "orderName", "Visit", "guid", "id"]) || fallbackNumber,
+    datetime: datetimeOf(open),
+    sum,
+    payType: payFromBlock(block),
+    items,
+  };
+}
+
 export function parseKeeperXml(xml: string): KeeperReceipt[] {
+  const text = xml.replace(/^\uFEFF/, "").trim();
+  if (!text) return [];
   const receipts: KeeperReceipt[] = [];
-  const blocks = xml.match(/<Receipt\b[^>]*>[\s\S]*?<\/Receipt>/gi) ?? [];
-  for (const block of blocks) {
-    const open = block.match(/<Receipt\b[^>]*>/i)?.[0] ?? "";
-    const items: KeeperReceipt["items"] = [];
-    const itemTags = block.match(/<Item\b[^>]*\/?>/gi) ?? [];
-    for (const tag of itemTags) {
-      const qty = Number(attr(tag, "qty") || attr(tag, "quantity") || 1);
-      const sum = Number(attr(tag, "sum") || attr(tag, "amount") || 0);
-      items.push({
-        name: attr(tag, "name") || "Блюдо",
-        qty: Number.isFinite(qty) && qty > 0 ? qty : 1,
-        sum: Number.isFinite(sum) ? sum : 0,
-      });
-    }
-    const sum = Number(attr(open, "sum") || items.reduce((s, i) => s + i.sum, 0));
-    receipts.push({
-      number: attr(open, "number") || attr(open, "code") || `K-${receipts.length + 1}`,
-      datetime: attr(open, "datetime") || attr(open, "date") || new Date().toISOString(),
-      sum,
-      payType: payType(attr(open, "pay") || attr(open, "paytype") || attr(open, "type")),
-      items,
-    });
+  const chunks = [
+    ...blocksOf(text, "Receipt"),
+    ...blocksOf(text, "Check"),
+    ...blocksOf(text, "CHECK"),
+    ...blocksOf(text, "Order"),
+  ];
+  const unique = [...new Set(chunks)];
+  for (const block of unique) {
+    const row = parseBlock(block, `K-${receipts.length + 1}`);
+    if (row) receipts.push(row);
   }
   return receipts;
 }
@@ -68,4 +154,17 @@ export const SAMPLE_KEEPER_XML = `<?xml version="1.0" encoding="UTF-8"?>
     </ZReport>
   </Command>
 </RK7Query>
+`;
+
+export const SAMPLE_RK7_CHECK_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<RK7QueryResult Status="Ok">
+  <Check number="45" date="2026-09-14" time="18:10:00" sum="1380">
+    <Dish name="Шашлык из свинины" quantity="2" amount="1380"/>
+    <Pay type="card" amount="1380"/>
+  </Check>
+  <Check number="46" date="2026-09-14" time="18:22:00" sum="860">
+    <Dish name="Курица на гриле" quantity="1" amount="860"/>
+    <Pay type="нал" amount="860"/>
+  </Check>
+</RK7QueryResult>
 `;
