@@ -54,7 +54,7 @@
 
 :root {
   --density-card: 1.25rem;
-  --nav-icon: 1.35rem;
+  --nav-icon: 1.5rem;
   --nav-item-h: 2.75rem;
   --tab-icon: 1.5rem;
   --elev-border:
@@ -346,7 +346,7 @@
 
 [data-density="compact"] {
   --density-card: 0.85rem;
-  --nav-icon: 1.25rem;
+  --nav-icon: 1.35rem;
   --nav-item-h: 2.5rem;
   --tab-icon: 1.5rem;
   --radius-xs: 6px;
