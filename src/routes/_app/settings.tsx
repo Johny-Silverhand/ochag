@@ -585,7 +585,7 @@ function WorkspacePanel({ role }: { role: Role }) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `ochag-export-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `restopro-export-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
     toast.success("Снимок выгружен");
@@ -680,7 +680,7 @@ function WorkspacePanel({ role }: { role: Role }) {
       <Card>
         <h2 className="text-sm font-medium tracking-tight">Локальный AI (Ollama)</h2>
         <p className="mt-1 text-sm text-muted">
-          Облачной модели в Очаге нет. Если включить и указать адрес, сводка, рекомендации, маржа, прогноз и пики смен
+          Облачной модели в RestoPro нет. Если включить и указать адрес, сводка, рекомендации, маржа, прогноз и пики смен
           идут в вашу Ollama. Свободного чата нет. Если сервис недоступен — честная эвристика по формулам, не «как будто
           модель ответила».
         </p>
@@ -787,7 +787,7 @@ function IphonePanel() {
             void downloadWebClip().then(() => toast.success("Файл профиля скачан"));
           }}
         >
-          Скачать Ochag.mobileconfig
+          Скачать RestoPro.mobileconfig
         </Button>
       </Card>
       <Card>

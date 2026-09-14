@@ -87,7 +87,7 @@ export async function downloadWebClip(origin = window.location.origin) {
   const href = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = href;
-  a.download = "Ochag.mobileconfig";
+  a.download = "RestoPro.mobileconfig";
   a.click();
   URL.revokeObjectURL(href);
 }

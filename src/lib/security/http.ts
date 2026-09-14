@@ -14,6 +14,10 @@ export const MAX_LOGIN_CHARS = 120;
 export const MAX_PASSWORD_CHARS = 256;
 export const MAX_PIN_CHARS = 16;
 
+/** Keep in lockstep with `vercel.json` `Content-Security-Policy`. */
+export const CONTENT_SECURITY_POLICY =
+  "default-src 'self'; script-src 'self' 'unsafe-inline' https://grok.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'";
+
 export function clientIp(request: Request) {
   const forwarded = request.headers.get("x-forwarded-for") ?? "";
   const real = request.headers.get("x-real-ip") ?? "";
@@ -84,8 +88,7 @@ export function securityHeaders(request?: Request): Record<string, string> {
     "referrer-policy": "strict-origin-when-cross-origin",
     "permissions-policy": "camera=(), microphone=(), geolocation=()",
     "x-frame-options": "DENY",
-    "content-security-policy":
-      "default-src 'self'; script-src 'self' 'unsafe-inline' https://grok.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
+    "content-security-policy": CONTENT_SECURITY_POLICY,
     ...(https ? { "strict-transport-security": "max-age=63072000; includeSubDomains; preload" } : {}),
     ...(allowOrigin
       ? {

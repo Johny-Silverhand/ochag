@@ -58,7 +58,7 @@ function ReportsPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `ochag-${scope}-${from}-${today()}.csv`;
+    a.download = `restopro-${scope}-${from}-${today()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }

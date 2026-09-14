@@ -1,7 +1,19 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 import { AuthzError } from "../authz/error.ts";
-import { assertAuthRate, assertPayloadSize, clientIp, MAX_JSON_BYTES, rateLimit, resetRateLimits, securityHeaders } from "./http.ts";
+import {
+  assertAuthRate,
+  assertPayloadSize,
+  clientIp,
+  CONTENT_SECURITY_POLICY,
+  MAX_JSON_BYTES,
+  rateLimit,
+  resetRateLimits,
+  securityHeaders,
+} from "./http.ts";
 
 describe("API security helpers", () => {
   it("trips rate limit on login spam", () => {
@@ -53,6 +65,7 @@ describe("API security helpers", () => {
     assert.equal(headers["x-frame-options"], "DENY");
     assert.match(headers["content-security-policy"] ?? "", /frame-ancestors 'none'/);
     assert.match(headers["content-security-policy"] ?? "", /https:\/\/grok\.com/);
+    assert.match(headers["content-security-policy"] ?? "", /fonts\.googleapis\.com/);
     assert.equal(headers["access-control-allow-origin"], undefined);
     assert.equal(headers["strict-transport-security"], "max-age=63072000; includeSubDomains; preload");
   });
@@ -65,6 +78,15 @@ describe("API security helpers", () => {
     assert.equal(a.ok, true);
     assert.equal(b.ok, true);
     assert.equal(c.ok, false);
+  });
+
+  it("ships valid vercel.json whose CSP matches the app", () => {
+    const root = join(dirname(fileURLToPath(import.meta.url)), "../../..");
+    const cfg = JSON.parse(readFileSync(join(root, "vercel.json"), "utf8")) as {
+      headers: { headers: { key: string; value: string }[] }[];
+    };
+    const csp = cfg.headers[0]?.headers.find((h) => h.key === "Content-Security-Policy");
+    assert.equal(csp?.value, CONTENT_SECURITY_POLICY);
   });
 
   it("uses the first public hop for client IP", () => {

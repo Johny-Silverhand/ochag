@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Удаление test v1.0 · Victimok Labs</title>
+  <title>Удаление test v1.0 · Arach.tech</title>
   <link rel="icon" href="media/icon-192.png" />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
   <style>
@@ -46,7 +46,7 @@
     <header class="bar">
       <img src="media/icon-192.png" alt="" />
       test v1.0
-      <span>Uninstall · Victimok Labs</span>
+      <span>Uninstall · Arach.tech</span>
     </header>
     <div class="pane" id="pane">
       <h1>Удалить test v1.0?</h1>
@@ -57,7 +57,7 @@
       <button type="button" id="cancel">Отмена</button>
       <button class="danger" type="button" id="go">Удалить</button>
     </div>
-    <div class="credit">Разработано в Victimok Labs. Все права защищены © 2026</div>
+    <div class="credit">Разработано Arach.tech. Все права защищены © 2026</div>
   </div>
   <script>
     const go = document.getElementById("go");
@@ -66,11 +66,11 @@
     cancel.onclick = () => { try { window.close(); } catch {} };
     go.onclick = async () => {
       go.disabled = true; cancel.disabled = true;
-      log.textContent = "Снимаем регистрацию Victimok Labs…";
+      log.textContent = "Снимаем регистрацию Arach.tech…";
       try {
         const r = await fetch("/api/uninstall", { method: "POST" });
         if (!r.ok) throw new Error("Не удалось удалить");
-        log.textContent = "test v1.0 удалён. Разработано в Victimok Labs. Все права защищены.";
+        log.textContent = "test v1.0 удалён. Разработано Arach.tech. Все права защищены.";
         setTimeout(() => { try { window.close(); } catch {} }, 900);
       } catch (e) {
         log.textContent = e.message || String(e);

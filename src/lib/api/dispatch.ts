@@ -1,3 +1,4 @@
+import { DOWNLOAD_SLUG } from "../brand";
 import { AuthzError, actorFrom, publicActor } from "../authz/actor";
 import { bearerToken, signActor, verifyActor } from "../authz/jwt";
 import { publicSnapshot } from "../domain/finance";
@@ -870,7 +871,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
       if (kind === "payroll") {
         const rows = periodPayroll(view, (url.searchParams.get("period") ?? "30d") as Period, actor.sessionBranchId);
         return json({
-          filename: "ochag-payroll.csv",
+          filename: `${DOWNLOAD_SLUG}-payroll.csv`,
           csv: toCsv(
             ["Сотрудник", "Смен", "Ставка", "Бонус", "Премия", "Доплата", "Штраф", "Аванс", "К выплате"],
             rows.map((r) => [r.user.name, r.shifts, r.base, r.bonus, r.premium, r.extra, r.fine, r.advanceOut, r.payable]),
@@ -879,7 +880,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
       }
       const k = computeKpis(view, { period: (url.searchParams.get("period") ?? "7d") as Period, branchId: actor.sessionBranchId });
       return json({
-        filename: "ochag-period.csv",
+        filename: `${DOWNLOAD_SLUG}-period.csv`,
         csv: toCsv(["Показатель", "Значение"], [
           ["Выручка", k.revenue],
           ["Наличные", k.cash],
@@ -899,7 +900,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     if (method === "GET" && path === "nomenclature/template") {
       await loadLive(request);
       return json({
-        filename: "ochag-nomenclature.csv",
+        filename: `${DOWNLOAD_SLUG}-nomenclature.csv`,
         csv: toCsv(["name", "category", "unit", "minQty", "avgCost"], [["Свинина шея", "Мясо", "kg", 10, 420]]),
       });
     }

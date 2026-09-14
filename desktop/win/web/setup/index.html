@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>test v1.0 — Setup · Victimok Labs</title>
+  <title>test v1.0 — Setup · Arach.tech</title>
   <link rel="icon" href="media/icon-192.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -192,24 +192,24 @@
     <header class="titlebar">
       <img src="media/icon-192.png" alt="" />
       <span class="name">test v1.0</span>
-      <span class="sub">Setup · Victimok Labs</span>
+      <span class="sub">Setup · Arach.tech</span>
       <div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div>
     </header>
     <div class="body">
       <aside class="rail">
         <div class="photo"></div>
         <div class="inner">
-          <div class="kicker">Victimok Labs</div>
+          <div class="kicker">Arach.tech</div>
           <div class="brand">test v1.0</div>
           <nav class="steps" id="steps"></nav>
-          <div class="labs">Разработано в Victimok Labs<br />Все права защищены © 2026</div>
+          <div class="labs">Разработано Arach.tech<br />Все права защищены © 2026</div>
         </div>
       </aside>
       <section class="pane" id="pane"></section>
     </div>
     <footer class="foot">
       <div class="credit">
-        <strong>Разработано в Victimok Labs.</strong><br />Все права защищены. Не для перепродажи без лицензии.
+        <strong>Разработано Arach.tech.</strong><br />Все права защищены. Не для перепродажи без лицензии.
       </div>
       <div class="actions">
         <button class="ghost" type="button" id="back">Назад</button>
@@ -227,22 +227,22 @@
       { id: "done", label: "Готово" },
     ];
     const LICENSE = `ЛИЦЕНЗИОННОЕ СОГЛАШЕНИЕ
-test v1.0 · Victimok Labs
+test v1.0 · Arach.tech
 
-© 2026 Victimok Labs. Все права защищены.
+© 2026 Arach.tech. Все права защищены.
 
-Настоящее программное обеспечение, включая исполняемые модули, интерфейс, документацию и обозначения «test v1.0», «Очаг» и «Victimok Labs», охраняется законодательством об авторском праве.
+Настоящее программное обеспечение, включая исполняемые модули, интерфейс, документацию и обозначения «test v1.0», «RestoPro» и «Arach.tech», охраняется законодательством об авторском праве.
 
 1. Вам предоставляется неисключительное право установки и использования одной рабочей копии в пределах приобретённой лицензии.
-2. Запрещаются копирование дистрибутива для перепродажи, декомпиляция, обход ограничений и передача третьим лицам без письменного согласия Victimok Labs.
+2. Запрещаются копирование дистрибутива для перепродажи, декомпиляция, обход ограничений и передача третьим лицам без письменного согласия Arach.tech.
 3. Операционные данные сети обрабатываются локально и в подключённой базе. Издатель не отвечает за утрату из-за вмешательства в файлы установки.
-4. Устанавливая программу, вы подтверждаете согласие с условиями и с тем, что «Разработано в Victimok Labs. Все права защищены.»
+4. Устанавливая программу, вы подтверждаете согласие с условиями и с тем, что «Разработано Arach.tech. Все права защищены.»
 
-Контакты правообладателя: Victimok Labs, 2026.`;
+Контакты правообладателя: Arach.tech, 2026.`;
 
     const state = {
       i: 0, native: false, accepted: false,
-      dir: "C\\\\Program Files\\\\Victimok Labs\\\\test v1.0",
+      dir: "C\\\\Program Files\\\\Arach.tech\\\\test v1.0",
       desktop: true, startMenu: true, autostart: false, busy: false,
     };
 
@@ -269,11 +269,11 @@ test v1.0 · Victimok Labs
       next.disabled = false;
       if (id === "welcome") {
         pane.innerHTML = `
-          <div class="hero"><img src="media/hero.jpg" alt="" /><span>Victimok Labs · runtime 1.0</span></div>
+          <div class="hero"><img src="media/hero.jpg" alt="" /><span>Arach.tech · runtime 1.0</span></div>
           <h1>Установка test v1.0</h1>
           <p class="lead">Операционный контур смены, склада, кассы и банкетов. Ставится как обычная программа Windows — ярлыки, удаление, подпись издателя.</p>
           <div class="meta">
-            <div><small>Издатель</small><b>Victimok Labs</b></div>
+            <div><small>Издатель</small><b>Arach.tech</b></div>
             <div><small>Версия</small><b>1.0 · build 2026.09.03</b></div>
           </div>
           <p class="lead" id="welcome-dl" style="margin-top:18px"></p>`;
@@ -290,7 +290,7 @@ test v1.0 · Victimok Labs
           <div class="license">${esc(LICENSE)}</div>
           <label class="check" style="margin-top:12px">
             <input type="checkbox" id="acc" ${state.accepted ? "checked" : ""} />
-            <span><b>Принимаю условия Victimok Labs</b><i>Разработано в Victimok Labs. Все права защищены.</i></span>
+            <span><b>Принимаю условия Arach.tech</b><i>Разработано Arach.tech. Все права защищены.</i></span>
           </label>`;
         document.getElementById("acc").onchange = (e) => {
           state.accepted = e.target.checked;
@@ -327,8 +327,8 @@ test v1.0 · Victimok Labs
           <h1>Компоненты</h1>
           <p class="lead">Ярлыки и автозагрузка. Ядро ставится всегда.</p>
           <div class="checks">
-            <label class="check"><input type="checkbox" checked disabled /><span><b>Ядро test v1.0</b><i>Исполняемый модуль, локальный контур, подпись Victimok Labs</i></span></label>
-            <label class="check"><input type="checkbox" id="sm" ${state.startMenu ? "checked" : ""} /><span><b>Меню «Пуск»</b><i>Victimok Labs → test v1.0</i></span></label>
+            <label class="check"><input type="checkbox" checked disabled /><span><b>Ядро test v1.0</b><i>Исполняемый модуль, локальный контур, подпись Arach.tech</i></span></label>
+            <label class="check"><input type="checkbox" id="sm" ${state.startMenu ? "checked" : ""} /><span><b>Меню «Пуск»</b><i>Arach.tech → test v1.0</i></span></label>
             <label class="check"><input type="checkbox" id="dt" ${state.desktop ? "checked" : ""} /><span><b>Ярлык на рабочем столе</b><i>Запуск без поиска в меню</i></span></label>
             <label class="check"><input type="checkbox" id="au" ${state.autostart ? "checked" : ""} /><span><b>Автозапуск со Windows</b><i>По желанию, можно выключить позже</i></span></label>
           </div>`;
@@ -340,7 +340,7 @@ test v1.0 · Victimok Labs
       if (id === "install") {
         pane.innerHTML = `
           <h1>Идёт установка</h1>
-          <p class="lead" id="inst-lead">Копируем модули Victimok Labs и регистрируем программу в Windows.</p>
+          <p class="lead" id="inst-lead">Копируем модули Arach.tech и регистрируем программу в Windows.</p>
           <div class="progress"><i id="bar"></i></div>
           <div class="log" id="log"></div>
           <p class="err" id="ierr" hidden></p>`;
@@ -354,7 +354,7 @@ test v1.0 · Victimok Labs
           <div class="hero"><img src="media/done.jpg" alt="" /><span>Установка завершена</span></div>
           <div class="done-mark">OK</div>
           <h1>test v1.0 установлен</h1>
-          <p class="lead">Разработано в Victimok Labs. Все права защищены. Смена, склад и касса уже внутри.</p>
+          <p class="lead">Разработано Arach.tech. Все права защищены. Смена, склад и касса уже внутри.</p>
           <div class="checks">
             <label class="check"><input type="checkbox" id="launch" checked /><span><b>Запустить test v1.0</b><i>Открыть операционный контур сразу после выхода</i></span></label>
           </div>
@@ -377,10 +377,10 @@ test v1.0 · Victimok Labs
       "Запись app.ico и подписи издателя",
       "Размещение контура и локального хранилища",
       "Регистрация в «Программы и компоненты»",
-      "Ярлык Victimok Labs в меню Пуск",
+      "Ярлык Arach.tech в меню Пуск",
       "Ярлык на рабочем столе",
       "Контрольная сумма… OK",
-      "Разработано в Victimok Labs. Все права защищены.",
+      "Разработано Arach.tech. Все права защищены.",
     ];
 
     async function runInstall() {

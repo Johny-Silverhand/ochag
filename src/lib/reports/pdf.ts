@@ -2,6 +2,7 @@ import PDFDocument from "pdfkit";
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { APP_NAME, DOWNLOAD_SLUG } from "../brand.ts";
 import type { Banquet, Snapshot } from "../domain/types";
 
 function fontPath() {
@@ -43,7 +44,7 @@ export async function banquetPdf(snap: Snapshot, banquet: Banquet, sheet: "guest
   }[sheet];
 
   const buf = await pdfBuffer((doc) => {
-    doc.fontSize(11).fillColor("#17352b").text("Очаг", { align: "left" });
+    doc.fontSize(11).fillColor("#17352b").text(APP_NAME, { align: "left" });
     doc.moveDown(0.3);
     doc.fontSize(20).text(spec.title);
     doc.fontSize(12).fillColor("#222").text(`${banquet.number} · ${banquet.title}`);
@@ -66,19 +67,19 @@ export async function banquetPdf(snap: Snapshot, banquet: Banquet, sheet: "guest
       for (const t of banquet.timeline) doc.text(`${t.time}  ${t.action}`);
     }
   });
-  return { filename: `ochag-banquet-${banquet.number}-${sheet}.pdf`, bytes: buf };
+  return { filename: `${DOWNLOAD_SLUG}-banquet-${banquet.number}-${sheet}.pdf`, bytes: buf };
 }
 
 export async function periodPdf(snap: Snapshot, label: string, body: string[]) {
   const buf = await pdfBuffer((doc) => {
-    doc.fontSize(11).fillColor("#17352b").text("Очаг · отчёт периода");
+    doc.fontSize(11).fillColor("#17352b").text(`${APP_NAME} · отчёт периода`);
     doc.moveDown(0.2);
     doc.fontSize(18).fillColor("#111").text(label);
     doc.moveDown();
     doc.fontSize(11).fillColor("#222");
     for (const line of body) doc.text(line);
   });
-  return { filename: `ochag-report-${label}.pdf`, bytes: buf };
+  return { filename: `${DOWNLOAD_SLUG}-report-${label}.pdf`, bytes: buf };
 }
 
 export async function revisionActPdf(snap: Snapshot, revisionId: string) {
@@ -96,7 +97,7 @@ export async function revisionActPdf(snap: Snapshot, revisionId: string) {
       doc.text(`${p?.name ?? line.productId}: книга ${line.bookQty} / факт ${line.factQty} (${delta >= 0 ? "+" : ""}${delta})`);
     }
   });
-  return { filename: `ochag-revision-${rev.date}.pdf`, bytes: buf };
+  return { filename: `${DOWNLOAD_SLUG}-revision-${rev.date}.pdf`, bytes: buf };
 }
 
 export function transferLegs(snap: Snapshot, refId: string) {
@@ -116,7 +117,7 @@ export async function transferWaybillPdf(snap: Snapshot, refId: string) {
   const product = snap.products.find((p) => p.id === out.productId);
   const user = snap.users.find((u) => u.id === out.userId);
   const buf = await pdfBuffer((doc) => {
-    doc.fontSize(11).fillColor("#17352b").text("Очаг · внутренняя накладная");
+    doc.fontSize(11).fillColor("#17352b").text(`${APP_NAME} · внутренняя накладная`);
     doc.moveDown(0.3);
     doc.fontSize(18).fillColor("#111").text("Перемещение между филиалами");
     doc.fontSize(12).fillColor("#222");
@@ -135,14 +136,14 @@ export async function transferWaybillPdf(snap: Snapshot, refId: string) {
       doc.fontSize(10).fillColor("#444").text(out.note);
     }
   });
-  return { filename: `ochag-waybill-${out.refId}.pdf`, bytes: buf };
+  return { filename: `${DOWNLOAD_SLUG}-waybill-${out.refId}.pdf`, bytes: buf };
 }
 
 export async function ttkPdf(snap: Snapshot, recipeId: string) {
   const recipe = snap.recipes.find((r) => r.id === recipeId);
   if (!recipe) throw new Error("Техкарта не найдена");
   const buf = await pdfBuffer((doc) => {
-    doc.fontSize(11).fillColor("#17352b").text("Очаг · технологическая карта");
+    doc.fontSize(11).fillColor("#17352b").text(`${APP_NAME} · технологическая карта`);
     doc.moveDown(0.3);
     doc.fontSize(18).fillColor("#111").text(recipe.name);
     doc.fontSize(12).fillColor("#222");
@@ -163,7 +164,7 @@ export async function ttkPdf(snap: Snapshot, recipeId: string) {
       doc.fontSize(11).fillColor("#222").text(recipe.techProcess.trim());
     }
   });
-  return { filename: `ochag-ttk-${recipe.id}.pdf`, bytes: buf };
+  return { filename: `${DOWNLOAD_SLUG}-ttk-${recipe.id}.pdf`, bytes: buf };
 }
 
 export function csvEscape(value: string | number) {

@@ -92,7 +92,7 @@ function AiPage() {
   return (
     <div>
       <PageHeader
-        eyebrow="Очаг AI"
+        eyebrow="RestoPro AI"
         title="Разбор по цифрам"
         description="Сводка, рекомендации, маржа, прогноз месяца и пики смен — по данным контура. Свободного чата нет. PIN и телефоны в модель не уходят."
         actions={

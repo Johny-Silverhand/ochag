@@ -35,7 +35,7 @@ const int = (a: number, b: number) => Math.floor(between(a, b + 1));
 export const BRANCHES: Branch[] = [
   {
     id: "br-pushkin",
-    name: "Очаг на Пушкина",
+    name: "RestoPro на Пушкина",
     short: "Пушкина",
     city: "Краснодар",
     address: "ул. Пушкина, 18",
@@ -46,7 +46,7 @@ export const BRANCHES: Branch[] = [
   },
   {
     id: "br-south",
-    name: "Очаг Южный",
+    name: "RestoPro Южный",
     short: "Южный",
     city: "Краснодар",
     address: "ул. Зиповская, 5",
@@ -57,7 +57,7 @@ export const BRANCHES: Branch[] = [
   },
   {
     id: "br-embank",
-    name: "Очаг Набережная",
+    name: "RestoPro Набережная",
     short: "Набережная",
     city: "Краснодар",
     address: "ул. Кубанская наб., 2",
