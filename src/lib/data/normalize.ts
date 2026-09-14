@@ -68,6 +68,7 @@ export function normalizeSnapshot(raw: Partial<Snapshot> | null | undefined): Sn
     payrollAdjustments: raw.payrollAdjustments ?? [],
     revenuePlans: raw.revenuePlans ?? [],
     audit: raw.audit ?? [],
+    opsLogs: raw.opsLogs ?? [],
     outbox: raw.outbox ?? [],
     pushSubs: raw.pushSubs ?? [],
     settings: {

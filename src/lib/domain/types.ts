@@ -347,6 +347,29 @@ export interface AuditEntry {
   detail: string;
 }
 
+export type OpsLogLevel = "info" | "warn" | "error";
+export type OpsLogEvent =
+  | "login"
+  | "login_fail"
+  | "account_create"
+  | "account_edit"
+  | "settings"
+  | "bootstrap"
+  | "sample"
+  | "api"
+  | "outbox";
+
+export interface OpsLogEntry {
+  id: string;
+  at: string;
+  level: OpsLogLevel;
+  event: OpsLogEvent;
+  detail: string;
+  userId?: string;
+  login?: string;
+  path?: string;
+}
+
 export interface OutboxItem {
   id: string;
   at: string;
@@ -417,6 +440,7 @@ export interface Snapshot {
   payrollAdjustments: PayrollAdjustment[];
   revenuePlans: RevenuePlan[];
   audit: AuditEntry[];
+  opsLogs: OpsLogEntry[];
   outbox: OutboxItem[];
   pushSubs: PushSubscriptionRecord[];
   settings: NetworkSettings;

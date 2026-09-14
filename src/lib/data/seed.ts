@@ -891,6 +891,7 @@ export function createSeed(): Snapshot {
       target: b.id === "br-embank" ? 900000 : 720000,
     })),
     audit: [],
+    opsLogs: [],
     outbox: [],
     pushSubs: [],
     settings: { ...defaultSettings(), sampleLoaded: true, keeperCashLink: false },

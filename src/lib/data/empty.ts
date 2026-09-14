@@ -23,6 +23,7 @@ export function emptySnapshot(): Snapshot {
     payrollAdjustments: [],
     revenuePlans: [],
     audit: [],
+    opsLogs: [],
     outbox: [],
     pushSubs: [],
     settings: defaultSettings(),
