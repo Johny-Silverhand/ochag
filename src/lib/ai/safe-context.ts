@@ -1,7 +1,7 @@
-import type { Period, Snapshot } from "../domain/types";
-import { computeKpis, topDishes, writeoffByReason, periodStart } from "../domain/engine";
-import { TODAY } from "../domain/types";
-import { activeStopList } from "../domain/stoplist";
+import type { Period, Snapshot } from "../domain/types.ts";
+import { computeKpis, topDishes, writeoffByReason, periodStart } from "../domain/engine.ts";
+import { TODAY } from "../domain/types.ts";
+import { activeStopList } from "../domain/stoplist.ts";
 
 export interface SafeMetrics {
   period: Period;

@@ -1,6 +1,6 @@
-import type { Insight } from "../domain/types";
-import type { AiProvider, ResolvedOllama } from "./provider";
-import type { SafeMetrics } from "./safe-context";
+import type { Insight } from "../domain/types.ts";
+import type { AiProvider, ResolvedOllama } from "./provider.ts";
+import type { SafeMetrics } from "./safe-context.ts";
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 

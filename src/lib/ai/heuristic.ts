@@ -1,6 +1,6 @@
-import type { Insight } from "../domain/types";
-import type { AiProvider } from "./provider";
-import type { SafeMetrics } from "./safe-context";
+import type { Insight } from "../domain/types.ts";
+import type { AiProvider } from "./provider.ts";
+import type { SafeMetrics } from "./safe-context.ts";
 
 function lines(m: SafeMetrics) {
   const bits = [

@@ -14,7 +14,7 @@
  *
  * cost_at_sale is frozen on the cheque line at sale time.
  */
-import type { Role, Snapshot } from "./types.ts";
+import type { Product, Recipe, Role, Sale, SaleItem, Snapshot, StockLevel } from "./types.ts";
 import { defaultSettings } from "./types.ts";
 import { canSeeDebts } from "./permissions.ts";
 

@@ -1,14 +1,14 @@
-import { createHeuristicProvider } from "./heuristic";
-import { createOllamaProvider, ollamaAvailable, ollamaUnreachableMessage, type FetchLike } from "./ollama";
-import type { AiProvider, ResolvedOllama } from "./provider";
-import { resolveOllamaConfig } from "./provider";
-import type { SafeMetrics } from "./safe-context";
-import type { Insight, NetworkSettings } from "../domain/types";
+import { createHeuristicProvider } from "./heuristic.ts";
+import { createOllamaProvider, ollamaAvailable, ollamaUnreachableMessage, type FetchLike } from "./ollama.ts";
+import type { AiProvider, ResolvedOllama } from "./provider.ts";
+import { resolveOllamaConfig } from "./provider.ts";
+import type { SafeMetrics } from "./safe-context.ts";
+import type { Insight, NetworkSettings } from "../domain/types.ts";
 
-export type { AiProvider, ResolvedOllama } from "./provider";
-export { safeMetrics } from "./safe-context";
-export { ollamaConfig, resolveOllamaConfig } from "./provider";
-export { ollamaAvailable } from "./ollama";
+export type { AiProvider, ResolvedOllama } from "./provider.ts";
+export { safeMetrics } from "./safe-context.ts";
+export { ollamaConfig, resolveOllamaConfig } from "./provider.ts";
+export { ollamaAvailable } from "./ollama.ts";
 
 const heuristic = createHeuristicProvider();
 

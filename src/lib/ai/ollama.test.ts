@@ -30,13 +30,19 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 describe("resolveOllamaConfig", () => {
-  it("is unset without settings or env", () => {
+  it("is unset without settings flag or env", () => {
     const prev = process.env.OLLAMA_BASE_URL;
     delete process.env.OLLAMA_BASE_URL;
-    const cfg = resolveOllamaConfig(defaultSettings());
+    const cfg = resolveOllamaConfig({ ...defaultSettings(), ollamaEnabled: undefined, ollamaBaseUrl: "" });
     assert.equal(cfg.configured, false);
     assert.equal(cfg.source, "unset");
     if (prev) process.env.OLLAMA_BASE_URL = prev;
+  });
+
+  it("treats the default switch as off, not a live model", () => {
+    const cfg = resolveOllamaConfig(defaultSettings());
+    assert.equal(cfg.configured, false);
+    assert.equal(cfg.source, "off");
   });
 
   it("uses network settings when enabled", () => {

@@ -52,6 +52,7 @@ import { sanitizePhotos } from "./photos.ts";
 import { attachIncidentals } from "./incidentals.ts";
 import { appendAudit } from "./audit.ts";
 import { appendOpsLog } from "./ops-log.ts";
+import { assertPeriodOpen } from "./period.ts";
 
 function queueEvent(snap: Snapshot, event: NotifyEvent, title: string, body: string, to?: string): Snapshot {
   if (snap.settings.notifyEvents[event] === false) return snap;

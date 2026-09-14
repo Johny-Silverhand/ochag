@@ -27,6 +27,7 @@ function ShiftsPage() {
   const closeShift = useOps((s) => s.closeShift);
   const setStopList = useOps((s) => s.setStopList);
   const addShiftIncidental = useOps((s) => s.addShiftIncidental);
+  const topUpDebt = useOps((s) => s.topUpDebt);
   const canWrite = isWriteScope(session.branchId);
   const branchId = canWrite ? session.branchId : "";
   const current = canWrite ? openShiftFor(snap.shifts, branchId) : undefined;

@@ -1,5 +1,5 @@
-import type { Insight, NetworkSettings } from "../domain/types";
-import type { SafeMetrics } from "./safe-context";
+import type { Insight, NetworkSettings } from "../domain/types.ts";
+import type { SafeMetrics } from "./safe-context.ts";
 
 export interface AiProvider {
   id: "ollama" | "heuristic";
