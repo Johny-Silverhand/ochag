@@ -62,7 +62,7 @@ function SettingsPage() {
         description="Тема, профиль и сигналы — у каждой роли. Дальше страница сужается под вашу смену."
       />
       <div className="flex flex-col gap-5 lg:grid lg:grid-cols-[200px_minmax(0,1fr)] lg:items-start lg:gap-8">
-        <nav className="no-scrollbar -mx-4 flex gap-1 overflow-x-auto px-4 lg:mx-0 lg:flex-col lg:overflow-visible lg:px-0">
+        <nav className="no-scrollbar -mx-[var(--page-pad-x)] flex gap-1 overflow-x-auto px-[var(--page-pad-x)] lg:mx-0 lg:flex-col lg:overflow-visible lg:px-0">
           {nav.map((item) => {
             const active = section === item.id;
             return (

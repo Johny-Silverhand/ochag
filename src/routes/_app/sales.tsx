@@ -138,7 +138,7 @@ function SalesPage() {
         <Kpi label="QR" value={rub(pays.qr)} />
       </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-[1.4fr_0.8fr]">
+      <div className="mt-4 grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,0.8fr)]">
         <Card className="overflow-hidden p-0">
           <div className="border-b border-border px-5 py-4 text-sm font-medium">Чеки</div>
           <div className="max-h-[520px] overflow-auto">

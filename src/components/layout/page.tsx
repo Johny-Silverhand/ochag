@@ -13,15 +13,15 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <div className="mb-5 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-end sm:justify-between">
+    <div className="mb-[var(--page-pad-y)] flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
         {eyebrow ? (
           <div className="mb-1 text-xs font-medium tracking-[0.16em] text-muted uppercase">{eyebrow}</div>
         ) : null}
-        <h1 className="text-2xl font-medium tracking-tight text-fg">{title}</h1>
-        {description ? <p className="mt-1 max-w-2xl text-sm text-muted">{description}</p> : null}
+        <h1 className="page-title font-medium tracking-tight text-fg">{title}</h1>
+        {description ? <p className="mt-1 max-w-2xl text-pretty text-sm text-muted">{description}</p> : null}
       </div>
-      {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
+      {actions ? <div className="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">{actions}</div> : null}
     </div>
   );
 }
@@ -38,11 +38,11 @@ export function Kpi({
   tone?: "default" | "good" | "bad";
 }) {
   return (
-    <div className="rounded-2xl bg-surface p-card shadow-(--shadow-border)">
+    <div className="min-w-0 overflow-hidden rounded-2xl bg-surface p-card shadow-(--shadow-border)">
       <div className="text-xs font-medium tracking-wide text-muted uppercase">{label}</div>
       <div
         className={cn(
-          "mt-2 font-mono text-xl tabular-nums tracking-tight sm:text-2xl",
+          "mt-2 font-mono text-[length:var(--kpi-value)] tabular-nums tracking-tight",
           tone === "good" && "text-success",
           tone === "bad" && "text-danger",
         )}

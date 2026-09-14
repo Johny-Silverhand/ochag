@@ -99,8 +99,8 @@ function NavLink({ item, pathname, className, activeClass, idleClass, iconClass 
   const active = pathname === item.to || pathname.startsWith(`${item.to}/`);
   return (
     <Link to={item.to} className={cn(className, active ? activeClass : idleClass)}>
-      <item.icon className={iconClass ?? "size-[var(--nav-icon)]"} strokeWidth={2} />
-      {item.label}
+      <item.icon className={iconClass ?? "size-[var(--nav-icon)] shrink-0"} strokeWidth={2} />
+      <span>{item.label}</span>
     </Link>
   );
 }
@@ -142,7 +142,7 @@ export function AppShell() {
   const sync = useSync();
 
   return (
-    <div className="app-frame flex h-[var(--app-height,100dvh)] min-h-0 flex-col overflow-hidden bg-bg text-fg md:grid md:h-dvh md:grid-cols-[240px_1fr]">
+    <div className="app-frame flex h-[var(--app-height,100dvh)] min-h-0 flex-col overflow-hidden bg-bg text-fg md:grid md:h-dvh md:grid-cols-[var(--shell-sidebar)_minmax(0,1fr)]">
       <div className="app-scene" aria-hidden="true" />
       <aside className="no-print relative z-10 hidden bg-sidebar text-sidebar-fg md:col-start-1 md:row-start-1 md:flex md:h-full md:flex-col md:overflow-hidden">
         <div className="flex items-center gap-2.5 px-5 pt-6 pb-5">
@@ -158,7 +158,7 @@ export function AppShell() {
               key={item.to}
               item={item}
               pathname={pathname}
-              className="app-nav-link flex items-center gap-3 rounded-xl px-3 text-sm transition-[color,background-color,transform] duration-200 ease-[var(--ease-out-smooth)] active:scale-[0.98]"
+              className="app-nav-link flex min-w-0 items-center gap-3 rounded-xl px-3 text-sm transition-[color,background-color,transform] duration-200 ease-[var(--ease-out-smooth)] active:scale-[0.98]"
               activeClass="bg-sidebar-fg/14 text-sidebar-fg"
               idleClass="text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-fg"
             />
@@ -168,7 +168,7 @@ export function AppShell() {
           <NavLink
             item={SETTINGS_ITEM}
             pathname={pathname}
-            className="app-nav-link flex items-center gap-3 rounded-xl px-3 text-sm transition-[color,background-color,transform] duration-200 ease-[var(--ease-out-smooth)] active:scale-[0.98]"
+            className="app-nav-link flex min-w-0 items-center gap-3 rounded-xl px-3 text-sm transition-[color,background-color,transform] duration-200 ease-[var(--ease-out-smooth)] active:scale-[0.98]"
             activeClass="bg-sidebar-fg/14 text-sidebar-fg"
             idleClass="text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-fg"
           />
@@ -193,15 +193,15 @@ export function AppShell() {
       </aside>
 
       <div className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto scroll-touch pb-[calc(5.25rem+env(safe-area-inset-bottom))] md:col-start-2 md:row-start-1 md:h-full md:overflow-hidden md:pb-0">
-        <header className="no-print sticky top-0 z-30 flex items-center gap-2 border-b border-border bg-bg/75 px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 backdrop-blur-md sm:px-6">
-          <div className="flex items-center gap-2 md:hidden">
-            <Mark className="size-8 text-primary" />
-            <span className="text-sm font-semibold tracking-wide">{NETWORK_NAME}</span>
+        <header className="no-print sticky top-0 z-30 flex min-w-0 items-center gap-2 border-b border-border bg-bg/75 px-[var(--page-pad-x)] pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 backdrop-blur-md">
+          <div className="flex min-w-0 items-center gap-2 md:hidden">
+            <Mark className="size-8 shrink-0 text-primary" />
+            <span className="truncate text-sm font-semibold tracking-wide">{NETWORK_NAME}</span>
           </div>
           <div className="ml-auto flex min-w-0 items-center gap-1.5 sm:gap-2">
             {canSeeAllBranches(role) ? (
               <NativeSelect
-                className="h-11 w-36 bg-surface sm:w-52 md:h-10"
+                className="h-11 w-[min(9rem,38vw)] min-w-0 shrink bg-surface sm:w-52 md:h-10"
                 value={session?.branchId ?? "all"}
                 onChange={(e) => setBranch(e.target.value)}
               >
@@ -253,7 +253,7 @@ export function AppShell() {
             </Link>
           </div>
         </header>
-        <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 py-5 sm:px-6 sm:py-6 md:min-h-0 md:overflow-y-auto md:scroll-touch">
+        <main className="mx-auto flex w-full min-w-0 max-w-6xl flex-1 flex-col px-[var(--page-pad-x)] py-[var(--page-pad-y)] md:min-h-0 md:overflow-y-auto md:scroll-touch">
           <div key={pathname} className="route-enter flex-1">
             {current && !can(role, current.module) ? (
               <p className="text-sm text-muted">Раздел закрыт для вашей роли. Прямой адрес не открывает чужие модули.</p>
@@ -274,7 +274,7 @@ export function AppShell() {
         />
         <div
           className={cn(
-            "sheet-up absolute inset-x-0 bottom-0 rounded-t-3xl bg-elevated px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] shadow-(--shadow-border)",
+            "sheet-up absolute inset-x-0 bottom-0 max-h-[var(--dialog-max-h)] overflow-y-auto rounded-t-3xl bg-elevated px-[var(--page-pad-x)] pt-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] shadow-(--shadow-border)",
             moreOpen ? "translate-y-0" : "translate-y-full",
           )}
         >
@@ -288,12 +288,12 @@ export function AppShell() {
                   key={item.to}
                   to={item.to}
                   className={cn(
-                    "flex min-h-14 items-center gap-3 rounded-2xl px-3 text-sm transition-[color,background-color,transform] duration-200 ease-[var(--ease-out-smooth)] active:scale-[0.98]",
+                    "flex min-h-14 min-w-0 items-center gap-3 rounded-2xl px-3 text-sm transition-[color,background-color,transform] duration-200 ease-[var(--ease-out-smooth)] active:scale-[0.98]",
                     active ? "bg-bg text-fg" : "text-muted hover:bg-bg hover:text-fg",
                   )}
                 >
-                  <item.icon className="size-6" strokeWidth={2} />
-                  {item.label}
+                  <item.icon className="size-6 shrink-0" strokeWidth={2} />
+                  <span className="truncate">{item.label}</span>
                 </Link>
               );
             })}
@@ -312,12 +312,12 @@ export function AppShell() {
               key={item.to}
               to={item.to}
               className={cn(
-                "flex min-h-14 flex-col items-center justify-center gap-1 pt-1.5 text-[11px] font-medium transition-[color,transform] duration-200 ease-[var(--ease-out-smooth)] active:scale-[0.96]",
+                "flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 pt-1.5 text-[11px] font-medium transition-[color,transform] duration-200 ease-[var(--ease-out-smooth)] active:scale-[0.96]",
                 active ? "text-primary" : "text-muted",
               )}
             >
-              <item.icon className="size-[var(--tab-icon)]" strokeWidth={2} />
-              {item.label}
+              <item.icon className="size-[var(--tab-icon)] shrink-0" strokeWidth={2} />
+              <span>{item.label}</span>
             </Link>
           );
         })}
@@ -325,12 +325,12 @@ export function AppShell() {
           type="button"
           onClick={() => setMoreOpen((open) => !open)}
           className={cn(
-            "flex min-h-14 flex-col items-center justify-center gap-1 pt-1.5 text-[11px] font-medium transition-[color,transform] duration-200 ease-[var(--ease-out-smooth)] active:scale-[0.96]",
+            "flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 pt-1.5 text-[11px] font-medium transition-[color,transform] duration-200 ease-[var(--ease-out-smooth)] active:scale-[0.96]",
             moreActive ? "text-primary" : "text-muted",
           )}
         >
-          <Ellipsis className="size-[var(--tab-icon)]" strokeWidth={2} />
-          Ещё
+          <Ellipsis className="size-[var(--tab-icon)] shrink-0" strokeWidth={2} />
+          <span>Ещё</span>
         </button>
       </nav>
     </div>
