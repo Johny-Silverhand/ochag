@@ -3,6 +3,8 @@ export const APP_VERSION = "1.0";
 export const APP_BUILD = "2026.09.03";
 export const APP_SLUG = "ochag";
 export const NETWORK_NAME = "Очаг";
+export const LOGIN_INTRO =
+  "Контур склада, смен и прибыли для кафе и ресторана. Свой логин — форма ниже; если открываете сеть впервые, загляните в «Что это?».";
 export const LABS_NAME = "Очаг";
 export const LABS_LINE = "Очаг";
 export const LABS_RIGHTS = "Все права защищены";

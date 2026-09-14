@@ -15,14 +15,6 @@ export function applySimulatePayment(snap: Snapshot, tariff: TariffId, at = new 
   };
 }
 
-/** Billing fields from a pay-sim response — never a full leftover snapshot. */
-export function applyBillingFlags(
-  snap: Snapshot,
-  flags: { tariff: TariffId; paymentSimulatedAt: string },
-): Snapshot {
-  return applySimulatePayment(snap, flags.tariff, flags.paymentSimulatedAt);
-}
-
 /**
  * Login commercial CTAs stay up until a real network exists.
  * Empty store, mid-flow tariff/pay, and leftover учебная сеть all keep the entry.

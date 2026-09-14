@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,10 @@ export function CommercialGate({
   const [flow, setFlow] = useState<"plans" | "checkout" | "onboard" | null>(null);
   const [picked, setPicked] = useState<TariffId>(paidTariff ?? "trial");
 
+  useEffect(() => {
+    if (paidTariff) setPicked(paidTariff);
+  }, [paidTariff]);
+
   const flowOpen = flow !== null;
   const flowTitle =
     flow === "checkout" ? "Оплата тарифа" : flow === "onboard" ? "Создать сеть" : "Тарифы Очаг";
@@ -50,7 +54,7 @@ export function CommercialGate({
             type="button"
             variant="secondary"
             className="w-full"
-            onClick={() => setFlow(canCreateNetwork ? "onboard" : "plans")}
+            onClick={() => setFlow("plans")}
           >
             Выбрать тариф
           </Button>
@@ -104,7 +108,7 @@ export function CommercialGate({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={flowOpen} onOpenChange={(open) => setFlow(open ? flow ?? "plans" : null)}>
+      <Dialog open={flowOpen} onOpenChange={(open) => { if (!open) setFlow(null); }}>
         <DialogContent title={flowTitle} className="max-h-[min(92dvh,48rem)] max-w-3xl overflow-y-auto bg-elevated">
           {flow === "plans" ? (
             <PlansStep
@@ -128,6 +132,7 @@ export function CommercialGate({
           {flow === "onboard" ? (
             <OnboardStep
               submit={onboardNetwork}
+              onBack={() => setFlow("plans")}
               onDone={() => setFlow(null)}
             />
           ) : null}
@@ -276,9 +281,11 @@ function CheckoutStep({
 
 function OnboardStep({
   submit,
+  onBack,
   onDone,
 }: {
   submit: (input: OnboardInput) => Promise<{ ok: true } | { ok: false; reason: string }>;
+  onBack: () => void;
   onDone: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -350,9 +357,14 @@ function OnboardStep({
           </Field>
         </div>
         {error ? <p className="text-sm text-danger">{error}</p> : null}
-        <Button type="submit" className="w-full" disabled={busy}>
-          {busy ? "Создаём…" : "Создать и войти"}
-        </Button>
+        <div className="flex gap-2">
+          <Button type="button" variant="outline" className="flex-1" onClick={onBack} disabled={busy}>
+            Назад
+          </Button>
+          <Button type="submit" className="flex-1" disabled={busy}>
+            {busy ? "Создаём…" : "Создать и войти"}
+          </Button>
+        </div>
       </form>
     </div>
   );

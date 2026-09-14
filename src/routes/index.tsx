@@ -7,7 +7,8 @@ import { isOnboarded } from "@/lib/data/empty";
 import { useHydrated, useOps } from "@/lib/data/store";
 import { BootScreen } from "@/components/layout/app-shell";
 import { IosInstallCard, useIosInstall } from "@/components/ios/runtime";
-import { NETWORK_NAME } from "@/lib/brand";
+import { LOGIN_INTRO, NETWORK_NAME } from "@/lib/brand";
+import { canSelfOnboard, showCommercialEntry } from "@/lib/billing/simulate";
 import { usePrefs } from "@/lib/prefs";
 
 export const Route = createFileRoute("/")({
@@ -29,7 +30,8 @@ function LoginPage() {
   const navigate = useNavigate();
   const ready = hydrated && isOnboarded(snap);
   const paidTariff = snap.settings.tariff;
-  const canCreateNetwork = snap.users.length === 0 && Boolean(snap.settings.paymentSimulatedAt);
+  const commercialOpen = showCommercialEntry(snap);
+  const canCreateNetwork = canSelfOnboard(snap);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [pin, setPin] = useState("");
@@ -84,10 +86,7 @@ function LoginPage() {
             <div className="text-xs font-medium tracking-[0.28em] text-muted uppercase">{NETWORK_NAME}</div>
             <h1 className="mt-2 text-3xl font-medium tracking-tight lg:hidden">Вход в контур</h1>
             <h2 className="mt-2 hidden text-3xl font-medium tracking-tight lg:block">Вход</h2>
-            <p className="mt-2 text-sm leading-relaxed text-muted">
-              Контур склада, смен и прибыли для кафе и ресторана. Свой логин — форма ниже; если открываете сеть
-              впервые, загляните в «Что это?».
-            </p>
+            <p className="mt-2 text-sm leading-relaxed text-muted">{LOGIN_INTRO}</p>
           </div>
 
           {ios.apple ? (
@@ -97,7 +96,7 @@ function LoginPage() {
           ) : null}
 
           <CommercialGate
-            onboarded={ready}
+            onboarded={!commercialOpen}
             canCreateNetwork={canCreateNetwork}
             paidTariff={paidTariff}
             simulatePayment={simulatePayment}
