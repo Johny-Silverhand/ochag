@@ -62,7 +62,8 @@ export function hasBlankSecrets(snap: Snapshot): boolean {
 /**
  * Restore blank PIN/password from seed peers.
  * Known seed ids (u-tech, u-owner) heal even if sampleLoaded was lost.
- * Email matching stays sample-only so a commercial «owner» login is not overwritten.
+ * Blank tech_admin rows also match seed tech by email (u-boot-* after env bootstrap).
+ * Other email matching stays sample-only so a commercial «owner» login is not overwritten.
  */
 export function rematerializeSeedSecrets(snap: Snapshot, seedUsers: StaffUser[]): Snapshot {
   if (!hasBlankSecrets(snap)) return snap;
@@ -73,6 +74,10 @@ export function rematerializeSeedSecrets(snap: Snapshot, seedUsers: StaffUser[])
       if (u.password && u.pin) return u;
       const byId = seedUsers.find((p) => p.id === u.id);
       if (byId) return withKeptSecret(u, byId);
+      if (u.role === "tech_admin") {
+        const byEmail = seedUsers.find((p) => p.role === "tech_admin" && sameLogin(p.email, u.email));
+        if (byEmail) return withKeptSecret(u, byEmail);
+      }
       if (!sample) return u;
       return withKeptSecret(u, findPeer(seedUsers, u));
     }),

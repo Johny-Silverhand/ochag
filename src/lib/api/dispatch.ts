@@ -53,8 +53,7 @@ import { abcByRevenue, compareRevisions, deviations, periodPayroll, planVsFact, 
 import { isOnboarded } from "../data/empty";
 import { createSeed, USERS } from "../data/seed";
 import { can, isNetworkAdmin, isOpsLead } from "../domain/permissions";
-import { ensureEnvBootstrap, readBootstrapEnv, repairLegacySnapshot } from "../data/bootstrap";
-import { rematerializeSeedSecrets } from "../data/secrets";
+import { ensureEnvBootstrap, readBootstrapEnv, rematerializeLoginSecrets } from "../data/bootstrap";
 import { appendOpsLog, recordAuthAttempt, resolveStaffAuth, ACCOUNT_BLOCKED_MSG } from "../domain/ops-log";
 import {
   DB_UNAVAILABLE_MSG,
@@ -108,7 +107,7 @@ async function persistOpsLog(entry: Parameters<typeof appendOpsLog>[1]) {
 }
 
 function authSnapshot(snap: Snapshot): Snapshot {
-  return rematerializeSeedSecrets(repairLegacySnapshot(snap), USERS);
+  return rematerializeLoginSecrets(snap, USERS);
 }
 
 async function healthResponse(): Promise<Response> {

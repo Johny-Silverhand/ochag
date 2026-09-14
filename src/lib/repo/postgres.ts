@@ -5,7 +5,8 @@
  */
 import { emptySnapshot } from "../data/empty";
 import { normalizeSnapshot } from "../data/normalize";
-import { rematerializeSeedSecrets, retainSecrets, SEED_LOGIN_PEERS } from "../data/secrets";
+import { rematerializeLoginSecrets } from "../data/bootstrap";
+import { retainSecrets } from "../data/secrets";
 import { createSeed } from "../data/seed";
 import type { Snapshot } from "../domain/types";
 import { withDbRetry } from "./db-errors";
@@ -73,14 +74,14 @@ export function createPostgresRepository(
     if (!row) return { snap: emptySnapshot(), updatedAt: null };
     const updatedAt =
       row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at ? String(row.updated_at) : null;
-    const snap = rematerializeSeedSecrets(asPayload(row.payload), SEED_LOGIN_PEERS);
+    const snap = rematerializeLoginSecrets(asPayload(row.payload));
     return { snap, updatedAt };
   }
 
   async function write(snapshot: Snapshot): Promise<Snapshot> {
     const client = await sql();
     const prev = (await read()).snap;
-    const next = rematerializeSeedSecrets(retainSecrets(prev, normalizeSnapshot(snapshot)), SEED_LOGIN_PEERS);
+    const next = rematerializeLoginSecrets(retainSecrets(prev, normalizeSnapshot(snapshot)));
     const now = new Date().toISOString();
     await withDbRetry(() =>
       client.query(

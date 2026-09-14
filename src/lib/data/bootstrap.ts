@@ -8,7 +8,7 @@
  */
 import type { OpsRepository } from "../repo/types.ts";
 import type { Snapshot, StaffUser } from "../domain/types.ts";
-import { rematerializeSeedSecrets, SEED_LOGIN_PEERS } from "./secrets.ts";
+import { rematerializeSeedSecrets, hasBlankSecrets, SEED_LOGIN_PEERS } from "./secrets.ts";
 
 export function readBootstrapEnv() {
   const env = typeof process !== "undefined" ? process.env : undefined;
@@ -55,6 +55,28 @@ export function repairLegacySnapshot(snap: Snapshot): Snapshot {
   return rematerializeSeedSecrets(flagged, SEED_LOGIN_PEERS);
 }
 
+/** Fill blank PIN/password from OCHAG_BOOTSTRAP_* for the matching login (never overwrite a live secret). */
+export function rematerializeBootstrapSecrets(snap: Snapshot, input: BootstrapInput | null): Snapshot {
+  if (!input || !hasBlankSecrets(snap)) return snap;
+  const login = input.login.trim().toLowerCase();
+  return {
+    ...snap,
+    users: snap.users.map((u) => {
+      if (u.password && u.pin) return u;
+      if (u.email.trim().toLowerCase() !== login) return u;
+      return { ...u, password: u.password || input.password, pin: u.pin || input.pin };
+    }),
+  };
+}
+
+/** Bootstrap env first (prod tech may be u-boot-*), then seed peers. Never overwrites a live secret. */
+export function rematerializeLoginSecrets(snap: Snapshot, seedUsers: StaffUser[] = SEED_LOGIN_PEERS): Snapshot {
+  return rematerializeSeedSecrets(
+    rematerializeBootstrapSecrets(repairLegacySnapshot(snap), envBootstrapInput()),
+    seedUsers,
+  );
+}
+
 function enabledTechAdmins(snap: Snapshot) {
   return snap.users.filter((u) => u.role === "tech_admin" && !u.disabled);
 }
@@ -90,7 +112,7 @@ export function applyEnsureBootstrap(
   input: BootstrapInput | null,
   _applyBootstrap: (snap: Snapshot, input: BootstrapInput) => Snapshot,
 ): Snapshot {
-  const repaired = repairLegacySnapshot(snap);
+  const repaired = rematerializeBootstrapSecrets(repairLegacySnapshot(snap), input);
   if (!input) return repaired;
 
   const login = input.login.trim().toLowerCase();
