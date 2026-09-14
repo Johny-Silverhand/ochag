@@ -27,6 +27,7 @@ function StaffPage() {
   const rows = filterPeriod(filterByBranch(snap.payroll, scope), from, today());
   const user = useSessionUser()!;
   const adjustPayroll = useOps((s) => s.adjustPayroll);
+  const accruePremiums = useOps((s) => s.accruePremiums);
   const sheet = periodPayroll(snap, period, scope);
   const total = sheet.reduce((s, r) => s + r.payable, 0);
   const staff = snap.users.filter((u) => !isNetworkAdmin(u.role) && (scope === "all" || u.branchId === scope));
@@ -36,7 +37,7 @@ function StaffPage() {
       <PageHeader
         eyebrow="ФОТ"
         title="Сотрудники и зарплаты"
-        description="Ставка за смену плюс процент с выручки у официантов. Начисление — в момент закрытия кассы."
+        description="Ставка за смену плюс процент с выручки. Премии и доплаты — отдельно, начисляются кнопкой или корректировкой."
         actions={
           <div className="flex flex-wrap gap-2">
             <Button
@@ -50,13 +51,24 @@ function StaffPage() {
               Ведомость CSV
             </Button>
             {canInviteStaff(user.role) && isWriteScope(scope) ? (
-              <AdjustPayroll
-                staff={staff}
-                onSave={(input) => {
-                  adjustPayroll(input);
-                  toast.success("Корректировка записана");
-                }}
-              />
+              <>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    accruePremiums();
+                    toast.success("Месячные премии начислены по ставке в карточке");
+                  }}
+                >
+                  Начислить премии
+                </Button>
+                <AdjustPayroll
+                  staff={staff}
+                  onSave={(input) => {
+                    adjustPayroll(input);
+                    toast.success("Корректировка записана");
+                  }}
+                />
+              </>
             ) : null}
             {canInviteStaff(user.role) ? (
               <Button asChild>
@@ -80,6 +92,7 @@ function StaffPage() {
               <th className="px-3 py-2 font-medium">Ставка</th>
               <th className="px-3 py-2 font-medium">Смен</th>
               <th className="px-3 py-2 font-medium">Доплата</th>
+              <th className="px-3 py-2 font-medium">Премия</th>
               <th className="px-3 py-2 font-medium">Штраф</th>
               <th className="px-3 py-2 font-medium">Аванс</th>
               <th className="px-5 py-2 text-right font-medium">К выплате</th>
@@ -96,9 +109,11 @@ function StaffPage() {
                 <td className="px-3 py-2.5 font-mono tabular-nums">
                   {rub(r.user.shiftPay)}
                   {r.user.salesPercent ? <span className="block text-xs">+{r.user.salesPercent}%</span> : null}
+                  {r.user.monthlyPremium ? <span className="block text-xs">премия {rub(r.user.monthlyPremium)}</span> : null}
                 </td>
                 <td className="px-3 py-2.5 font-mono tabular-nums">{r.shifts}</td>
                 <td className="px-3 py-2.5 font-mono tabular-nums">{rub(r.extra)}</td>
+                <td className="px-3 py-2.5 font-mono tabular-nums">{rub(r.premium)}</td>
                 <td className="px-3 py-2.5 font-mono tabular-nums text-danger">{rub(r.fine)}</td>
                 <td className="px-3 py-2.5 font-mono tabular-nums">{rub(r.advanceOut)}</td>
                 <td className="px-5 py-2.5 text-right">
@@ -143,7 +158,7 @@ function AdjustPayroll({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="secondary">Штраф / доплата</Button>
+        <Button variant="secondary">Штраф / премия</Button>
       </DialogTrigger>
       <DialogContent title="Корректировка ФОТ">
         <div className="grid gap-3">

@@ -20,12 +20,17 @@ export function emptySnapshot(): Snapshot {
     suppliers: [],
     closedPeriods: [],
     debts: [],
+    ledgerDebts: [],
+    householdItems: [],
+    householdStock: [],
+    householdMovements: [],
     payrollAdjustments: [],
     revenuePlans: [],
     audit: [],
     opsLogs: [],
     outbox: [],
     pushSubs: [],
+    deviceSessions: [],
     settings: defaultSettings(),
   };
 }

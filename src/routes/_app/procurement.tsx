@@ -10,11 +10,11 @@ import { Field, Input, NativeSelect } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/tabs";
 import { useOps } from "@/lib/data/store";
 import { needToBuy } from "@/lib/domain/engine";
-import { REQUEST_LABEL, today, type InvoiceLine } from "@/lib/domain/types";
+import { REQUEST_LABEL, today, type InvoiceLine, type Product, type Supplier, type SupplierChannel } from "@/lib/domain/types";
 import { qty, ruDate, rub } from "@/lib/format";
 import { isWriteScope, WRITE_SCOPE_HINT } from "@/lib/ui/scope";
 import { priceHistory } from "@/lib/domain/analytics";
-import type { Product, Supplier, SupplierChannel } from "@/lib/domain/types";
+import { PhotoField, PhotoThumbs } from "@/components/docs/photo-field";
 
 export const Route = createFileRoute("/_app/procurement")({ component: ProcurementPage });
 
@@ -180,7 +180,10 @@ function ProcurementPage() {
             <tbody>
               {invoices.map((inv) => (
                 <tr key={inv.id} className="border-t border-border">
-                  <td className="px-5 py-2.5 font-medium">{inv.number}</td>
+                  <td className="px-5 py-2.5 font-medium">
+                    {inv.number}
+                    <PhotoThumbs photos={inv.photos} />
+                  </td>
                   <td className="px-3 py-2.5">{inv.supplier}</td>
                   <td className="px-3 py-2.5 text-muted">{ruDate(inv.date)}</td>
                   <td className="px-5 py-2.5 text-right font-mono tabular-nums">{rub(inv.total)}</td>
@@ -288,7 +291,7 @@ function InvoiceDialog({
   onSave,
 }: {
   products: { id: string; name: string; avgCost: number }[];
-  onSave: (data: { supplier: string; number: string; date: string; lines: InvoiceLine[] }) => void;
+  onSave: (data: { supplier: string; number: string; date: string; lines: InvoiceLine[]; photos?: import("@/lib/domain/types").DocumentPhoto[] }) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [supplier, setSupplier] = useState("Мясоопт Юг");
@@ -297,6 +300,7 @@ function InvoiceDialog({
   const [q, setQ] = useState("10");
   const [price, setPrice] = useState("420");
   const [lines, setLines] = useState<InvoiceLine[]>([]);
+  const [photos, setPhotos] = useState<import("@/lib/domain/types").DocumentPhoto[]>([]);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -337,12 +341,16 @@ function InvoiceDialog({
             </li>
           ))}
         </ul>
+        <div className="mt-3">
+          <PhotoField value={photos} onChange={setPhotos} label="Фото накладной" />
+        </div>
         <Button
           className="mt-4 w-full"
           disabled={!lines.length}
           onClick={() => {
-            onSave({ supplier, number, date: today(), lines });
+            onSave({ supplier, number, date: today(), lines, photos });
             setLines([]);
+            setPhotos([]);
             setOpen(false);
           }}
         >

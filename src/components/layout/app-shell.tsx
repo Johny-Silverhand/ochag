@@ -21,17 +21,19 @@ import {
   Terminal,
   Users,
   Wallet,
+  Scale,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useActiveBranch, useOps, useSessionUser } from "@/lib/data/store";
-import { can, canSeeAllBranches, type ModuleKey } from "@/lib/domain/permissions";
+import { can, canSeeAllBranches, hasAbsoluteAccess, type ModuleKey } from "@/lib/domain/permissions";
 import { ROLE_LABEL, type Role } from "@/lib/domain/types";
 import { NativeSelect } from "@/components/ui/input";
 import { NETWORK_NAME } from "@/lib/brand";
 import { ThemeSwitcher } from "@/components/theme/switcher";
 import { useSync } from "@/lib/data/sync";
 import { PinOfferDialog } from "@/components/auth/pin-offer";
+import { OwnerContourSelect } from "@/components/admin/owner-contour";
 
 interface NavItem {
   to: string;
@@ -52,6 +54,7 @@ const NAV: NavItem[] = [
   { to: "/console", label: "Консоль", icon: Terminal, module: "admin" },
   { to: "/journal", label: "Журнал", icon: ScrollText, module: "admin" },
   { to: "/staff", label: "Сотрудники", icon: Users, module: "staff" },
+  { to: "/debts", label: "Долги", icon: Scale, module: "debts" },
   { to: "/reports", label: "Отчёты", icon: ClipboardList, module: "reports" },
   { to: "/planning", label: "Аналитика", icon: LineChart, module: "planning" },
   { to: "/schedule", label: "Период", icon: CalendarClock, module: "schedule" },
@@ -113,6 +116,7 @@ export function AppShell() {
   const session = useOps((s) => s.session);
   const branches = useOps((s) => s.branches);
   const setBranch = useOps((s) => s.setBranch);
+  const setOwner = useOps((s) => s.setOwner);
   const logout = useOps((s) => s.logout);
   const navigate = useNavigate();
   const role = user?.role ?? "waiter";
@@ -194,12 +198,13 @@ export function AppShell() {
       </aside>
 
       <div className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto scroll-touch pb-[calc(5.25rem+env(safe-area-inset-bottom))] lg:col-start-2 lg:row-start-1 lg:h-full lg:overflow-hidden lg:pb-0">
-        <header className="no-print sticky top-0 z-30 flex min-w-0 items-center gap-2 border-b border-border bg-bg/75 px-[var(--page-pad-x)] pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 backdrop-blur-md">
+        <header className="glass-chrome no-print sticky top-0 z-30 flex min-w-0 items-center gap-2 border-b border-border px-[var(--page-pad-x)] pt-[max(0.75rem,env(safe-area-inset-top))] pb-3">
           <div className="flex min-w-0 items-center gap-2 lg:hidden">
             <Mark className="size-8 shrink-0 text-primary" />
             <span className="truncate text-sm font-semibold tracking-wide">{NETWORK_NAME}</span>
           </div>
           <div className="ml-auto flex min-w-0 items-center gap-1.5 sm:gap-2">
+            {hasAbsoluteAccess(role) ? <OwnerContourSelect value={session?.actingOwnerId ?? ""} onChange={setOwner} /> : null}
             {canSeeAllBranches(role) ? (
               <NativeSelect
                 className="h-11 w-[min(9rem,38vw)] min-w-0 shrink bg-surface sm:w-52 md:h-10"
@@ -281,7 +286,7 @@ export function AppShell() {
         />
         <div
           className={cn(
-            "sheet-up absolute inset-x-0 bottom-0 max-h-[var(--dialog-max-h)] overflow-y-auto rounded-t-3xl bg-elevated px-[var(--page-pad-x)] pt-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] shadow-(--shadow-border)",
+            "sheet-up glass-sheet absolute inset-x-0 bottom-0 max-h-[var(--dialog-max-h)] overflow-y-auto rounded-t-3xl px-[var(--page-pad-x)] pt-3 pb-[calc(env(safe-area-inset-bottom)+1rem)]",
             moreOpen ? "translate-y-0" : "translate-y-full",
           )}
         >
@@ -309,7 +314,7 @@ export function AppShell() {
       </div>
 
       <nav
-        className="ios-tabbar no-print fixed inset-x-0 bottom-0 z-40 grid border-t border-border bg-elevated/95 backdrop-blur-md lg:hidden"
+        className="ios-tabbar glass-chrome no-print fixed inset-x-0 bottom-0 z-40 grid border-t border-border lg:hidden"
         style={{ gridTemplateColumns: `repeat(${primary.length + 1}, minmax(0, 1fr))` }}
       >
         {primary.map((item) => {

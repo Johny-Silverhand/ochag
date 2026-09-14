@@ -38,7 +38,7 @@ export function Kpi({
   tone?: "default" | "good" | "bad";
 }) {
   return (
-    <div className="min-w-0 overflow-hidden rounded-2xl bg-surface p-card shadow-(--shadow-border)">
+    <div className="glass-panel min-w-0 overflow-hidden rounded-2xl p-card">
       <div className="text-xs font-medium tracking-wide text-muted uppercase">{label}</div>
       <div
         className={cn(

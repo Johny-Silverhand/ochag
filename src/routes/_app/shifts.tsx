@@ -26,6 +26,7 @@ function ShiftsPage() {
   const openShift = useOps((s) => s.openShift);
   const closeShift = useOps((s) => s.closeShift);
   const setStopList = useOps((s) => s.setStopList);
+  const addShiftIncidental = useOps((s) => s.addShiftIncidental);
   const topUpDebt = useOps((s) => s.topUpDebt);
   const canWrite = isWriteScope(session.branchId);
   const branchId = canWrite ? session.branchId : "";
@@ -48,8 +49,9 @@ function ShiftsPage() {
           !canWrite ? null : current ? (
             <CloseDialog
               expected={totals?.expected ?? 0}
-              onClose={(closeCash, note) => {
-                closeShift({ closeCash, note });
+              incidentalCash={totals?.incidentalCash ?? 0}
+              onClose={(closeCash, note, incidentals) => {
+                closeShift({ closeCash, note, incidentals });
                 notify("shift", "Смена закрыта, зарплата начислена");
                 notify("payroll", "ФОТ начислен по ставке и проценту");
               }}
@@ -60,7 +62,7 @@ function ShiftsPage() {
               defaultStaff={snap.users.filter((u) => u.branchId === branchId).map((u) => u.id)}
               recipes={available}
               debts={snap.debts.filter((d) => d.branchId === branchId && d.status === "open")}
-              onOpen={(openCash, staffIds, startIds, topUp) => {
+              onOpen={(openCash, staffIds, startIds, topUp, incidentals) => {
                 if (!startIds.length) {
                   toast.error("Подтвердите старт-лист перед открытием смены");
                   return;
@@ -71,6 +73,7 @@ function ShiftsPage() {
                   startList: startIds,
                   topUpDebtId: topUp?.id,
                   topUpAmount: topUp?.amount,
+                  incidentals,
                 });
                 notify("shift", "Смена открыта");
               }}
@@ -95,6 +98,24 @@ function ShiftsPage() {
             <Kpi label="Безнал" value={rub(totals.card + totals.qr + totals.transfer)} />
             <Kpi label="Ожидается в кассе" value={rub(totals.expected)} hint={`${totals.checks} чеков`} />
           </div>
+          {current.incidentals?.length ? (
+            <ul className="mt-3 space-y-1 text-xs text-muted">
+              {current.incidentals.map((i) => (
+                <li key={i.id}>
+                  {i.title} · {rub(i.amount)}
+                  {i.paidFromTill ? " · из кассы" : ""}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {canWrite ? (
+            <IncidentalDialog
+              onSave={(input) => {
+                addShiftIncidental(input);
+                toast.success("Побочный расход записан в смену");
+              }}
+            />
+          ) : null}
         </Card>
       ) : (
         <Card className="mb-4">
@@ -248,6 +269,7 @@ function OpenDialog({
     staffIds: string[],
     startList: string[],
     topUp?: { id: string; amount: number },
+    incidentals?: Array<{ title: string; amount: number; paidFromTill?: boolean; note?: string }>,
   ) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -255,6 +277,8 @@ function OpenDialog({
   const [ids, setIds] = useState<string[]>(defaultStaff);
   const [startIds, setStartIds] = useState<string[]>(recipes.map((r) => r.id));
   const [topUpId, setTopUpId] = useState(debts[0]?.id ?? "");
+  const [incTitle, setIncTitle] = useState("");
+  const [incAmount, setIncAmount] = useState("");
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -317,6 +341,12 @@ function OpenDialog({
               ))}
             </ul>
           </div>
+          <Field label="Побочный расход на открытие (необязательно)">
+            <Input value={incTitle} onChange={(e) => setIncTitle(e.target.value)} placeholder="DJ, декор, певец…" />
+          </Field>
+          <Field label="Сумма расхода, ₽">
+            <Input value={incAmount} onChange={(e) => setIncAmount(e.target.value)} inputMode="numeric" />
+          </Field>
           <Button
             className="w-full"
             onClick={() => {
@@ -325,7 +355,11 @@ function OpenDialog({
                 return;
               }
               const debt = debts.find((d) => d.id === topUpId);
-              onOpen(Number(cash) || 0, ids, startIds, debt ? { id: debt.id, amount: debt.amount } : undefined);
+              const incidentals =
+                incTitle.trim() && Number(incAmount) > 0
+                  ? [{ title: incTitle.trim(), amount: Number(incAmount), paidFromTill: true }]
+                  : [];
+              onOpen(Number(cash) || 0, ids, startIds, debt ? { id: debt.id, amount: debt.amount } : undefined, incidentals);
               setOpen(false);
             }}
           >
@@ -337,11 +371,26 @@ function OpenDialog({
   );
 }
 
-function CloseDialog({ expected, onClose }: { expected: number; onClose: (cash: number, note?: string) => void }) {
+function CloseDialog({
+  expected,
+  incidentalCash,
+  onClose,
+}: {
+  expected: number;
+  incidentalCash: number;
+  onClose: (
+    cash: number,
+    note?: string,
+    incidentals?: Array<{ title: string; amount: number; paidFromTill?: boolean; note?: string }>,
+  ) => void;
+}) {
   const [open, setOpen] = useState(false);
   const [cash, setCash] = useState(String(Math.round(expected)));
   const [note, setNote] = useState("");
-  const disc = (Number(cash) || 0) - expected;
+  const [incTitle, setIncTitle] = useState("");
+  const [incAmount, setIncAmount] = useState("");
+  const extra = Number(incAmount) || 0;
+  const disc = (Number(cash) || 0) - (expected - extra);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -350,9 +399,16 @@ function CloseDialog({ expected, onClose }: { expected: number; onClose: (cash: 
       <DialogContent title="Закрытие кассы">
         <p className="mb-3 text-sm text-muted">
           По чекам в ящике должно быть <span className="font-mono text-fg">{rub(expected)}</span>
+          {incidentalCash ? ` (уже учтено побочных ${rub(incidentalCash)})` : ""}.
         </p>
         <Field label="Пересчёт наличных, ₽">
           <Input value={cash} onChange={(e) => setCash(e.target.value)} inputMode="numeric" />
+        </Field>
+        <Field label="Ещё расход на закрытие" className="mt-3">
+          <Input value={incTitle} onChange={(e) => setIncTitle(e.target.value)} placeholder="Певица, такси, декор…" />
+        </Field>
+        <Field label="Сумма, ₽" className="mt-3">
+          <Input value={incAmount} onChange={(e) => setIncAmount(e.target.value)} inputMode="numeric" />
         </Field>
         <p className={`mt-2 text-sm ${disc === 0 ? "text-success" : "text-danger"}`}>Расхождение: {signedRub(disc)}</p>
         <Field label="Комментарий" className="mt-3">
@@ -361,11 +417,61 @@ function CloseDialog({ expected, onClose }: { expected: number; onClose: (cash: 
         <Button
           className="mt-4 w-full"
           onClick={() => {
-            onClose(Number(cash) || 0, note);
+            const incidentals =
+              incTitle.trim() && extra > 0 ? [{ title: incTitle.trim(), amount: extra, paidFromTill: true }] : [];
+            onClose(Number(cash) || 0, note, incidentals);
             setOpen(false);
           }}
         >
           Закрыть и начислить зарплату
+        </Button>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function IncidentalDialog({
+  onSave,
+}: {
+  onSave: (input: { title: string; amount: number; paidFromTill: boolean; note?: string }) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [amount, setAmount] = useState("");
+  const [fromTill, setFromTill] = useState(true);
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="secondary" className="mt-4">
+          Побочный расход
+        </Button>
+      </DialogTrigger>
+      <DialogContent title="Расход смены">
+        <p className="text-sm text-muted">DJ, певец, шары, такси — свободная формулировка. Если платили из ящика, сумма уйдёт из ожидаемой кассы.</p>
+        <Field label="На что" className="mt-3">
+          <Input value={title} onChange={(e) => setTitle(e.target.value)} />
+        </Field>
+        <Field label="Сумма, ₽" className="mt-3">
+          <Input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="numeric" />
+        </Field>
+        <label className="mt-3 flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={fromTill} onChange={(e) => setFromTill(e.target.checked)} />
+          Из кассы (наличные)
+        </label>
+        <Button
+          className="mt-4 w-full"
+          onClick={() => {
+            if (!title.trim() || !(Number(amount) > 0)) {
+              toast.error("Название и сумма обязательны");
+              return;
+            }
+            onSave({ title: title.trim(), amount: Number(amount), paidFromTill: fromTill });
+            setOpen(false);
+            setTitle("");
+            setAmount("");
+          }}
+        >
+          Записать
         </Button>
       </DialogContent>
     </Dialog>

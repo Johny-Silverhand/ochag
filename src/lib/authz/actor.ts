@@ -1,5 +1,5 @@
 import type { Role, Session, StaffUser } from "../domain/types.ts";
-import { can, canCreateSale, canImportKeeper, canManageCash, canSeeAllBranches, canWriteoff } from "../domain/permissions.ts";
+import { can, canCreateSale, canImportKeeper, canManageCash, canSeeAllBranches, canWriteoff, hasAbsoluteAccess } from "../domain/permissions.ts";
 import { canEditExpenses, canManageStopList, canTransfer, type ModuleKey } from "../domain/permissions.ts";
 
 export { AuthzError } from "./error.ts";
@@ -11,15 +11,22 @@ export interface Actor {
   homeBranchId: string | null;
   sessionBranchId: string;
   name: string;
+  ownerId?: string | null;
+  actingOwnerId?: string | null;
+  sessionId?: string;
 }
 
 export function actorFrom(user: StaffUser, session: Session): Actor {
+  const ownerId = user.role === "tech_admin" ? null : user.role === "owner" ? user.id : user.ownerId ?? null;
   return {
     userId: user.id,
     role: user.role,
     homeBranchId: user.branchId,
     sessionBranchId: session.branchId,
     name: user.name,
+    ownerId,
+    actingOwnerId: user.role === "tech_admin" ? session.actingOwnerId ?? null : ownerId,
+    sessionId: session.sessionId,
   };
 }
 
@@ -30,6 +37,11 @@ export function writeBranch(actor: Actor): string {
 }
 
 export function assertBranchScope(actor: Actor, branchId: string) {
+  if (hasAbsoluteAccess(actor.role) && actor.actingOwnerId) {
+    if (actor.sessionBranchId && actor.sessionBranchId !== "all" && branchId !== actor.sessionBranchId) {
+      throw new AuthzError("Филиал другого контура");
+    }
+  }
   if (canSeeAllBranches(actor.role)) return;
   if (actor.homeBranchId && branchId === actor.homeBranchId) return;
   throw new AuthzError("Филиал недоступен");
@@ -73,5 +85,8 @@ export function publicActor(actor: Actor) {
     role: actor.role,
     branchId: actor.sessionBranchId,
     name: actor.name,
+    ownerId: actor.ownerId ?? null,
+    actingOwnerId: actor.actingOwnerId ?? null,
+    sessionId: actor.sessionId,
   };
 }

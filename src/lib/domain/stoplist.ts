@@ -1,5 +1,5 @@
-import type { Recipe, Snapshot, StopListEntry, StopListReason } from "./types";
-import { stockOf } from "./engine";
+import type { Recipe, Snapshot, StopListEntry, StopListReason } from "./types.ts";
+import { stockOf } from "./engine.ts";
 
 export function activeStopList(entries: StopListEntry[], branchId: string | "all") {
   return entries.filter(

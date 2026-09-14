@@ -12,7 +12,7 @@ export function Segmented({
   className?: string;
 }) {
   return (
-    <div className={cn("flex w-full rounded-2xl bg-bg p-1 shadow-(--shadow-border) sm:inline-flex sm:w-auto", className)}>
+    <div className={cn("neu-well flex w-full rounded-2xl bg-bg p-1 sm:inline-flex sm:w-auto", className)}>
       {options.map((o) => (
         <button
           key={o.value}

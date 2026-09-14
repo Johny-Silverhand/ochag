@@ -19,7 +19,15 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   import: "Импорт номенклатуры",
   period_close: "Закрытие периода",
   debt_topup: "Долг кассы",
+  ledger_debt: "Долг учёта",
+  ledger_pay: "Погашение долга",
+  ledger_edit: "Правка долга",
   payroll_adj: "Корректировка ФОТ",
+  household_item: "Хозтовар",
+  household_move: "Движение хозов",
+  shift_incidental: "Побочный расход смены",
+  sale_void: "Отмена чека",
+  sale_discount: "Скидка по чеку",
   bootstrap: "Первый администратор",
   settings: "Настройки сети",
   branch: "Филиал",
@@ -40,7 +48,7 @@ export function auditGroup(action: string): Exclude<AuditGroup, "all"> {
   ) {
     return "users";
   }
-  if (action === "writeoff" || action === "receipt" || action === "transfer" || action === "revision" || action === "import") {
+  if (action === "writeoff" || action === "receipt" || action === "transfer" || action === "revision" || action === "import" || action === "household_item" || action === "household_move") {
     return "stock";
   }
   if (
@@ -48,7 +56,12 @@ export function auditGroup(action: string): Exclude<AuditGroup, "all"> {
     action === "shift_close" ||
     action === "payroll_adj" ||
     action === "period_close" ||
-    action === "debt_topup"
+    action === "debt_topup" ||
+    action === "ledger_debt" ||
+    action === "ledger_pay" ||
+    action === "shift_incidental" ||
+    action === "sale_void" ||
+    action === "sale_discount"
   ) {
     return "ops";
   }

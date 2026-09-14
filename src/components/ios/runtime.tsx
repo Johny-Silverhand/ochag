@@ -78,8 +78,8 @@ export function IosInstallCard({ compact = false, forceGuide = false }: { compac
               <div className="text-sm font-medium">Поставить на iPhone и iPad</div>
               <p className="mt-1 text-sm text-muted">
                 {compact
-                  ? "Safari → Поделиться → На экран «Домой». Дальше открывайте иконку «Очаг», не вкладку."
-                  : "Safari → «Поделиться» → «На экран Домой». Иконка «Очаг» появится рядом с камерой. Дальше открывайте её, не вкладку браузера."}
+                  ? `Safari → Поделиться → На экран «Домой». Дальше открывайте иконку «${NETWORK_NAME}», не вкладку.`
+                  : `Safari → «Поделиться» → «На экран Домой». Иконка «${NETWORK_NAME}» появится рядом с камерой. Дальше открывайте её, не вкладку браузера.`}
               </p>
               {compact ? null : (
                 <ol className="mt-3 space-y-2 text-sm">
@@ -107,7 +107,7 @@ export function IosInstallCard({ compact = false, forceGuide = false }: { compac
                     <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-bg font-mono text-[11px] text-muted">
                       3
                     </span>
-                    <span>Подтвердите имя «Очаг» и откройте иконку с рабочего стола</span>
+                    <span>Подтвердите имя «{NETWORK_NAME}» и откройте иконку с рабочего стола</span>
                   </li>
                 </ol>
               )}

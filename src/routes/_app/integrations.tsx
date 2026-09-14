@@ -120,7 +120,8 @@ function IntegrationsPage() {
               <div className="text-xs tracking-wide text-muted uppercase">Сигналы</div>
               <h2 className="mt-1 text-lg font-medium">Операционный советник</h2>
               <p className="mt-2 max-w-xl text-sm text-muted">
-                На обзоре считаются аномалии: фудкост, списания, касса, дефицит. Ключ внешней модели не нужен.
+                На обзоре считаются аномалии: фудкост, списания, касса, дефицит — по формулам контура. Разбор периода,
+              плана и покрытия — в Аналитике и «RestoPro AI»; туда ходит ваша Ollama, если включена.
               </p>
             </div>
             <Badge tone="success">в работе</Badge>
@@ -186,7 +187,7 @@ function KeeperSection({ keeper }: { keeper: KeeperStatus | null }) {
           <div className="text-xs tracking-wide text-muted uppercase">Касса</div>
           <h2 className="mt-1 text-lg font-medium">Кипер · r_keeper 7</h2>
           <p className="mt-2 max-w-2xl text-sm text-muted">
-            Очаг не заменяет кассу и фискальный регистратор. Продажи забираются из RK7: надёжный путь на этом хостинге —
+            RestoPro не заменяет кассу и фискальный регистратор. Продажи забираются из RK7: надёжный путь на этом хостинге —
             XML / Z-отчёт файлом. Живой HTTP с облака работает, только если XML-интерфейс кассы торчит в интернет.
           </p>
         </div>
@@ -225,11 +226,11 @@ function KeeperSection({ keeper }: { keeper: KeeperStatus | null }) {
             UTF-8.
           </li>
           <li>
-            В Очаге выберите филиал в шапке, откройте смену на экране «Смены», затем «Продажи» → «Загрузить XML». После
+            В RestoPro выберите филиал в шапке, откройте смену на экране «Смены», затем «Продажи» → «Загрузить XML». После
             импорта чеки появляются в списке с меткой «кипер», склад списывается по техкартам с тем же названием блюда.
           </li>
           <li>
-            Проверка: сумма смены в Очаге совпадает с Z-отчётом кассы. Повтор той же выгрузки не дублирует чеки. Блюдо
+            Проверка: сумма смены в RestoPro совпадает с Z-отчётом кассы. Повтор той же выгрузки не дублирует чеки. Блюдо
             без техкарты попадёт в чек, но со склада не спишется — заведите карту с тем же именем.
           </li>
         </ol>
@@ -241,6 +242,13 @@ function KeeperSection({ keeper }: { keeper: KeeperStatus | null }) {
           <li>
             <span className="font-medium text-fg">Работает:</span> загрузка XML (Receipt/Item, Check/Dish, Order), разбор
             Z-отчёта, списание по техкарте, защита от дублей.
+          </li>
+          <li>
+            <span className="font-medium text-fg">Mini-API RK7:</span> рабочая команда —{" "}
+            <span className="font-mono text-xs">GetOrderList</span> (чеки смены). Справочник меню{" "}
+            <span className="font-mono text-xs">GetRefData</span> и один заказ{" "}
+            <span className="font-mono text-xs">GetOrder</span> не подключены: блюда стыкуются по имени техкарты, не по
+            коду RK7.
           </li>
           <li>
             <span className="font-medium text-fg">HTTP с облака:</span> кнопка «Забрать с кассы» на Продажах бьёт в{" "}

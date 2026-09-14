@@ -1,8 +1,22 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { LOGIN_INTRO, VENDOR_LINE, VENDOR_URL } from "./brand.ts";
+import { APP_NAME, APP_ORIGIN, APP_ORIGIN_ALIASES, APP_SLUG, DOWNLOAD_SLUG, LOGIN_INTRO, NETWORK_NAME, VENDOR_LINE, VENDOR_URL } from "./brand.ts";
 
 describe("login intro copy", () => {
+  it("shows RestoPro as the product name", () => {
+    assert.equal(APP_NAME, "RestoPro");
+    assert.equal(NETWORK_NAME, "RestoPro");
+    assert.equal(DOWNLOAD_SLUG, "restopro");
+    assert.equal(APP_ORIGIN, "https://restopro-theta.vercel.app");
+    assert.deepEqual(APP_ORIGIN_ALIASES, [
+      "https://restopro-theta.vercel.app",
+      "https://ochag-theta.vercel.app",
+    ]);
+    assert.equal(APP_ORIGIN.includes("restopro.vercel.app"), false);
+    assert.equal(APP_NAME.includes("Очаг"), false);
+    assert.equal(NETWORK_NAME.includes("Очаг"), false);
+  });
+
   it("keeps the polished product line from the login screen", () => {
     assert.match(LOGIN_INTRO, /Контур склада, смен и прибыли/);
     assert.equal(LOGIN_INTRO.includes("Новый объект — тариф"), false);
@@ -13,5 +27,6 @@ describe("login intro copy", () => {
     assert.equal(VENDOR_LINE, "Разработано Arach.tech");
     assert.equal(VENDOR_URL, "https://arach.tech");
     assert.equal(VENDOR_LINE.includes("Victimok"), false);
+    assert.equal(APP_SLUG, "ochag");
   });
 });

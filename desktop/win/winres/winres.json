@@ -11,7 +11,7 @@
           "name": "VictimokLabs.testv1",
           "version": "1.0.0.0"
         },
-        "description": "test v1.0 Setup",
+        "description": "RestoPro Setup",
         "minimum-os": "win7",
         "execution-level": "asInvoker",
         "dpi-awareness": "perMonitorV2",
@@ -29,15 +29,15 @@
         },
         "info": {
           "0409": {
-            "Comments": "Разработано в Victimok Labs. Все права защищены.",
-            "CompanyName": "Victimok Labs",
-            "FileDescription": "test v1.0 Setup",
+            "Comments": "Разработано Arach.tech. Все права защищены.",
+            "CompanyName": "Arach.tech",
+            "FileDescription": "RestoPro Setup",
             "FileVersion": "1.0.0.0",
-            "InternalName": "test-v1.0-setup",
-            "LegalCopyright": "© 2026 Victimok Labs. Все права защищены.",
-            "LegalTrademarks": "test v1.0, Victimok Labs",
-            "OriginalFilename": "test v1.0 Setup.exe",
-            "ProductName": "test v1.0",
+            "InternalName": "restopro-setup",
+            "LegalCopyright": "© 2026 Arach.tech. Все права защищены.",
+            "LegalTrademarks": "RestoPro, Arach.tech",
+            "OriginalFilename": "RestoPro Setup.exe",
+            "ProductName": "RestoPro",
             "ProductVersion": "1.0.0.0"
           }
         }

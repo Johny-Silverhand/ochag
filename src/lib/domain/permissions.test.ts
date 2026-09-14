@@ -11,7 +11,9 @@ import {
   canManageBranches,
   canResetDemo,
   canSeeAllBranches,
+  canSeeDebts,
   canSeeNetworkStats,
+  canSeeOpsLog,
   hasAbsoluteAccess,
   invitableRoles,
   isNetworkAdmin,
@@ -37,7 +39,7 @@ describe("tech_admin access", () => {
       "quality",
       "ai",
       "admin",
-      "admin",
+      "debts",
     ] as const;
     for (const module of modules) {
       assert.equal(can("tech_admin", module), true);
@@ -68,6 +70,12 @@ describe("tech_admin access", () => {
     assert.equal(canManageBranches("manager"), false);
     assert.equal(canManageBranches("owner"), true);
     assert.equal(canManageBranches("tech_admin"), true);
+    assert.equal(canSeeDebts("owner"), true);
+    assert.equal(canSeeDebts("manager"), false);
+    assert.equal(canSeeDebts("tech_admin"), true);
+    assert.equal(canSeeOpsLog("tech_admin"), true);
+    assert.equal(canSeeOpsLog("owner"), false);
+    assert.equal(canSeeOpsLog("manager"), false);
     assert.equal(canLoadSample("owner"), false);
     assert.equal(canLoadSample("tech_admin"), true);
     assert.equal(canResetDemo("manager"), false);

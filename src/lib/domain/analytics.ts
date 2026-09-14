@@ -1,13 +1,12 @@
-import { filterByBranch, filterPeriod, inRange, saleCogs, salePayments } from "./engine";
-import { today } from "./types";
-import type { Period, Snapshot } from "./types";
-import { periodStart } from "./engine";
-import { addDays } from "../format";
-import { foodcostPct, netProfit } from "./finance";
+import { filterByBranch, filterPeriod, inRange, saleCogs, salePayments, periodStart } from "./engine.ts";
+import { today } from "./types.ts";
+import type { Period, Snapshot } from "./types.ts";
+import { addDays } from "../format.ts";
+import { foodcostPct, netProfit } from "./finance.ts";
 
 export function abcByRevenue(snap: Snapshot, period: Period, branchId: string) {
   const from = periodStart(period);
-  const sales = filterPeriod(filterByBranch(snap.sales, branchId), from, today());
+  const sales = filterPeriod(filterByBranch(snap.sales, branchId), from, today()).filter((s) => !s.voided);
   const map = new Map<string, { name: string; revenue: number; cogs: number }>();
   for (const s of sales) {
     for (const it of s.items) {
@@ -228,13 +227,14 @@ export function periodPayroll(snap: Snapshot, period: Period, branchId: string) 
     const fine = extras.filter((a) => a.kind === "fine").reduce((s, a) => s + a.amount, 0);
     const advance = extras.filter((a) => a.kind === "advance").reduce((s, a) => s + a.amount, 0);
     const extra = extras.filter((a) => a.kind === "extra").reduce((s, a) => s + a.amount, 0);
-    const total = base + bonus + extra - fine;
-    return { user: u, shifts: rows.length, base, bonus, fine, advance, extra, payable: total, advanceOut: advance };
+    const premium = extras.filter((a) => a.kind === "premium").reduce((s, a) => s + a.amount, 0);
+    const total = base + bonus + extra + premium - fine;
+    return { user: u, shifts: rows.length, base, bonus, fine, advance, extra, premium, payable: total, advanceOut: advance };
   });
 }
 
 export function monthKpis(snap: Snapshot, branchId: string, from: string, to: string) {
-  const sales = filterPeriod(filterByBranch(snap.sales, branchId), from, to);
+  const sales = filterPeriod(filterByBranch(snap.sales, branchId), from, to).filter((s) => !s.voided);
   let revenue = 0;
   let cogs = 0;
   let cash = 0;

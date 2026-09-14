@@ -5,8 +5,11 @@ import { toast } from "sonner";
 import type {
   Banquet,
   BanquetStatus,
+  DocumentPhoto,
   ExpenseKind,
+  HouseholdMoveType,
   InvoiceLine,
+  LedgerDebtKind,
   PayrollAdjKind,
   Period,
   Recipe,
@@ -15,6 +18,7 @@ import type {
   SaleItem,
   Snapshot,
   StopListReason,
+  Unit,
   WriteoffReason,
 } from "../domain/types";
 import { type Session } from "../domain/types";
@@ -52,6 +56,7 @@ interface OpsState extends Snapshot {
   loadSample: () => Promise<{ ok: true } | { ok: false; reason: string }>;
   logout: () => void;
   setBranch: (branchId: string) => void;
+  setOwner: (ownerId: string | null) => Promise<void>;
   setPeriod: (period: Period) => void;
   resetDemo: () => Promise<void>;
   updateProfile: (patch: { name?: string; phone?: string; password?: string }) => void;
@@ -61,7 +66,7 @@ interface OpsState extends Snapshot {
     reason: WriteoffReason;
     note?: string;
   }) => void;
-  addInvoice: (input: { supplier: string; number: string; date: string; lines: InvoiceLine[] }) => void;
+  addInvoice: (input: { supplier: string; number: string; date: string; lines: InvoiceLine[]; photos?: DocumentPhoto[] }) => void;
   createRequestFromNeed: () => void;
   setRequestStatus: (id: string, status: RequestStatus, supplierId?: string) => void;
   openShift: (input: {
@@ -70,13 +75,40 @@ interface OpsState extends Snapshot {
     startList: string[];
     topUpDebtId?: string;
     topUpAmount?: number;
+    incidentals?: Array<{ title: string; amount: number; paidFromTill?: boolean; note?: string }>;
   }) => void;
-  closeShift: (input: { closeCash: number; note?: string }) => void;
+  closeShift: (input: {
+    closeCash: number;
+    note?: string;
+    incidentals?: Array<{ title: string; amount: number; paidFromTill?: boolean; note?: string }>;
+  }) => void;
+  addShiftIncidental: (input: {
+    title: string;
+    amount: number;
+    paidFromTill?: boolean;
+    note?: string;
+    phase?: "open" | "close" | "during";
+  }) => void;
   topUpDebt: (debtId: string) => void;
+  addLedgerDebt: (input: { kind: LedgerDebtKind; partyName: string; partyId?: string; amount: number; note?: string }) => void;
+  payLedgerDebt: (input: { debtId: string; amount: number; note?: string }) => void;
+  updateLedgerDebt: (input: { debtId: string; partyName?: string; amount?: number; note?: string }) => void;
+  upsertHouseholdItem: (input: { id?: string; name: string; category?: string; unit?: Unit; minQty?: number }) => void;
+  householdMove: (input: {
+    itemId: string;
+    type: HouseholdMoveType;
+    qty: number;
+    cost?: number;
+    note?: string;
+    photos?: DocumentPhoto[];
+  }) => void;
   closePeriod: (input: { from: string; to: string; revisionId: string }) => void;
   adjustPayroll: (input: { userId: string; kind: PayrollAdjKind; amount: number; note: string; date?: string }) => void;
+  accruePremiums: (input?: { month?: string }) => void;
   setPlan: (input: { branchId: string; month: string; target: number }) => void;
   addManualSale: (items: Omit<SaleItem, "costAtSale">[], payment: "cash" | "card" | "qr" | "transfer") => void;
+  voidSale: (input: { saleId: string; reason?: string }) => void;
+  discountSale: (input: { saleId: string; amount: number; reason?: string }) => void;
   importKeeperSales: (
     sales: Array<
       Omit<Snapshot["sales"][number], "shiftId" | "id" | "number" | "branchId" | "items"> & {
@@ -88,7 +120,7 @@ interface OpsState extends Snapshot {
   pullKeeperSales: () => Promise<number>;
   upsertBanquet: (b: Banquet) => Promise<boolean>;
   setBanquetStatus: (id: string, status: BanquetStatus) => void;
-  completeRevision: (lines: RevisionLine[], note?: string) => void;
+  completeRevision: (lines: RevisionLine[], note?: string, photos?: DocumentPhoto[]) => void;
   transferStock: (input: {
     fromBranchId: string;
     toBranchId: string;
@@ -111,6 +143,7 @@ interface OpsState extends Snapshot {
     branchId: string;
     shiftPay: number;
     salesPercent: number;
+    monthlyPremium?: number;
     position?: string;
     phone?: string;
   }) => Promise<boolean>;
@@ -124,6 +157,7 @@ interface OpsState extends Snapshot {
     branchId?: string | null;
     shiftPay?: number;
     salesPercent?: number;
+    monthlyPremium?: number;
     position?: string;
     phone?: string;
     disabled?: boolean;
@@ -206,6 +240,7 @@ const ACTION_KEYS = [
   "loadSample",
   "logout",
   "setBranch",
+  "setOwner",
   "setPeriod",
   "resetDemo",
   "updateProfile",
@@ -215,11 +250,20 @@ const ACTION_KEYS = [
   "setRequestStatus",
   "openShift",
   "closeShift",
+  "addShiftIncidental",
   "topUpDebt",
+  "addLedgerDebt",
+  "payLedgerDebt",
+  "updateLedgerDebt",
+  "upsertHouseholdItem",
+  "householdMove",
   "closePeriod",
   "adjustPayroll",
+  "accruePremiums",
   "setPlan",
   "addManualSale",
+  "voidSale",
+  "discountSale",
   "importKeeperSales",
   "importKeeperXml",
   "pullKeeperSales",
@@ -264,7 +308,12 @@ export const useOps = create<OpsState>()(
           applyingRemote = true;
           set({
             ...applyIncoming(get(), res.state),
-            session: { userId: res.user.userId, branchId: res.user.branchId },
+            session: {
+              userId: res.user.userId,
+              branchId: res.user.branchId,
+              actingOwnerId: "actingOwnerId" in res.user ? (res.user as { actingOwnerId?: string | null }).actingOwnerId : null,
+              sessionId: "sessionId" in res.user ? (res.user as { sessionId?: string }).sessionId : undefined,
+            },
           });
           applyingRemote = false;
           return { ok: true };
@@ -310,7 +359,12 @@ export const useOps = create<OpsState>()(
           applyingRemote = true;
           set({
             ...applyIncoming(get(), res.state),
-            session: { userId: res.user.userId, branchId: res.user.branchId },
+            session: {
+              userId: res.user.userId,
+              branchId: res.user.branchId,
+              actingOwnerId: "actingOwnerId" in res.user ? (res.user as { actingOwnerId?: string | null }).actingOwnerId : null,
+              sessionId: "sessionId" in res.user ? (res.user as { sessionId?: string }).sessionId : undefined,
+            },
           });
           applyingRemote = false;
           return { ok: true };
@@ -377,7 +431,49 @@ export const useOps = create<OpsState>()(
         const session = get().session;
         if (!session) return;
         set({ session: { ...session, branchId } });
-        void api("session/branch", { method: "POST", body: { branchId } }).catch(() => undefined);
+        void api<{ user?: { userId: string; branchId: string; actingOwnerId?: string | null; sessionId?: string }; state?: Snapshot }>(
+          "session/branch",
+          { method: "POST", body: { branchId } },
+        )
+          .then((res) => {
+            if (!res.state || !res.user) return;
+            applyingRemote = true;
+            set({
+              ...applyIncoming(get(), res.state),
+              session: {
+                userId: res.user.userId,
+                branchId: res.user.branchId,
+                actingOwnerId: res.user.actingOwnerId,
+                sessionId: res.user.sessionId,
+              },
+            });
+            applyingRemote = false;
+          })
+          .catch(() => undefined);
+      },
+
+      setOwner: async (ownerId) => {
+        const session = get().session;
+        if (!session) return;
+        try {
+          const res = await api<{
+            user: { userId: string; branchId: string; actingOwnerId?: string | null; sessionId?: string };
+            state: Snapshot;
+          }>("session/owner", { method: "POST", body: { ownerId } });
+          applyingRemote = true;
+          set({
+            ...applyIncoming(get(), res.state),
+            session: {
+              userId: res.user.userId,
+              branchId: res.user.branchId,
+              actingOwnerId: res.user.actingOwnerId,
+              sessionId: res.user.sessionId,
+            },
+          });
+          applyingRemote = false;
+        } catch (err) {
+          toast.error(clientErrorMessage(err, "Не удалось переключить контур"));
+        }
       },
 
       setPeriod: (period) => set({ period }),
@@ -429,8 +525,32 @@ export const useOps = create<OpsState>()(
         void applyRemote("shifts/close", input);
       },
 
+      addShiftIncidental: (input) => {
+        void applyRemote("shifts/incidental", input);
+      },
+
       topUpDebt: (debtId) => {
         void applyRemote("debts/topup", { debtId });
+      },
+
+      addLedgerDebt: (input) => {
+        void applyRemote("debts/ledger", input);
+      },
+
+      payLedgerDebt: (input) => {
+        void applyRemote("debts/ledger/pay", input);
+      },
+
+      updateLedgerDebt: (input) => {
+        void applyRemote("debts/ledger/update", input);
+      },
+
+      upsertHouseholdItem: (input) => {
+        void applyRemote("household/item", input);
+      },
+
+      householdMove: (input) => {
+        void applyRemote("household/move", input);
       },
 
       closePeriod: (input) => {
@@ -441,12 +561,24 @@ export const useOps = create<OpsState>()(
         void applyRemote("staff/adjust", input);
       },
 
+      accruePremiums: (input) => {
+        void applyRemote("staff/premiums", input ?? {});
+      },
+
       setPlan: (input) => {
         void applyRemote("plan", input);
       },
 
       addManualSale: (items, payment) => {
         void applyRemote("sales/manual", { items, payment });
+      },
+
+      voidSale: (input: { saleId: string; reason?: string }) => {
+        void applyRemote("sales/void", input);
+      },
+
+      discountSale: (input: { saleId: string; amount: number; reason?: string }) => {
+        void applyRemote("sales/discount", input);
       },
 
       importKeeperSales: async (incoming) => {
@@ -485,8 +617,8 @@ export const useOps = create<OpsState>()(
         void applyRemote("banquets/status", { id, status });
       },
 
-      completeRevision: (lines, note) => {
-        void applyRemote("stock/revision", { lines, note });
+      completeRevision: (lines, note, photos) => {
+        void applyRemote("stock/revision", { lines, note, photos });
       },
 
       transferStock: (input) => {
@@ -571,7 +703,12 @@ export const useOps = create<OpsState>()(
           applyingRemote = true;
           set({
             ...applyIncoming(get(), res.state),
-            session: { userId: res.user.userId, branchId: res.user.branchId },
+            session: {
+              userId: res.user.userId,
+              branchId: res.user.branchId,
+              actingOwnerId: "actingOwnerId" in res.user ? (res.user as { actingOwnerId?: string | null }).actingOwnerId : null,
+              sessionId: "sessionId" in res.user ? (res.user as { sessionId?: string }).sessionId : undefined,
+            },
           });
           applyingRemote = false;
           return { ok: true as const };

@@ -1,7 +1,7 @@
-# Ochag — Android WebView shell
+# RestoPro — Android WebView shell
 
 Single-activity Android app (`labs.victimok.ochag`) that loads
-`https://ochag-theta.vercel.app` in a WebView. Display name: **Очаг**.
+`https://restopro-theta.vercel.app` in a WebView. Display name: **RestoPro**.
 
 ## Build
 

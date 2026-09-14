@@ -14,8 +14,10 @@
  *
  * cost_at_sale is frozen on the cheque line at sale time.
  */
-import type { Product, Recipe, Sale, SaleItem, Snapshot, StockLevel } from "./types.ts";
+import type { Product, Recipe, Role, Sale, SaleItem, Snapshot, StockLevel } from "./types.ts";
 import { defaultSettings } from "./types.ts";
+import { canSeeDebts, canSeeOpsLog } from "./permissions.ts";
+import { snapshotForActor, type TenantActor } from "./tenancy.ts";
 
 export function roundMoney(value: number, digits = 2) {
   const f = 10 ** digits;
@@ -149,19 +151,35 @@ export function publicUser<T extends { password: string; pin: string }>(user: T)
   return rest;
 }
 
-export function publicSnapshot(snap: Snapshot): Snapshot {
-  return {
-    ...snap,
-    users: snap.users.map((u) => ({ ...u, password: "", pin: "" })),
-    settings: snap.settings ?? defaultSettings(),
-    suppliers: snap.suppliers ?? [],
-    closedPeriods: snap.closedPeriods ?? [],
-    debts: snap.debts ?? [],
-    payrollAdjustments: snap.payrollAdjustments ?? [],
-    revenuePlans: snap.revenuePlans ?? [],
-    audit: snap.audit ?? [],
-    opsLogs: snap.opsLogs ?? [],
-    outbox: snap.outbox ?? [],
-    pushSubs: (snap.pushSubs ?? []).map((s) => ({ ...s, keys: { p256dh: "", auth: "" } })),
+function isTenantActor(value: unknown): value is TenantActor {
+  return Boolean(value && typeof value === "object" && "role" in value && "userId" in value);
+}
+
+export function publicSnapshot(snap: Snapshot, roleOrActor?: Role | TenantActor): Snapshot {
+  const actor = isTenantActor(roleOrActor) ? roleOrActor : undefined;
+  const role = actor?.role ?? (typeof roleOrActor === "string" ? roleOrActor : undefined);
+  const scoped = actor ? snapshotForActor(snap, actor) : snap;
+  const base: Snapshot = {
+    ...scoped,
+    users: scoped.users.map((u) => ({ ...u, password: "", pin: "" })),
+    settings: scoped.settings ?? defaultSettings(),
+    suppliers: scoped.suppliers ?? [],
+    closedPeriods: scoped.closedPeriods ?? [],
+    debts: scoped.debts ?? [],
+    ledgerDebts: scoped.ledgerDebts ?? [],
+    householdItems: scoped.householdItems ?? [],
+    householdStock: scoped.householdStock ?? [],
+    householdMovements: scoped.householdMovements ?? [],
+    payrollAdjustments: scoped.payrollAdjustments ?? [],
+    revenuePlans: scoped.revenuePlans ?? [],
+    audit: scoped.audit ?? [],
+    opsLogs: role && canSeeOpsLog(role) ? (scoped.opsLogs ?? []) : [],
+    outbox: (scoped.outbox ?? []).map((o) => ({ ...o, to: undefined })),
+    pushSubs: (scoped.pushSubs ?? []).map((s) => ({ ...s, keys: { p256dh: "", auth: "" }, endpoint: "" })),
+    deviceSessions: (scoped.deviceSessions ?? []).map((s) => ({ ...s })),
   };
+  if (role && !canSeeDebts(role)) {
+    return { ...base, ledgerDebts: [] };
+  }
+  return base;
 }

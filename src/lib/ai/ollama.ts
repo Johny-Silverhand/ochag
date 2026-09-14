@@ -1,18 +1,28 @@
-import type { Insight } from "../domain/types";
-import type { AiProvider } from "./provider";
-import { ollamaConfig } from "./provider";
-import type { SafeMetrics } from "./safe-context";
+import type { Insight } from "../domain/types.ts";
+import type { AiProvider, ResolvedOllama } from "./provider.ts";
+import type { SafeMetrics } from "./safe-context.ts";
+import { calcSnapshot, type CalcTask } from "./calc.ts";
 
-async function chat(system: string, user: string): Promise<string> {
-  const { base, model } = ollamaConfig();
+export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
+
+const SYSTEM =
+  "Ты операционный аналитик сети кафе «RestoPro». Только выводы по переданным агрегатам: продажи, смена, склад, маржа, пики, план. Не веди свободный диалог. Не выдумывай цифры и персональные данные. 4–8 коротких предложений по-русски.";
+
+async function chat(
+  cfg: ResolvedOllama,
+  system: string,
+  user: string,
+  fetchImpl: FetchLike,
+  timeoutMs = 20_000,
+): Promise<string> {
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 12_000);
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(`${base}/v1/chat/completions`, {
+    const res = await fetchImpl(`${cfg.base}/v1/chat/completions`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        model,
+        model: cfg.model,
         temperature: 0.3,
         messages: [
           { role: "system", content: system },
@@ -21,36 +31,65 @@ async function chat(system: string, user: string): Promise<string> {
       }),
       signal: ctrl.signal,
     });
-    if (!res.ok) throw new Error(`Ollama ${res.status}`);
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`Ollama ${res.status}${text ? `: ${text.slice(0, 180)}` : ""}`);
+    }
     const body = (await res.json()) as { choices?: { message?: { content?: string } }[] };
     const text = body.choices?.[0]?.message?.content?.trim();
-    if (!text) throw new Error("empty ollama");
+    if (!text) throw new Error("Ollama вернула пустой ответ");
     return text;
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error(`Ollama не ответила за ${Math.round(timeoutMs / 1000)} с (${cfg.base})`);
+    }
+    throw err;
   } finally {
     clearTimeout(t);
   }
 }
 
-const SYSTEM =
-  "Ты операционный аналитик сети кафе «Очаг». Отвечай по-русски коротко. Используй только переданные агрегаты. Не выдумывай персональные данные.";
-
-export function createOllamaProvider(): AiProvider {
+export function createOllamaProvider(
+  cfg: ResolvedOllama,
+  fetchImpl: FetchLike = fetch,
+): AiProvider {
   return {
     id: "ollama",
     async narrative(metrics) {
-      return chat(SYSTEM, `Сводка периода:\n${JSON.stringify(metrics)}`);
+      return chat(
+        cfg,
+        SYSTEM,
+        `Сводка периода по цифрам контура (не чат). Опирайся только на JSON:\n${JSON.stringify(metrics)}`,
+        fetchImpl,
+      );
     },
-    async ask(question, metrics) {
-      return chat(SYSTEM, `Метрики: ${JSON.stringify(metrics)}\nВопрос: ${question}`);
+    async explain(task: CalcTask, metrics) {
+      const calc = calcSnapshot(task, metrics);
+      const focus =
+        task === "margin"
+          ? "маржа, фудкост, списания — что резать первым"
+          : task === "forecast"
+            ? "темп месяца против плана, риск недобора"
+            : task === "cover"
+              ? "дни покрытия склада, заявка до открытия, блюда класса A не снимать со стопа"
+              : "пиковые часы, средний чек и как ставить смену зала";
+      return chat(
+        cfg,
+        SYSTEM,
+        `Задача: ${focus}. Уже посчитано формулами (не меняй цифры): ${JSON.stringify(calc)}\nКонтекст периода: ${JSON.stringify(metrics)}`,
+        fetchImpl,
+      );
     },
     async recommend(metrics) {
       const raw = await chat(
+        cfg,
         SYSTEM,
-        `Дай 3 рекомендации JSON-массивом [{id,severity,title,body,module}] по метрикам: ${JSON.stringify(metrics)}`,
+        `Дай до 4 операционных рекомендаций JSON-массивом [{id,severity,title,body,module}] по метрикам (продажи, склад, пик, план, маржа). Без болтовни. Метрики: ${JSON.stringify(metrics)}`,
+        fetchImpl,
       );
       const start = raw.indexOf("[");
       const end = raw.lastIndexOf("]");
-      if (start < 0 || end < 0) throw new Error("no json");
+      if (start < 0 || end < 0) throw new Error("Ollama не вернула JSON-рекомендации");
       const parsed = JSON.parse(raw.slice(start, end + 1)) as Insight[];
       return parsed.slice(0, 6).map((row, i) => ({
         id: row.id || `ollama-${i}`,
@@ -63,15 +102,30 @@ export function createOllamaProvider(): AiProvider {
   };
 }
 
-export async function ollamaAvailable() {
-  const { base } = ollamaConfig();
+export async function ollamaAvailable(
+  cfg: ResolvedOllama,
+  fetchImpl: FetchLike = fetch,
+  timeoutMs = 2500,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!cfg.configured || !cfg.base) {
+    return { ok: false, error: "Ollama не настроена" };
+  }
   try {
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 1500);
-    const res = await fetch(`${base}/api/tags`, { signal: ctrl.signal });
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    const res = await fetchImpl(`${cfg.base}/api/tags`, { signal: ctrl.signal });
     clearTimeout(t);
-    return res.ok;
-  } catch {
-    return false;
+    if (!res.ok) return { ok: false, error: `Ollama ${res.status} на ${cfg.base}` };
+    return { ok: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (err instanceof Error && err.name === "AbortError") {
+      return { ok: false, error: `Ollama недоступна (${cfg.base}): нет ответа` };
+    }
+    return { ok: false, error: `Ollama недоступна (${cfg.base}): ${msg}` };
   }
+}
+
+export function ollamaUnreachableMessage(cfg: ResolvedOllama, error: string) {
+  return `Локальная модель не ответила: ${error}. Проверьте адрес ${cfg.base || "Ollama"} и что сервис запущен.`;
 }

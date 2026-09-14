@@ -403,7 +403,7 @@ describe("branch management", () => {
     return { snap, owner, actor };
   }
 
-  it("lets the owner add, edit and delete an extra branch; manager cannot", () => {
+  it("lets the owner add a second branch tagged with their ownerId", () => {
     const { snap, actor } = network();
     const withSecond = applyAddBranch(snap, actor, {
       name: "Юг",
@@ -414,6 +414,7 @@ describe("branch management", () => {
     });
     const extra = withSecond.branches.find((b) => b.name === "Юг")!;
     assert.equal(extra.seats, 50);
+    assert.equal(extra.ownerId, actor.userId);
     assert.deepEqual(extra.halls, ["Зал 1"]);
     const renamed = applyUpdateBranch(withSecond, actor, { branchId: extra.id, name: "Южный", seats: 55 });
     assert.equal(renamed.branches.find((b) => b.id === extra.id)?.name, "Южный");

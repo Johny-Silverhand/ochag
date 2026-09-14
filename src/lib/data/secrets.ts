@@ -1,4 +1,5 @@
 import type { Snapshot, StaffUser } from "../domain/types.ts";
+import { secretsEqual } from "../security/secrets.ts";
 
 function sameLogin(a: string, b: string) {
   return a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -109,10 +110,10 @@ export function matchLocalPassword(
   seedUsers: StaffUser[],
 ): { snap: Snapshot; user: StaffUser | undefined } {
   const ready = rematerializeSeedSecrets(snap, seedUsers);
-  return {
-    snap: ready,
-    user: ready.users.find((u) => sameLogin(u.email, email) && u.password === password),
-  };
+  const user = ready.users.find((u) => sameLogin(u.email, email));
+  const dummy = "\0".repeat(Math.max(password.length, user?.password.length ?? 12));
+  const ok = user ? secretsEqual(user.password, password) : secretsEqual(dummy, password);
+  return { snap: ready, user: ok && user ? user : undefined };
 }
 
 export function matchLocalPin(
@@ -122,8 +123,8 @@ export function matchLocalPin(
   seedUsers: StaffUser[],
 ): { snap: Snapshot; user: StaffUser | undefined } {
   const ready = rematerializeSeedSecrets(snap, seedUsers);
-  return {
-    snap: ready,
-    user: ready.users.find((u) => sameLogin(u.email, email) && u.pin === pin),
-  };
+  const user = ready.users.find((u) => sameLogin(u.email, email));
+  const dummy = "\0".repeat(Math.max(pin.length, user?.pin.length ?? 4));
+  const ok = user ? secretsEqual(user.pin, pin) : secretsEqual(dummy, pin);
+  return { snap: ready, user: ok && user ? user : undefined };
 }

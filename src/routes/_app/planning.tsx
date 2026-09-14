@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Field, Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/tabs";
+import { ContourAssist } from "@/components/ai/contour-assist";
 import { useOps } from "@/lib/data/store";
 import { abcByRevenue, deviations, planVsFact, stockCover } from "@/lib/domain/analytics";
 import { today } from "@/lib/domain/types";
@@ -42,9 +43,14 @@ function PlanningPage() {
       <PageHeader
         eyebrow="Этап 3"
         title="Аналитика"
-        description="ABC, план-факт месяца, дни покрытия склада и отклонения. Только цифры контура, без внешних источников."
+        description="ABC, план-факт месяца, дни покрытия склада и отклонения. Разбор по цифрам контура — Ollama, если включена, иначе формулы."
       />
       {!canWrite ? <p className="mb-3 text-xs text-muted">{WRITE_SCOPE_HINT} ABC и отклонения считаются по выбранному срезу.</p> : null}
+      <ContourAssist
+        title="Совет по срезу"
+        tasks={tab === "cover" ? ["cover"] : tab === "plan" ? ["forecast"] : tab === "abc" ? ["cover", "margin"] : ["forecast", "cover"]}
+        showRecommend
+      />
       <Segmented
         className="mb-4"
         value={tab}

@@ -9,13 +9,18 @@ import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { Field, Input, NativeSelect, Textarea } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/tabs";
 import { useOps, useSessionUser } from "@/lib/data/store";
-import { canTransfer, canWriteoff } from "@/lib/domain/permissions";
-import { stockOf } from "@/lib/domain/engine";
+import { PhotoField, PhotoThumbs } from "@/components/docs/photo-field";
+import { canManageHousehold, canTransfer, canWriteoff } from "@/lib/domain/permissions";
 import {
+  HOUSEHOLD_MOVE_LABEL,
   MOVEMENT_LABEL,
   WRITEOFF_LABEL,
+  type DocumentPhoto,
+  type HouseholdMoveType,
+  type Unit,
   type WriteoffReason,
 } from "@/lib/domain/types";
+import { stockOf } from "@/lib/domain/engine";
 import { qty, ruDateTime, rub } from "@/lib/format";
 import { notify } from "@/lib/notify";
 import { usePrefs } from "@/lib/prefs";
@@ -23,7 +28,6 @@ import { isWriteScope, WRITE_SCOPE_HINT } from "@/lib/ui/scope";
 import { compareRevisions } from "@/lib/domain/analytics";
 import { api } from "@/lib/api/client";
 import { downloadBase64, downloadText } from "@/lib/reports/download";
-import type { Unit } from "@/lib/domain/types";
 
 export const Route = createFileRoute("/_app/inventory")({ component: InventoryPage });
 
@@ -91,8 +95,8 @@ function InventoryPage() {
             {canWriteoff(user.role) && canWrite ? (
               <RevisionDialog
                 rows={stockRows.map((r) => ({ id: r.p.id, name: r.p.name, unit: r.p.unit, have: r.have }))}
-                onSubmit={(lines) => {
-                  completeRevision(lines, "Ревизия с планшета");
+                onSubmit={(lines, photos) => {
+                  completeRevision(lines, "Ревизия с планшета", photos);
                   toast.success("Ревизия закрыта, расхождения проведены");
                 }}
               />
@@ -134,6 +138,7 @@ function InventoryPage() {
           options={[
             { value: "stock", label: "Остатки" },
             { value: "mov", label: "Движения" },
+            { value: "hoz", label: "Хозы" },
             { value: "cmp", label: "Ревизии" },
           ]}
         />
@@ -162,6 +167,28 @@ function InventoryPage() {
                     <td className="px-3 py-2.5">
                       {MOVEMENT_LABEL[m.type]}
                       {m.reason ? <span className="block text-xs text-subtle">{WRITEOFF_LABEL[m.reason]}</span> : null}
+                      {m.type === "transfer" && m.refId && m.qty < 0 ? (
+                        <button
+                          type="button"
+                          className="mt-1 block text-xs underline-offset-2 hover:underline"
+                          onClick={() => {
+                            void api<{ filename: string; base64?: string; mime?: string; error?: string }>(
+                              `reports/pdf?kind=waybill&id=${m.refId}`,
+                              { method: "GET" },
+                            )
+                              .then((r) => {
+                                if (!r.base64 || !r.mime) {
+                                  toast.error(r.error ?? "PDF не собран");
+                                  return;
+                                }
+                                downloadBase64(r.filename, r.base64, r.mime);
+                              })
+                              .catch((err) => toast.error(err instanceof Error ? err.message : "PDF недоступен"));
+                          }}
+                        >
+                          накладная PDF
+                        </button>
+                      ) : null}
                     </td>
                     <td className="px-3 py-2.5">{p?.name}</td>
                     <td className={`px-5 py-2.5 text-right font-mono tabular-nums ${m.qty < 0 ? "text-danger" : "text-success"}`}>
@@ -175,6 +202,8 @@ function InventoryPage() {
           </table>
         </Card>
       ) : null}
+
+      {tab === "hoz" ? <HouseholdPanel branchId={branchId} canWrite={canWrite} /> : null}
 
       {tab === "stock" ? (
         <Card className="overflow-hidden p-0">
@@ -356,10 +385,11 @@ function RevisionDialog({
   onSubmit,
 }: {
   rows: { id: string; name: string; unit: string; have: number }[];
-  onSubmit: (lines: { productId: string; bookQty: number; factQty: number }[]) => void;
+  onSubmit: (lines: { productId: string; bookQty: number; factQty: number }[], photos: DocumentPhoto[]) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [facts, setFacts] = useState<Record<string, string>>({});
+  const [photos, setPhotos] = useState<DocumentPhoto[]>([]);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -381,6 +411,9 @@ function RevisionDialog({
             </div>
           ))}
         </div>
+        <div className="mt-4">
+          <PhotoField value={photos} onChange={setPhotos} label="Фотоотчёт ревизии" />
+        </div>
         <Button
           className="mt-4 w-full"
           onClick={() => {
@@ -390,8 +423,10 @@ function RevisionDialog({
                 bookQty: r.have,
                 factQty: Number(facts[r.id] ?? r.have),
               })),
+              photos,
             );
             setOpen(false);
+            setPhotos([]);
           }}
         >
           Закрыть ревизию
@@ -522,3 +557,210 @@ function NomenclatureImport({
     </Dialog>
   );
 }
+
+function HouseholdPanel({ branchId, canWrite }: { branchId: string; canWrite: boolean }) {
+  const snap = useOps((s) => s);
+  const user = useSessionUser()!;
+  const upsertHouseholdItem = useOps((s) => s.upsertHouseholdItem);
+  const householdMove = useOps((s) => s.householdMove);
+  const items = snap.householdItems ?? [];
+  const allow = canManageHousehold(user.role) && canWrite;
+  return (
+    <div className="space-y-4">
+      <Card>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-sm font-medium">Хозяйственные товары</div>
+            <p className="mt-1 text-sm text-muted">Мыло, ланчбоксы, салфетки — отдельно от пищевого склада, не в фудкосте.</p>
+          </div>
+          {allow ? (
+            <HouseholdItemDialog
+              onSave={(input) => {
+                upsertHouseholdItem(input);
+                toast.success("Хозтовар сохранён");
+              }}
+            />
+          ) : null}
+        </div>
+      </Card>
+      <Card className="overflow-hidden p-0">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-bg text-xs text-muted">
+            <tr>
+              <th className="px-5 py-2 font-medium">Позиция</th>
+              <th className="px-3 py-2 font-medium">Остаток</th>
+              <th className="px-5 py-2 text-right font-medium">Движение</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item) => {
+              const have = snap.householdStock.find((s) => s.itemId === item.id && s.branchId === branchId)?.qty ?? 0;
+              return (
+                <tr key={item.id} className="border-t border-border">
+                  <td className="px-5 py-2.5">
+                    <div className="font-medium">{item.name}</div>
+                    <div className="text-xs text-muted">{item.category} · мин. {item.minQty}</div>
+                  </td>
+                  <td className="px-3 py-2.5 font-mono tabular-nums">{qty(have, item.unit)}</td>
+                  <td className="px-5 py-2.5 text-right">
+                    {allow ? (
+                      <HouseholdMoveDialog
+                        itemId={item.id}
+                        name={item.name}
+                        onSave={(input) => {
+                          householdMove(input);
+                          toast.success("Движение хозов проведено");
+                        }}
+                      />
+                    ) : null}
+                  </td>
+                </tr>
+              );
+            })}
+            {items.length === 0 ? (
+              <tr>
+                <td colSpan={3} className="px-5 py-8 text-sm text-muted">
+                  Хозов пока нет — добавьте мыло, контейнеры, расходники.
+                </td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </Card>
+      <Card>
+        <div className="text-sm font-medium">Последние движения</div>
+        <ul className="mt-3 space-y-2">
+          {(snap.householdMovements ?? [])
+            .filter((m) => !canWrite || m.branchId === branchId)
+            .slice(0, 12)
+            .map((m) => (
+              <li key={m.id} className="text-sm">
+                <span className="text-muted">{ruDateTime(m.at)} · </span>
+                {HOUSEHOLD_MOVE_LABEL[m.type]} · {snap.householdItems.find((i) => i.id === m.itemId)?.name} · {m.qty}
+                <PhotoThumbs photos={m.photos} />
+              </li>
+            ))}
+        </ul>
+      </Card>
+    </div>
+  );
+}
+
+function HouseholdItemDialog({
+  onSave,
+}: {
+  onSave: (input: { name: string; category?: string; minQty?: number }) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [category, setCategory] = useState("Хозы");
+  const [minQty, setMinQty] = useState("4");
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="secondary">Позиция</Button>
+      </DialogTrigger>
+      <DialogContent title="Хозтовар">
+        <Field label="Название">
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Жидкое мыло" />
+        </Field>
+        <Field label="Категория" className="mt-3">
+          <Input value={category} onChange={(e) => setCategory(e.target.value)} />
+        </Field>
+        <Field label="Минимум" className="mt-3">
+          <Input value={minQty} onChange={(e) => setMinQty(e.target.value)} inputMode="numeric" />
+        </Field>
+        <Button
+          className="mt-4 w-full"
+          onClick={() => {
+            if (!name.trim()) {
+              toast.error("Название обязательно");
+              return;
+            }
+            onSave({ name: name.trim(), category, minQty: Number(minQty) || 0 });
+            setOpen(false);
+            setName("");
+          }}
+        >
+          Сохранить
+        </Button>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function HouseholdMoveDialog({
+  itemId,
+  name,
+  onSave,
+}: {
+  itemId: string;
+  name: string;
+  onSave: (input: {
+    itemId: string;
+    type: HouseholdMoveType;
+    qty: number;
+    cost?: number;
+    note?: string;
+    photos?: DocumentPhoto[];
+  }) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [type, setType] = useState<HouseholdMoveType>("receive");
+  const [qtyV, setQtyV] = useState("1");
+  const [cost, setCost] = useState("");
+  const [note, setNote] = useState("");
+  const [photos, setPhotos] = useState<DocumentPhoto[]>([]);
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="secondary">
+          Провести
+        </Button>
+      </DialogTrigger>
+      <DialogContent title={name}>
+        <Field label="Тип">
+          <NativeSelect value={type} onChange={(e) => setType(e.target.value as HouseholdMoveType)}>
+            {Object.entries(HOUSEHOLD_MOVE_LABEL).map(([k, v]) => (
+              <option key={k} value={k}>
+                {v}
+              </option>
+            ))}
+          </NativeSelect>
+        </Field>
+        <Field label="Количество" className="mt-3">
+          <Input value={qtyV} onChange={(e) => setQtyV(e.target.value)} inputMode="decimal" />
+        </Field>
+        {type === "receive" ? (
+          <Field label="Цена за единицу, ₽" className="mt-3">
+            <Input value={cost} onChange={(e) => setCost(e.target.value)} inputMode="decimal" />
+          </Field>
+        ) : null}
+        <Field label="Комментарий" className="mt-3">
+          <Input value={note} onChange={(e) => setNote(e.target.value)} />
+        </Field>
+        <div className="mt-3">
+          <PhotoField value={photos} onChange={setPhotos} label="Фотоотчёт" />
+        </div>
+        <Button
+          className="mt-4 w-full"
+          onClick={() => {
+            onSave({
+              itemId,
+              type,
+              qty: Number(qtyV) || 0,
+              cost: Number(cost) || 0,
+              note: note.trim(),
+              photos,
+            });
+            setOpen(false);
+            setPhotos([]);
+          }}
+        >
+          Провести
+        </Button>
+      </DialogContent>
+    </Dialog>
+  );
+}
+

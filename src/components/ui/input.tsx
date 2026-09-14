@@ -5,7 +5,7 @@ export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElem
   return (
     <input
       className={cn(
-        "h-11 w-full rounded-xl border border-border bg-elevated px-3.5 text-base text-fg outline-none transition-[box-shadow,border-color] duration-200 ease-[var(--ease-out-smooth)] placeholder:text-subtle focus:ring-2 focus:ring-ring/25 md:text-sm",
+        "h-11 w-full rounded-xl border border-border bg-elevated px-3.5 text-base text-fg outline-none transition-[box-shadow,border-color] duration-200 ease-[var(--ease-out-smooth)] placeholder:text-subtle focus:ring-2 focus:ring-ring/25 md:text-sm neu-field",
         className,
       )}
       {...props}
@@ -17,7 +17,7 @@ export function Textarea({ className, ...props }: TextareaHTMLAttributes<HTMLTex
   return (
     <textarea
       className={cn(
-        "min-h-24 w-full rounded-xl border border-border bg-elevated px-3.5 py-2.5 text-base text-fg outline-none transition-[box-shadow,border-color] duration-200 ease-[var(--ease-out-smooth)] placeholder:text-subtle focus:ring-2 focus:ring-ring/25 md:text-sm",
+        "min-h-24 w-full rounded-xl border border-border bg-elevated px-3.5 py-2.5 text-base text-fg outline-none transition-[box-shadow,border-color] duration-200 ease-[var(--ease-out-smooth)] placeholder:text-subtle focus:ring-2 focus:ring-ring/25 md:text-sm neu-field",
         className,
       )}
       {...props}
@@ -29,7 +29,7 @@ export function NativeSelect({ className, ...props }: SelectHTMLAttributes<HTMLS
   return (
     <select
       className={cn(
-        "h-11 w-full rounded-xl border border-border bg-elevated px-3.5 text-base text-fg outline-none transition-[box-shadow,border-color] duration-200 ease-[var(--ease-out-smooth)] focus:ring-2 focus:ring-ring/25 md:text-sm",
+        "h-11 w-full rounded-xl border border-border bg-elevated px-3.5 text-base text-fg outline-none transition-[box-shadow,border-color] duration-200 ease-[var(--ease-out-smooth)] focus:ring-2 focus:ring-ring/25 md:text-sm neu-field",
         className,
       )}
       {...props}

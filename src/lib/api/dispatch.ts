@@ -1,3 +1,4 @@
+import { DOWNLOAD_SLUG } from "../brand";
 import { AuthzError, actorFrom, publicActor } from "../authz/actor";
 import { bearerToken, signActor, verifyActor } from "../authz/jwt";
 import { publicSnapshot } from "../domain/finance";
@@ -29,6 +30,7 @@ import {
   applyRevenuePlan,
   applyRevision,
   applySessionBranch,
+  applySessionOwner,
   applySettings,
   applyStopList,
   applyTopUpDebt,
@@ -37,6 +39,15 @@ import {
   applyUpdateStaff,
   applyUpsertRecipe,
   applyWriteoff,
+  applyCreateLedgerDebt,
+  applyPayLedgerDebt,
+  applyUpdateLedgerDebt,
+  applyUpsertHouseholdItem,
+  applyHouseholdMove,
+  applyShiftIncidental,
+  applyVoidSale,
+  applyDiscountSale,
+  applyAccrueMonthlyPremiums,
 } from "../domain/mutations";
 import type { Period, Snapshot } from "../domain/types";
 import { today } from "../domain/types";
@@ -46,18 +57,40 @@ import { parseKeeperXml } from "../integrations/keeper-xml";
 import { fetchKeeperReceipts, publicKeeperStatus } from "../integrations/keeper-http";
 import { applySimulatePayment, billingPublic, canSelfOnboard, showCommercialEntry, snapshotForCommercialOnboard } from "../billing/simulate";
 import { isTariffId } from "../billing/plans";
-import { askMetrics, periodNarrative, recommendMetrics } from "../ai";
+import { explainCalc, periodNarrative, recommendMetrics, ollamaAvailable, resolveOllamaConfig, isCalcTask, calcSnapshot } from "../ai";
 import { safeMetrics } from "../ai/safe-context";
 import { flushOutbox, notifyReady } from "../notify/send";
-import { banquetPdf, periodPdf, revisionActPdf, toCsv } from "../reports/pdf";
+import { banquetPdf, periodPdf, revisionActPdf, toCsv, transferWaybillPdf, ttkPdf } from "../reports/pdf";
 import { advisor } from "../ai/advisor";
 import { abcByRevenue, compareRevisions, deviations, periodPayroll, planVsFact, priceHistory, stockCover, stopListHistory } from "../domain/analytics";
+import { averageCheque, revenueByHour, waiterVoidsAndDiscounts } from "../domain/reports-extra";
 import { isOnboarded } from "../data/empty";
 import { createSeed, USERS } from "../data/seed";
-import { can, canLoadSample, canResetDemo, isNetworkAdmin, isOpsLead } from "../domain/permissions";
+import { can, canLoadSample, canResetDemo, hasAbsoluteAccess, isOpsLead } from "../domain/permissions";
 import { ensureEnvBootstrap, readBootstrapEnv, rematerializeLoginSecrets } from "../data/bootstrap";
 import { assertResetAllowed, assertSampleLoadAllowed } from "../data/sample-guard";
-import { appendOpsLog, recordAuthAttempt, resolveStaffAuth, ACCOUNT_BLOCKED_MSG } from "../domain/ops-log";
+import { appendOpsLog, recordAuthAttempt, resolveStaffAuth, ACCOUNT_BLOCKED_MSG, AUTH_LOCKED_MSG } from "../domain/ops-log";
+import {
+  attachSession,
+  assertSessionActive,
+  mintDeviceSession,
+  revokeOtherSessions,
+  revokeSession,
+  sessionListRows,
+  touchSession,
+} from "../domain/sessions";
+import { assertReadableBranch, ownerSummaries, snapshotForActor } from "../domain/tenancy";
+import {
+  assertAuthFieldSizes,
+  assertAuthRate,
+  assertPayloadSize,
+  assertSameOriginOrNone,
+  assertWriteRate,
+  opaqueApiError,
+  securityHeaders,
+} from "../security/http";
+import { assertApiAuthz, isPrivilegedWrite } from "../security/authz-routes";
+import { secretsEqual } from "../security/secrets";
 import {
   DB_UNAVAILABLE_MSG,
   StoreUnavailableError,
@@ -65,10 +98,10 @@ import {
   publicErrorMessage,
 } from "../repo/db-errors";
 
-function json(data: unknown, status = 200) {
+function json(data: unknown, status = 200, request?: Request) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { "content-type": "application/json; charset=utf-8" },
+    headers: { "content-type": "application/json; charset=utf-8", ...securityHeaders(request) },
   });
 }
 
@@ -83,10 +116,42 @@ function pathOf(request: Request, splat?: string) {
 }
 
 async function readBody(request: Request): Promise<Record<string, unknown>> {
-  if (request.method === "GET" || request.method === "HEAD") return {};
+  if (request.method === "GET" || request.method === "HEAD" || request.method === "OPTIONS") return {};
   const text = await request.text();
+  assertPayloadSize(request, text);
   if (!text) return {};
-  return JSON.parse(text) as Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new AuthzError("Некорректное тело запроса", 400);
+    }
+    return parsed as Record<string, unknown>;
+  } catch (err) {
+    if (err instanceof AuthzError) throw err;
+    throw new AuthzError("Некорректное тело запроса", 400);
+  }
+}
+
+async function requireLiveActor(request: Request, snap: Snapshot) {
+  const actor = await requireActor(request);
+  assertSessionActive(snap, actor);
+  return actor;
+}
+
+async function loadLive(request: Request) {
+  const repo = await getRepo();
+  let snap = await repo.load();
+  const actor = await requireLiveActor(request, snap);
+  const touched = touchSession(snap, actor.sessionId);
+  if (touched !== snap) {
+    await repo.save(touched);
+    snap = touched;
+  }
+  return { repo, snap, actor, view: snapshotForActor(snap, actor) };
+}
+
+async function loadScoped(request: Request) {
+  return loadLive(request);
 }
 
 async function requireActor(request: Request) {
@@ -182,17 +247,33 @@ async function mutateWith(
 ) {
   const path = pathOf(request);
   try {
-    const actor = await requireActor(request);
     const repo = await getRepo();
-    const snap = await repo.load();
+    let snap = await repo.load();
+    const actor = await requireLiveActor(request, snap);
+    assertApiAuthz(request.method, path, actor);
+    assertWriteRate(request, actor.userId);
+    snap = touchSession(snap, actor.sessionId);
     const result = await fn(snap, actor);
-    const next = await flushOutbox(result.snap);
+    let next = await flushOutbox(result.snap);
+    if (hasAbsoluteAccess(actor.role) && isPrivilegedWrite(path)) {
+      next = appendOpsLog(next, {
+        level: "info",
+        event: "api",
+        detail: `техник ${path} · контур ${actor.actingOwnerId ?? "все"}`,
+        userId: actor.userId,
+        path,
+      });
+    }
     await repo.save(next);
-    return json({ ok: true, state: publicSnapshot(next), added: result.added ?? 0, skipped: result.skipped ?? 0 });
+    return json(
+      { ok: true, state: publicSnapshot(next, actor), added: result.added ?? 0, skipped: result.skipped ?? 0 },
+      200,
+      request,
+    );
   } catch (err) {
     if (err instanceof AuthzError) {
       await persistOpsLog({ level: "warn", event: "api", detail: err.message, path });
-      return json({ error: err.message }, err.status);
+      return json({ error: err.message }, err.status, request);
     }
     throw err;
   }
@@ -203,6 +284,10 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     const method = request.method.toUpperCase();
     const path = pathOf(request, splat);
     const url = new URL(request.url);
+    if (method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: securityHeaders(request) });
+    }
+    assertSameOriginOrNone(request);
     const body = await readBody(request);
 
     if (method === "GET" && (path === "health" || path === "")) {
@@ -217,14 +302,22 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     }
 
     if (method === "POST" && path === "billing/simulate") {
+      assertAuthRate(request);
       const snap = await repo.load();
       if (!isTariffId(body.tariff)) throw new AuthzError("Выберите тариф", 400);
       const next = applySimulatePayment(snap, body.tariff);
       await repo.save(next);
-      return json({ ok: true, billing: billingPublic(next), simulated: true, state: publicSnapshot(next) });
+      return json({ ok: true, billing: billingPublic(next), simulated: true }, 200, request);
     }
 
     if (method === "POST" && path === "auth/onboard") {
+      const login = String(body.login ?? body.email ?? "");
+      assertAuthRate(request, login);
+      assertAuthFieldSizes({
+        login,
+        password: String(body.password ?? ""),
+        pin: String(body.pin ?? ""),
+      });
       const snap = await repo.load();
       if (!canSelfOnboard(snap)) {
         throw new AuthzError(
@@ -234,7 +327,6 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
           showCommercialEntry(snap) ? 403 : 400,
         );
       }
-      const login = String(body.login ?? body.email ?? "");
       const next = applyOnboard(snapshotForCommercialOnboard(snap), {
         ownerName: String(body.ownerName ?? body.name ?? ""),
         login,
@@ -246,7 +338,6 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
         seats: body.seats != null ? Number(body.seats) : undefined,
         halls: Array.isArray(body.halls) ? (body.halls as string[]) : typeof body.halls === "string" ? [body.halls] : undefined,
       });
-      await repo.save(next);
       const loginKey = login.trim().toLowerCase();
       const owner =
         next.users.find((u) => u.email.trim().toLowerCase() === loginKey) ??
@@ -256,17 +347,27 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
         ? next.branches.find((b) => b.id === owner.branchId)?.id
         : next.branches.at(-1)?.id;
       const actor = actorFrom(owner, { userId: owner.id, branchId: homeBranch ?? "all" });
+      const sess = mintDeviceSession({ userId: owner.id, request });
+      actor.sessionId = sess.id;
+      const stored = attachSession(next, sess);
+      await repo.save(stored);
       const token = await signActor(actor);
-      return json({ token, user: publicActor(actor), state: publicSnapshot(next) });
+      return json({ token, user: publicActor(actor), state: publicSnapshot(stored, actor) }, 200, request);
     }
 
     if (method === "POST" && path === "auth/bootstrap") {
+      assertAuthRate(request);
       const snap = await repo.load();
       if (snap.users.length > 0) throw new AuthzError("Сеть уже создана", 400);
       const expected = readBootstrapEnv().token;
       if (!expected) throw new AuthzError("Bootstrap выключен", 403);
       const got = String(body.token ?? request.headers.get("x-ochag-bootstrap") ?? "");
-      if (got !== expected) throw new AuthzError("Неверный токен", 403);
+      assertAuthFieldSizes({
+        login: String(body.login ?? body.email ?? ""),
+        password: String(body.password ?? ""),
+        pin: String(body.pin ?? ""),
+      });
+      if (!secretsEqual(got, expected)) throw new AuthzError("Неверный токен", 403);
       const next = applyBootstrap(snap, {
         name: String(body.name ?? "Администратор-техник"),
         login: String(body.login ?? body.email ?? ""),
@@ -278,20 +379,28 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
       });
       await repo.save(next);
       const admin = next.users[0]!;
-      const actor = actorFrom(admin, { userId: admin.id, branchId: next.branches[0]?.id ?? "all" });
+      const sess = mintDeviceSession({ userId: admin.id, request });
+      const stored = attachSession(next, sess);
+      await repo.save(stored);
+      const actor = actorFrom(admin, { userId: admin.id, branchId: next.branches[0]?.id ?? "all", sessionId: sess.id });
       const token = await signActor(actor);
-      return json({ token, user: publicActor(actor), state: publicSnapshot(next) });
+      return json({ token, user: publicActor(actor), state: publicSnapshot(stored, actor) }, 200, request);
     }
 
     if (method === "POST" && (path === "auth/login" || path === "auth/pin")) {
-      const snap = authSnapshot(await repo.load());
-      const login = String(body.login ?? body.email ?? "").trim().toLowerCase();
+      const loginRaw = String(body.login ?? body.email ?? "");
       const password = body.password != null ? String(body.password) : "";
       const pin = body.pin != null ? String(body.pin) : "";
+      assertAuthRate(request, loginRaw);
+      assertAuthFieldSizes({ login: loginRaw, password, pin });
+      const snap = authSnapshot(await repo.load());
+      const login = loginRaw.trim().toLowerCase();
       const via = path === "auth/pin" ? "pin" : "password";
       const user = snap.users.find((u) => u.email.toLowerCase() === login);
-      const passOk = via === "password" && Boolean(password && user?.password === password);
-      const pinOk = via === "pin" && Boolean(pin && user?.pin === pin);
+      const dummy = "\0".repeat(Math.max(password.length, pin.length, 12));
+      const passOk =
+        via === "password" && Boolean(password) && secretsEqual(user?.password ?? dummy, password) && Boolean(user);
+      const pinOk = via === "pin" && Boolean(pin) && secretsEqual(user?.pin ?? dummy, pin) && Boolean(user);
       const verdict = resolveStaffAuth({ user, credentialsOk: passOk || pinOk });
       const logged = recordAuthAttempt(snap, {
         login,
@@ -300,34 +409,42 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
         ok: verdict.ok,
         reason: verdict.reason,
       });
-      await repo.save(logged.snap);
       if (!logged.ok) {
-        return json(
-          { error: logged.reason ?? "Неверный логин или PIN" },
-          logged.reason === ACCOUNT_BLOCKED_MSG ? 403 : 401,
-        );
+        await repo.save(logged.snap);
+        const status =
+          logged.reason === ACCOUNT_BLOCKED_MSG ? 403 : logged.reason === AUTH_LOCKED_MSG ? 429 : 401;
+        return json({ error: logged.reason ?? "Неверный логин или PIN" }, status, request);
       }
-      const actor = actorFrom(user!, { userId: user!.id, branchId: user!.branchId ?? "all" });
+      const sess = mintDeviceSession({ userId: user!.id, request });
+      const withSess = attachSession(logged.snap, sess);
+      await repo.save(withSess);
+      const branchId = user!.role === "tech_admin" || user!.role === "owner" ? "all" : user!.branchId ?? "all";
+      const actor = actorFrom(user!, { userId: user!.id, branchId, sessionId: sess.id });
       const token = await signActor(actor);
-      return json({
-        token,
-        user: publicActor(actor),
-        state: publicSnapshot(logged.snap),
-      });
+      return json(
+        {
+          token,
+          user: publicActor(actor),
+          state: publicSnapshot(withSess, actor),
+        },
+        200,
+        request,
+      );
     }
 
     if (method === "GET" && path === "me") {
-      return json({ user: publicActor(await requireActor(request)) });
+      const { actor } = await loadLive(request);
+      return json({ user: publicActor(actor) }, 200, request);
     }
 
     if (method === "GET" && path === "state") {
-      const actor = await requireActor(request);
-      return json({ user: publicActor(actor), state: publicSnapshot(await repo.load()) });
+      const { actor, snap } = await loadLive(request);
+      return json({ user: publicActor(actor), state: publicSnapshot(snap, actor) }, 200, request);
     }
 
     if (method === "POST" && path === "state/reset") {
-      const actor = await requireActor(request);
       const current = await repo.load();
+      const actor = await requireLiveActor(request, current);
       assertResetAllowed(current, actor.role);
       if (!canResetDemo(actor.role)) throw new AuthzError("Сброс недоступен");
       const state = appendOpsLog(await repo.reset(), {
@@ -338,12 +455,12 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
         path,
       });
       await repo.save(state);
-      return json({ ok: true, state: publicSnapshot(state) });
+      return json({ ok: true, state: publicSnapshot(state, actor) }, 200, request);
     }
 
     if (method === "POST" && path === "state/sample") {
       const current = await repo.load();
-      const actor = await requireActor(request);
+      const actor = await requireLiveActor(request, current);
       if (!canLoadSample(actor.role)) throw new AuthzError("Учебный срез доступен только администратору-технику");
       assertSampleLoadAllowed(current, actor.role);
       let state = repo.loadSample ? await repo.loadSample() : createSeed();
@@ -355,23 +472,65 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
         path,
       });
       await repo.save(state);
-      return json({ ok: true, state: publicSnapshot(state) });
+      return json({ ok: true, state: publicSnapshot(state, actor) }, 200, request);
     }
 
     if (method === "POST" && path === "session/branch") {
-      const actor = await requireActor(request);
-      const next = applySessionBranch(actor, String(body.branchId ?? "all"));
+      const snap = await repo.load();
+      const actor = await requireLiveActor(request, snap);
+      const next = applySessionBranch(actor, String(body.branchId ?? "all"), snap);
       const token = await signActor(next);
-      return json({ token, user: publicActor(next) });
+      return json({ token, user: publicActor(next), state: publicSnapshot(snap, next) }, 200, request);
+    }
+
+    if (method === "POST" && path === "session/owner") {
+      const snap = await repo.load();
+      const actor = await requireLiveActor(request, snap);
+      assertApiAuthz(method, path, actor);
+      const next = applySessionOwner(actor, body.ownerId != null ? String(body.ownerId) : null, snap);
+      const token = await signActor(next);
+      await persistOpsLog({
+        level: "info",
+        event: "api",
+        detail: next.actingOwnerId ? `контур владельца ${next.actingOwnerId}` : "контур владельца сброшен",
+        userId: actor.userId,
+        path,
+      });
+      return json({ token, user: publicActor(next), state: publicSnapshot(snap, next) }, 200, request);
+    }
+
+    if (method === "GET" && path === "session/list") {
+      const { snap, actor } = await loadLive(request);
+      return json({ rows: sessionListRows(snap, actor), currentId: actor.sessionId }, 200, request);
+    }
+
+    if (method === "POST" && path === "session/revoke") {
+      return mutate(request, (snap, actor) => revokeSession(snap, actor, String(body.sessionId ?? "")));
+    }
+
+    if (method === "POST" && path === "session/revoke-others") {
+      return mutate(request, (snap, actor) => revokeOtherSessions(snap, actor, actor.sessionId));
+    }
+
+    if (method === "GET" && path === "owners") {
+      const { snap, actor } = await loadLive(request);
+      assertApiAuthz(method, path, actor);
+      return json(
+        {
+          rows: ownerSummaries(snap),
+          actingOwnerId: actor.actingOwnerId ?? null,
+        },
+        200,
+        request,
+      );
     }
 
     if (method === "GET" && path === "kpis") {
-      const actor = await requireActor(request);
-      const repo = await getRepo();
-      const snap = await repo.load();
+      const { snap, actor, view } = await loadLive(request);
       const period = (url.searchParams.get("period") ?? "7d") as Period;
       const branchId = url.searchParams.get("branch") ?? actor.sessionBranchId;
-      return json({ kpis: computeKpis(snap, { period, branchId }) });
+      if (branchId && branchId !== "all") assertReadableBranch(snap, actor, branchId);
+      return json({ kpis: computeKpis(view, { period, branchId }) }, 200, request);
     }
 
     if (method === "POST" && path === "sales/manual") {
@@ -381,7 +540,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     }
 
     if (method === "GET" && path === "integrations/keeper") {
-      await requireActor(request);
+      await loadLive(request);
       const status = await repo.status();
       return json({ ...publicKeeperStatus(), store: status.source });
     }
@@ -430,7 +589,15 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
       return mutate(request, (snap, actor) => applyTransfer(snap, actor, body as never));
     }
     if (method === "POST" && path === "stock/revision") {
-      return mutate(request, (snap, actor) => applyRevision(snap, actor, (body.lines as never) ?? [], body.note as string | undefined));
+      return mutate(request, (snap, actor) =>
+        applyRevision(
+          snap,
+          actor,
+          (body.lines as never) ?? [],
+          body.note as string | undefined,
+          body.photos as never,
+        ),
+      );
     }
     if (method === "POST" && path === "procurement/request") {
       return mutate(request, (snap, actor) => applyRequestFromNeed(snap, actor));
@@ -449,6 +616,30 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     if (method === "POST" && path === "debts/topup") {
       return mutate(request, (snap, actor) => applyTopUpDebt(snap, actor, { debtId: String(body.debtId) }));
     }
+    if (method === "POST" && path === "debts/ledger") {
+      return mutate(request, (snap, actor) => applyCreateLedgerDebt(snap, actor, body as never));
+    }
+    if (method === "POST" && path === "debts/ledger/pay") {
+      return mutate(request, (snap, actor) => applyPayLedgerDebt(snap, actor, body as never));
+    }
+    if (method === "POST" && path === "debts/ledger/update") {
+      return mutate(request, (snap, actor) => applyUpdateLedgerDebt(snap, actor, body as never));
+    }
+    if (method === "POST" && path === "household/item") {
+      return mutate(request, (snap, actor) => applyUpsertHouseholdItem(snap, actor, body as never));
+    }
+    if (method === "POST" && path === "household/move") {
+      return mutate(request, (snap, actor) => applyHouseholdMove(snap, actor, body as never));
+    }
+    if (method === "POST" && path === "shifts/incidental") {
+      return mutate(request, (snap, actor) => applyShiftIncidental(snap, actor, body as never));
+    }
+    if (method === "POST" && path === "sales/void") {
+      return mutate(request, (snap, actor) => applyVoidSale(snap, actor, body as never));
+    }
+    if (method === "POST" && path === "sales/discount") {
+      return mutate(request, (snap, actor) => applyDiscountSale(snap, actor, body as never));
+    }
     if (method === "POST" && path === "shifts/stop-list") {
       return mutate(request, (snap, actor) => applyStopList(snap, actor, body as never));
     }
@@ -465,26 +656,64 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
       return mutate(request, (snap, actor) => applyProfile(snap, actor, body as never));
     }
 
-    if (method === "POST" && path.startsWith("ai/")) {
-      const actor = await requireActor(request);
+    if (method === "GET" && path === "ai/status") {
+      const { actor, view } = await loadLive(request);
       if (!can(actor.role, "ai")) throw new AuthzError("AI только для управляющих");
-      const repo = await getRepo();
-      const snap = await repo.load();
+      const cfg = resolveOllamaConfig(view.settings);
+      const ping = cfg.configured ? await ollamaAvailable(cfg) : { ok: false, error: "Ollama не настроена" };
+      return json({
+        configured: cfg.configured,
+        source: cfg.source,
+        model: cfg.model,
+        base: cfg.configured ? cfg.base : "",
+        reachable: ping.ok,
+        error: ping.ok ? undefined : ping.error,
+      });
+    }
+
+    if (method === "GET" && path === "debts/ledger") {
+      const { actor, view } = await loadScoped(request);
+      assertApiAuthz(method, path, actor);
+      return json({ rows: view.ledgerDebts ?? [] }, 200, request);
+    }
+
+    if (method === "POST" && path.startsWith("ai/")) {
+      const { actor, view } = await loadScoped(request);
+      if (!can(actor.role, "ai")) throw new AuthzError("AI только для управляющих");
       const period = (body.period as Period) ?? "7d";
       const branchId = String(body.branchId ?? actor.sessionBranchId);
-      const metrics = safeMetrics(snap, period, branchId);
+      if (branchId && branchId !== "all") assertReadableBranch(view, actor, branchId);
+      const metrics = safeMetrics(view, period, branchId);
+      const cfg = resolveOllamaConfig(view.settings);
+      if (path === "ai/status") {
+        const ping = cfg.configured ? await ollamaAvailable(cfg) : { ok: false, error: "Ollama не настроена" };
+        return json({
+          configured: cfg.configured,
+          source: cfg.source,
+          model: cfg.model,
+          base: cfg.configured ? cfg.base : "",
+          reachable: ping.ok,
+          error: ping.ok ? undefined : ping.error,
+        });
+      }
       if (path === "ai/narrative") {
-        const out = await periodNarrative(metrics);
+        const out = await periodNarrative(metrics, view.settings);
         return json({ ...out, metrics });
       }
       if (path === "ai/ask") {
-        const out = await askMetrics(String(body.question ?? ""), metrics);
-        return json({ ...out, metrics });
+        return json({ error: "Свободный чат отключён. Нужны расчёты: сводка, рекомендации, маржа, прогноз, смена." }, 400);
+      }
+      if (path === "ai/calc") {
+        if (!isCalcTask(body.task)) {
+          return json({ error: "Задача: margin, forecast, shift или cover" }, 400);
+        }
+        const out = await explainCalc(body.task, metrics, view.settings);
+        return json({ ...out, metrics, calc: calcSnapshot(body.task, metrics), task: body.task });
       }
       if (path === "ai/recommend") {
-        const out = await recommendMetrics(metrics);
-        const local = await advisor.analyze(snap, branchId);
-        return json({ provider: out.provider, value: [...out.value, ...local].slice(0, 8), metrics });
+        const out = await recommendMetrics(metrics, view.settings);
+        const local = await advisor.analyze(view, branchId);
+        return json({ ...out, value: [...out.value, ...local].slice(0, 8), metrics });
       }
     }
 
@@ -508,6 +737,9 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     }
     if (method === "POST" && path === "staff/adjust") {
       return mutate(request, (snap, actor) => applyPayrollAdjustment(snap, actor, body as never));
+    }
+    if (method === "POST" && path === "staff/premiums") {
+      return mutate(request, (snap, actor) => applyAccrueMonthlyPremiums(snap, actor, body as never));
     }
     if (method === "POST" && path === "period/close") {
       return mutate(request, (snap, actor) => applyClosePeriod(snap, actor, body as never));
@@ -534,99 +766,97 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
       return mutate(request, (snap, actor) => applyAddSupplier(snap, actor, body as never));
     }
 
-    if (method === "GET" && path === "analytics/abc") {
-      const actor = await requireActor(request);
-      if (!can(actor.role, "planning")) throw new AuthzError("Аналитика недоступна");
-      const repo = await getRepo();
-      const snap = await repo.load();
+    if (method === "GET" && path.startsWith("analytics/")) {
+      const { actor, view } = await loadScoped(request);
       const period = (url.searchParams.get("period") ?? "30d") as Period;
       const branchId = url.searchParams.get("branch") ?? actor.sessionBranchId;
-      return json({ rows: abcByRevenue(snap, period, branchId) });
-    }
-    if (method === "GET" && path === "analytics/plan") {
-      const actor = await requireActor(request);
-      const repo = await getRepo();
-      const snap = await repo.load();
-      const month = url.searchParams.get("month") ?? today().slice(0, 7);
-      const branchId = url.searchParams.get("branch") ?? writeOrAll(actor);
-      if (branchId === "all") return json({ note: "Выберите филиал", days: [], target: 0, fact: 0 });
-      return json(planVsFact(snap, branchId, month));
-    }
-    if (method === "GET" && path === "analytics/cover") {
-      const actor = await requireActor(request);
-      const repo = await getRepo();
-      const snap = await repo.load();
-      const branchId = url.searchParams.get("branch") ?? writeOrAll(actor);
-      if (branchId === "all") return json({ note: "Выберите филиал", rows: [] });
-      return json({ rows: stockCover(snap, branchId, (url.searchParams.get("period") ?? "7d") as Period) });
-    }
-    if (method === "GET" && path === "analytics/deviations") {
-      const actor = await requireActor(request);
-      const repo = await getRepo();
-      return json({ rows: deviations(await repo.load(), (url.searchParams.get("period") ?? "30d") as Period, url.searchParams.get("branch") ?? actor.sessionBranchId) });
-    }
-    if (method === "GET" && path === "analytics/revisions") {
-      const actor = await requireActor(request);
-      const repo = await getRepo();
-      const snap = await repo.load();
-      const branchId = url.searchParams.get("branch") ?? writeOrAll(actor);
-      if (branchId === "all") return json({ note: "Выберите филиал" });
-      return json(compareRevisions(snap, branchId));
-    }
-    if (method === "GET" && path === "analytics/prices") {
-      const actor = await requireActor(request);
-      const repo = await getRepo();
-      return json({
-        rows: priceHistory(
-          await repo.load(),
-          String(url.searchParams.get("product") ?? ""),
-          url.searchParams.get("branch") ?? actor.sessionBranchId,
-        ),
-      });
-    }
-    if (method === "GET" && path === "analytics/stoplist") {
-      const actor = await requireActor(request);
-      const repo = await getRepo();
-      const from = url.searchParams.get("from") ?? today().slice(0, 7) + "-01";
-      const to = url.searchParams.get("to") ?? today();
-      return json({
-        rows: stopListHistory(await repo.load(), url.searchParams.get("branch") ?? actor.sessionBranchId, from, to),
-      });
-    }
-    if (method === "GET" && path === "analytics/payroll") {
-      const actor = await requireActor(request);
-      const repo = await getRepo();
-      return json({
-        rows: periodPayroll(await repo.load(), (url.searchParams.get("period") ?? "30d") as Period, url.searchParams.get("branch") ?? actor.sessionBranchId),
-      });
+      if (branchId && branchId !== "all") assertReadableBranch(view, actor, branchId);
+      if (path === "analytics/abc") {
+        if (!can(actor.role, "planning")) throw new AuthzError("Аналитика недоступна");
+        return json({ rows: abcByRevenue(view, (url.searchParams.get("period") ?? "30d") as Period, branchId) });
+      }
+      if (path === "analytics/plan") {
+        const month = url.searchParams.get("month") ?? today().slice(0, 7);
+        const bid = url.searchParams.get("branch") ?? writeOrAll(actor);
+        if (bid === "all") return json({ note: "Выберите филиал", days: [], target: 0, fact: 0 });
+        assertReadableBranch(view, actor, bid);
+        return json(planVsFact(view, bid, month));
+      }
+      if (path === "analytics/cover") {
+        const bid = url.searchParams.get("branch") ?? writeOrAll(actor);
+        if (bid === "all") return json({ note: "Выберите филиал", rows: [] });
+        assertReadableBranch(view, actor, bid);
+        return json({ rows: stockCover(view, bid, (url.searchParams.get("period") ?? "7d") as Period) });
+      }
+      if (path === "analytics/deviations") {
+        return json({ rows: deviations(view, period, branchId) });
+      }
+      if (path === "analytics/revisions") {
+        const bid = url.searchParams.get("branch") ?? writeOrAll(actor);
+        if (bid === "all") return json({ note: "Выберите филиал" });
+        assertReadableBranch(view, actor, bid);
+        return json(compareRevisions(view, bid));
+      }
+      if (path === "analytics/prices") {
+        return json({
+          rows: priceHistory(view, String(url.searchParams.get("product") ?? ""), branchId),
+        });
+      }
+      if (path === "analytics/stoplist") {
+        const from = url.searchParams.get("from") ?? today().slice(0, 7) + "-01";
+        const to = url.searchParams.get("to") ?? today();
+        return json({ rows: stopListHistory(view, branchId, from, to) });
+      }
+      if (path === "analytics/payroll") {
+        return json({ rows: periodPayroll(view, period, branchId) });
+      }
+      if (path === "analytics/avg-check") {
+        if (!can(actor.role, "reports")) throw new AuthzError("Отчёты недоступны");
+        return json(averageCheque(view, (url.searchParams.get("period") ?? "7d") as Period, branchId));
+      }
+      if (path === "analytics/hourly") {
+        if (!can(actor.role, "reports")) throw new AuthzError("Отчёты недоступны");
+        return json(revenueByHour(view, (url.searchParams.get("period") ?? "7d") as Period, branchId));
+      }
+      if (path === "analytics/waiter-voids") {
+        if (!can(actor.role, "reports")) throw new AuthzError("Отчёты недоступны");
+        return json({ rows: waiterVoidsAndDiscounts(view, (url.searchParams.get("period") ?? "7d") as Period, branchId) });
+      }
+      return json({ error: "not_found", path }, 404);
     }
 
     if (method === "POST" && path === "notify/flush") {
-      const actor = await requireActor(request);
+      const { actor } = await loadLive(request);
       if (!isOpsLead(actor.role)) throw new AuthzError("Очередь недоступна");
       const next = await flushOutbox(await repo.load());
       await repo.save(next);
-      return json({ ok: true, state: publicSnapshot(next), notify: notifyReady() });
+      return json({ ok: true, state: publicSnapshot(next, actor), notify: notifyReady() }, 200, request);
     }
 
     if (method === "GET" && path === "reports/pdf") {
-      const actor = await requireActor(request);
-      const repo = await getRepo();
-      const snap = await repo.load();
+      const { actor, view } = await loadScoped(request);
       const kind = url.searchParams.get("kind") ?? "period";
       if (kind === "banquet") {
-        const b = snap.banquets.find((x) => x.id === url.searchParams.get("id"));
+        const b = view.banquets.find((x) => x.id === url.searchParams.get("id"));
         if (!b) throw new AuthzError("Банкет не найден", 404);
-        const file = await banquetPdf(snap, b, (url.searchParams.get("sheet") as never) ?? "guest");
+        const file = await banquetPdf(view, b, (url.searchParams.get("sheet") as never) ?? "guest");
         return json({ filename: file.filename, base64: file.bytes.toString("base64"), mime: "application/pdf" });
       }
       if (kind === "revision") {
-        const file = await revisionActPdf(snap, String(url.searchParams.get("id")));
+        const file = await revisionActPdf(view, String(url.searchParams.get("id")));
+        return json({ filename: file.filename, base64: file.bytes.toString("base64"), mime: "application/pdf" });
+      }
+      if (kind === "waybill") {
+        const file = await transferWaybillPdf(view, String(url.searchParams.get("id")));
+        return json({ filename: file.filename, base64: file.bytes.toString("base64"), mime: "application/pdf" });
+      }
+      if (kind === "ttk") {
+        const file = await ttkPdf(view, String(url.searchParams.get("id")));
         return json({ filename: file.filename, base64: file.bytes.toString("base64"), mime: "application/pdf" });
       }
       const period = (url.searchParams.get("period") ?? "7d") as Period;
-      const k = computeKpis(snap, { period, branchId: actor.sessionBranchId });
-      const file = await periodPdf(snap, period, [
+      const k = computeKpis(view, { period, branchId: actor.sessionBranchId });
+      const file = await periodPdf(view, period, [
         `Выручка ${k.revenue} ₽, чеков ${k.checks}`,
         `Фудкост ${k.foodCost.toFixed(1)}%, себест. ${k.cogs}`,
         `Списания ${k.writeoffs}, ФОТ ${k.payroll}, opex ${k.opex}`,
@@ -636,23 +866,21 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     }
 
     if (method === "GET" && path === "reports/csv") {
-      const actor = await requireActor(request);
-      const repo = await getRepo();
-      const snap = await repo.load();
+      const { actor, view } = await loadScoped(request);
       const kind = url.searchParams.get("kind") ?? "sales";
       if (kind === "payroll") {
-        const rows = periodPayroll(snap, (url.searchParams.get("period") ?? "30d") as Period, actor.sessionBranchId);
+        const rows = periodPayroll(view, (url.searchParams.get("period") ?? "30d") as Period, actor.sessionBranchId);
         return json({
-          filename: "ochag-payroll.csv",
+          filename: `${DOWNLOAD_SLUG}-payroll.csv`,
           csv: toCsv(
-            ["Сотрудник", "Смен", "Ставка", "Бонус", "Доплата", "Штраф", "Аванс", "К выплате"],
-            rows.map((r) => [r.user.name, r.shifts, r.base, r.bonus, r.extra, r.fine, r.advanceOut, r.payable]),
+            ["Сотрудник", "Смен", "Ставка", "Бонус", "Премия", "Доплата", "Штраф", "Аванс", "К выплате"],
+            rows.map((r) => [r.user.name, r.shifts, r.base, r.bonus, r.premium, r.extra, r.fine, r.advanceOut, r.payable]),
           ),
         });
       }
-      const k = computeKpis(snap, { period: (url.searchParams.get("period") ?? "7d") as Period, branchId: actor.sessionBranchId });
+      const k = computeKpis(view, { period: (url.searchParams.get("period") ?? "7d") as Period, branchId: actor.sessionBranchId });
       return json({
-        filename: "ochag-period.csv",
+        filename: `${DOWNLOAD_SLUG}-period.csv`,
         csv: toCsv(["Показатель", "Значение"], [
           ["Выручка", k.revenue],
           ["Наличные", k.cash],
@@ -670,9 +898,9 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     }
 
     if (method === "GET" && path === "nomenclature/template") {
-      await requireActor(request);
+      await loadLive(request);
       return json({
-        filename: "ochag-nomenclature.csv",
+        filename: `${DOWNLOAD_SLUG}-nomenclature.csv`,
         csv: toCsv(["name", "category", "unit", "minQty", "avgCost"], [["Свинина шея", "Мясо", "kg", 10, 420]]),
       });
     }
@@ -684,13 +912,13 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
       if (path !== "auth/login" && path !== "auth/pin") {
         await persistOpsLog({ level: "warn", event: "api", detail: err.message, path });
       }
-      return json({ error: err.message }, err.status);
+      return json({ error: err.message }, err.status, request);
     }
     if (err instanceof StoreUnavailableError || isDbUnavailableError(err)) {
-      return json({ error: DB_UNAVAILABLE_MSG }, 503);
+      return json({ error: DB_UNAVAILABLE_MSG }, 503, request);
     }
-    const message = publicErrorMessage(err);
+    const message = opaqueApiError(err);
     await persistOpsLog({ level: "error", event: "api", detail: message, path });
-    return json({ error: message }, isDbUnavailableError(err) ? 503 : 400);
+    return json({ error: message }, isDbUnavailableError(err) ? 503 : 400, request);
   }
 }

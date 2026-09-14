@@ -1,6 +1,7 @@
 import type {
   Banquet,
   BanquetStatus,
+  DocumentPhoto,
   ExpenseKind,
   InvoiceLine,
   PaymentType,
@@ -33,7 +34,7 @@ import {
 } from "./engine.ts";
 import { catalogAvgFromStock, freezeSaleCosts } from "./finance.ts";
 import { uid } from "../utils.ts";
-import { actorFrom, AuthzError, assertBranchScope, assertCash, assertExpenses, assertKeeper, assertSale, assertStopList, assertTransfer, assertWriteoff, type Actor, writeBranch } from "../authz/actor.ts";
+import { actorFrom, AuthzError, assertCash, assertExpenses, assertKeeper, assertSale, assertStopList, assertTransfer, assertWriteoff, type Actor, writeBranch } from "../authz/actor.ts";
 import {
   canEditBanquet,
   canInviteStaff,
@@ -47,9 +48,12 @@ import {
   isOpsLead,
   invitableRoles,
 } from "./permissions.ts";
-import { assertPeriodOpen } from "./period.ts";
+import { sanitizePhotos } from "./photos.ts";
+import { attachIncidentals } from "./incidentals.ts";
 import { appendAudit } from "./audit.ts";
 import { appendOpsLog } from "./ops-log.ts";
+import { assertPeriodOpen } from "./period.ts";
+import { assertReadableBranch, resolveOwnerForWrite } from "./tenancy.ts";
 
 function queueEvent(snap: Snapshot, event: NotifyEvent, title: string, body: string, to?: string): Snapshot {
   if (snap.settings.notifyEvents[event] === false) return snap;
@@ -77,7 +81,7 @@ export function applyWriteoff(
 ): Snapshot {
   assertWriteoff(actor);
   const branchId = writeBranch(actor);
-  assertBranchScope(actor, branchId);
+  assertReadableBranch(snap, actor, branchId);
   assertPeriodOpen(snap, branchId, today());
   const product = snap.products.find((p) => p.id === input.productId);
   const unit =
@@ -105,10 +109,10 @@ export function applyWriteoff(
 export function applyInvoice(
   snap: Snapshot,
   actor: Actor,
-  input: { supplier: string; number: string; date: string; lines: InvoiceLine[] },
+  input: { supplier: string; number: string; date: string; lines: InvoiceLine[]; photos?: DocumentPhoto[] },
 ): Snapshot {
   const branchId = writeBranch(actor);
-  assertBranchScope(actor, branchId);
+  assertReadableBranch(snap, actor, branchId);
   assertPeriodOpen(snap, branchId, input.date);
   const total = input.lines.reduce((sum, l) => sum + l.qty * l.price, 0);
   const inv = {
@@ -120,6 +124,7 @@ export function applyInvoice(
     lines: input.lines,
     total,
     userId: actor.userId,
+    photos: sanitizePhotos(input.photos),
   };
   const movs = input.lines.map((l) => ({
     id: uid("m"),
@@ -158,7 +163,7 @@ export function applyInvoice(
 
 export function applyRequestFromNeed(snap: Snapshot, actor: Actor): Snapshot {
   const branchId = writeBranch(actor);
-  assertBranchScope(actor, branchId);
+  assertReadableBranch(snap, actor, branchId);
   const need = needToBuy(snap, branchId);
   if (need.length === 0) return snap;
   const lines: PurchaseLine[] = need.map((n) => ({
@@ -191,7 +196,7 @@ export function applyRequestStatus(
 ): Snapshot {
   const row = snap.requests.find((r) => r.id === id);
   if (!row) return snap;
-  assertBranchScope(actor, row.branchId);
+  assertReadableBranch(snap, actor, row.branchId);
   const supplier =
     snap.suppliers.find((s) => s.id === (supplierId || row.supplierId)) ??
     snap.suppliers.find((s) => s.channel === snap.settings.supplierChannel) ??
@@ -230,11 +235,18 @@ export function applyRequestStatus(
 export function applyOpenShift(
   snap: Snapshot,
   actor: Actor,
-  input: { openCash: number; staffIds: string[]; startList: string[]; topUpDebtId?: string; topUpAmount?: number },
+  input: {
+    openCash: number;
+    staffIds: string[];
+    startList: string[];
+    topUpDebtId?: string;
+    topUpAmount?: number;
+    incidentals?: Array<{ title: string; amount: number; paidFromTill?: boolean; note?: string }>;
+  },
 ): Snapshot {
   if (!canOpenShift(actor.role)) throw new AuthzError("Открытие смены недоступно");
   const branchId = writeBranch(actor);
-  assertBranchScope(actor, branchId);
+  assertReadableBranch(snap, actor, branchId);
   assertPeriodOpen(snap, branchId, today());
   if (openShiftFor(snap.shifts, branchId)) return snap;
   if (!input.startList?.length) throw new AuthzError("Подтвердите старт-лист перед открытием смены");
@@ -255,6 +267,7 @@ export function applyOpenShift(
         qrTotal: 0,
         staffIds: input.staffIds,
         startList: input.startList,
+        incidentals: [],
       },
       ...snap.shifts,
     ],
@@ -270,21 +283,32 @@ export function applyOpenShift(
     };
   }
   next = appendAudit(next, actor, "shift_open", "shift", `старт-лист ${input.startList.length} блюд`, branchId);
-  return queueEvent(next, "shift_open", "Смена открыта", `${actor.name} открыл смену. Старт-лист: ${input.startList.length} позиций.`);
+  next = queueEvent(next, "shift_open", "Смена открыта", `${actor.name} открыл смену. Старт-лист: ${input.startList.length} позиций.`);
+  return attachIncidentals(next, actor, shiftId, input.incidentals, "open");
 }
 
-export function applyCloseShift(snap: Snapshot, actor: Actor, input: { closeCash: number; note?: string }): Snapshot {
+export function applyCloseShift(
+  snap: Snapshot,
+  actor: Actor,
+  input: {
+    closeCash: number;
+    note?: string;
+    incidentals?: Array<{ title: string; amount: number; paidFromTill?: boolean; note?: string }>;
+  },
+): Snapshot {
   assertCash(actor);
   const branchId = writeBranch(actor);
-  assertBranchScope(actor, branchId);
-  const shift = openShiftFor(snap.shifts, branchId);
-  if (!shift) return snap;
-  const totals = shiftTotals(shift, snap.sales);
+  assertReadableBranch(snap, actor, branchId);
+  const open = openShiftFor(snap.shifts, branchId);
+  if (!open) return snap;
+  const withInc = attachIncidentals(snap, actor, open.id, input.incidentals, "close");
+  const shift = withInc.shifts.find((s) => s.id === open.id) ?? open;
+  const totals = shiftTotals(shift, withInc.sales);
   const discrepancy = Math.round(input.closeCash - totals.expected);
-  const pays = payrollForShift(shift, snap.sales, snap.users);
+  const pays = payrollForShift(shift, withInc.sales, withInc.users);
   let next: Snapshot = {
-    ...snap,
-    shifts: snap.shifts.map((sh) =>
+    ...withInc,
+    shifts: withInc.shifts.map((sh) =>
       sh.id === shift.id
         ? {
             ...sh,
@@ -313,7 +337,7 @@ export function applyCloseShift(snap: Snapshot, actor: Actor, input: { closeCash
         bonus: p.bonus,
         total: p.total,
       })),
-      ...snap.payroll,
+      ...withInc.payroll,
     ],
   };
   if (discrepancy < 0) {
@@ -348,7 +372,7 @@ export function applyManualSale(
 ): Snapshot {
   assertSale(actor);
   const branchId = writeBranch(actor);
-  assertBranchScope(actor, branchId);
+  assertReadableBranch(snap, actor, branchId);
   assertPeriodOpen(snap, branchId, today());
   if (snap.settings.keeperCashLink) {
     throw new AuthzError("Ручной чек выключен: включена кассовая связь с кипером. Отключите её в настройках сети.");
@@ -389,7 +413,7 @@ export function applyKeeperSales(
 ): { snap: Snapshot; added: number } {
   assertKeeper(actor);
   const branchId = writeBranch(actor);
-  assertBranchScope(actor, branchId);
+  assertReadableBranch(snap, actor, branchId);
   assertPeriodOpen(snap, branchId, today());
   const shift = openShiftFor(snap.shifts, branchId);
   if (!shift) throw new AuthzError("Откройте смену, затем импортируйте отчёт кипера");
@@ -431,7 +455,7 @@ export function applyKeeperSales(
 
 export function applyBanquet(snap: Snapshot, actor: Actor, banquet: Banquet): Snapshot {
   if (!canEditBanquet(actor.role)) throw new AuthzError("Банкет недоступен");
-  assertBranchScope(actor, banquet.branchId);
+  assertReadableBranch(snap, actor, banquet.branchId);
   const i = snap.banquets.findIndex((x) => x.id === banquet.id);
   if (i < 0) return { ...snap, banquets: [banquet, ...snap.banquets] };
   const next = snap.banquets.slice();
@@ -442,14 +466,20 @@ export function applyBanquet(snap: Snapshot, actor: Actor, banquet: Banquet): Sn
 export function applyBanquetStatus(snap: Snapshot, actor: Actor, id: string, status: BanquetStatus): Snapshot {
   if (!canEditBanquet(actor.role)) throw new AuthzError("Банкет недоступен");
   const row = snap.banquets.find((b) => b.id === id);
-  if (row) assertBranchScope(actor, row.branchId);
+  if (row) assertReadableBranch(snap, actor, row.branchId);
   return { ...snap, banquets: snap.banquets.map((b) => (b.id === id ? { ...b, status } : b)) };
 }
 
-export function applyRevision(snap: Snapshot, actor: Actor, lines: RevisionLine[], note?: string): Snapshot {
+export function applyRevision(
+  snap: Snapshot,
+  actor: Actor,
+  lines: RevisionLine[],
+  note?: string,
+  photos?: DocumentPhoto[],
+): Snapshot {
   assertWriteoff(actor);
   const branchId = writeBranch(actor);
-  assertBranchScope(actor, branchId);
+  assertReadableBranch(snap, actor, branchId);
   assertPeriodOpen(snap, branchId, today());
   const movs = lines
     .filter((l) => l.factQty !== l.bookQty)
@@ -478,7 +508,7 @@ export function applyRevision(snap: Snapshot, actor: Actor, lines: RevisionLine[
     stock,
     movements: [...movs, ...snap.movements],
     revisions: [
-      { id: uid("r"), branchId, date: today(), status: "done", lines, userId: actor.userId, note },
+      { id: uid("r"), branchId, date: today(), status: "done", lines, userId: actor.userId, note, photos: sanitizePhotos(photos) },
       ...snap.revisions,
     ],
   };
@@ -492,7 +522,8 @@ export function applyTransfer(
   input: { fromBranchId: string; toBranchId: string; productId: string; qty: number; note?: string },
 ): Snapshot {
   assertTransfer(actor);
-  assertBranchScope(actor, input.fromBranchId);
+  assertReadableBranch(snap, actor, input.fromBranchId);
+  assertReadableBranch(snap, actor, input.toBranchId);
   assertPeriodOpen(snap, input.fromBranchId, today());
   if (input.fromBranchId === input.toBranchId || input.qty <= 0) return snap;
   const unit =
@@ -534,7 +565,7 @@ export function applyStopList(
 ): Snapshot {
   assertStopList(actor);
   const branchId = writeBranch(actor);
-  assertBranchScope(actor, branchId);
+  assertReadableBranch(snap, actor, branchId);
   const now = new Date().toISOString();
   if (input.clear) {
     return {
@@ -584,7 +615,7 @@ export function applyExpense(
 ): Snapshot {
   assertExpenses(actor);
   const branchId = writeBranch(actor);
-  assertBranchScope(actor, branchId);
+  assertReadableBranch(snap, actor, branchId);
   assertPeriodOpen(snap, branchId, input.date ?? today());
   return {
     ...snap,
@@ -614,17 +645,33 @@ export function applyProfile(
   };
 }
 
-export function applySessionBranch(actor: Actor, branchId: string): Actor {
+export function applySessionBranch(actor: Actor, branchId: string, snap?: Snapshot): Actor {
+  if (snap && branchId !== "all") assertReadableBranch(snap, actor, branchId);
   if (!canSeeAllBranchesSafe(actor) && actor.homeBranchId && branchId !== actor.homeBranchId && branchId !== "all") {
     return actor;
   }
   return { ...actor, sessionBranchId: canSeeAllBranchesSafe(actor) ? branchId : (actor.homeBranchId ?? branchId) };
 }
 
+export function applySessionOwner(actor: Actor, ownerId: string | null, snap: Snapshot): Actor {
+  if (!hasAbsoluteAccess(actor.role)) {
+    throw new AuthzError("Контур владельца переключает только администратор-техник");
+  }
+  const id = ownerId?.trim() || null;
+  if (!id) return { ...actor, actingOwnerId: null, sessionBranchId: "all" };
+  const owner = snap.users.find((u) => u.id === id && u.role === "owner");
+  if (!owner) throw new AuthzError("Владелец не найден", 404);
+  return { ...actor, actingOwnerId: owner.id, sessionBranchId: "all" };
+}
+
 function canSeeAllBranchesSafe(actor: Actor) {
   return canSeeAllBranches(actor.role);
 }
 
+export { applyCreateLedgerDebt, applyPayLedgerDebt, applyUpdateLedgerDebt } from "./debts.ts";
+export { applyUpsertHouseholdItem, applyHouseholdMove } from "./household.ts";
+export { applyShiftIncidental } from "./incidentals.ts";
+export { applyVoidSale, applyDiscountSale } from "./sales-adjust.ts";
 export { applyOnboard } from "./onboard.ts";
 
 export function applyBootstrap(
@@ -694,6 +741,7 @@ export function applyInviteStaff(
     branchId: string;
     shiftPay: number;
     salesPercent: number;
+    monthlyPremium?: number;
     position?: string;
     phone?: string;
   },
@@ -709,8 +757,14 @@ export function applyInviteStaff(
   if (!isNetworkAdmin(input.role) && !snap.branches.some((b) => b.id === input.branchId)) {
     throw new AuthzError("Выберите филиал", 400);
   }
+  if (!isNetworkAdmin(input.role) && input.branchId) {
+    assertReadableBranch(snap, actor, input.branchId);
+  }
+  const userId = uid("u");
+  const ownerId =
+    input.role === "tech_admin" ? null : input.role === "owner" ? userId : resolveOwnerForWrite(actor, snap);
   const user = {
-    id: uid("u"),
+    id: userId,
     name: input.name.trim(),
     email: login,
     password: input.password,
@@ -718,8 +772,10 @@ export function applyInviteStaff(
     role: input.role,
     position: input.position ?? input.role,
     branchId: isNetworkAdmin(input.role) ? null : input.branchId,
+    ownerId,
     shiftPay: input.shiftPay,
     salesPercent: input.salesPercent,
+    monthlyPremium: input.monthlyPremium ?? 0,
     phone: input.phone ?? "",
     disabled: false,
   };
@@ -752,6 +808,7 @@ export function applyUpdateStaff(
     branchId?: string | null;
     shiftPay?: number;
     salesPercent?: number;
+    monthlyPremium?: number;
     position?: string;
     phone?: string;
     disabled?: boolean;
@@ -796,6 +853,7 @@ export function applyUpdateStaff(
     branchId: nextBranch,
     shiftPay: input.shiftPay ?? target.shiftPay,
     salesPercent: input.salesPercent ?? target.salesPercent,
+    monthlyPremium: input.monthlyPremium ?? target.monthlyPremium ?? 0,
     phone: input.phone ?? target.phone,
     disabled: nextDisabled,
   };
@@ -979,6 +1037,35 @@ export function applyPayrollAdjustment(
   return appendAudit({ ...snap, payrollAdjustments: [row, ...snap.payrollAdjustments] }, actor, "payroll_adj", "payroll", `${input.kind} ${input.amount}`, branchId);
 }
 
+export function applyAccrueMonthlyPremiums(
+  snap: Snapshot,
+  actor: Actor,
+  input: { month?: string } = {},
+): Snapshot {
+  if (!canInviteStaff(actor.role)) throw new AuthzError("Начисление премий недоступно");
+  const month = (input.month ?? today()).slice(0, 7);
+  const branchId = writeBranch(actor);
+  let next = snap;
+  for (const u of snap.users) {
+    const premium = u.monthlyPremium ?? 0;
+    if (premium <= 0) continue;
+    if (isNetworkAdmin(u.role)) continue;
+    if (u.branchId && u.branchId !== branchId) continue;
+    const already = next.payrollAdjustments.some(
+      (a) => a.userId === u.id && a.kind === "premium" && a.date.startsWith(month) && a.note.includes("месячная"),
+    );
+    if (already) continue;
+    next = applyPayrollAdjustment(next, actor, {
+      userId: u.id,
+      kind: "premium",
+      amount: premium,
+      note: `месячная премия ${month}`,
+      date: `${month}-01`,
+    });
+  }
+  return next;
+}
+
 export function applyRevenuePlan(snap: Snapshot, actor: Actor, input: { branchId: string; month: string; target: number }): Snapshot {
   if (!isOpsLead(actor.role)) throw new AuthzError("План недоступен");
   const existing = snap.revenuePlans.find((p) => p.branchId === input.branchId && p.month === input.month);
@@ -995,10 +1082,24 @@ export function applyRevenuePlan(snap: Snapshot, actor: Actor, input: { branchId
 
 export function applySettings(snap: Snapshot, actor: Actor, patch: Partial<Snapshot["settings"]>): Snapshot {
   if (!isOpsLead(actor.role)) throw new AuthzError("Настройки сети недоступны");
-  const keys = Object.keys(patch).join(", ") || "без полей";
+  const nextPatch = { ...patch };
+  if (
+    nextPatch.ollamaEnabled !== undefined ||
+    nextPatch.ollamaBaseUrl !== undefined ||
+    nextPatch.ollamaModel !== undefined
+  ) {
+    if (!isNetworkAdmin(actor.role)) throw new AuthzError("Ollama настраивает владелец");
+  }
+  if (typeof nextPatch.ollamaBaseUrl === "string") {
+    nextPatch.ollamaBaseUrl = nextPatch.ollamaBaseUrl.trim().replace(/\/$/, "");
+  }
+  if (typeof nextPatch.ollamaModel === "string") {
+    nextPatch.ollamaModel = nextPatch.ollamaModel.trim();
+  }
+  const keys = Object.keys(nextPatch).join(", ") || "без полей";
   const next = {
     ...snap,
-    settings: { ...snap.settings, ...patch, notifyEvents: { ...snap.settings.notifyEvents, ...(patch.notifyEvents ?? {}) } },
+    settings: { ...snap.settings, ...nextPatch, notifyEvents: { ...snap.settings.notifyEvents, ...(nextPatch.notifyEvents ?? {}) } },
   };
   return appendOpsLog(appendAudit(next, actor, "settings", "network", keys), {
     level: "info",
@@ -1062,7 +1163,8 @@ export function applyAddBranch(
 ): Snapshot {
   if (!canManageBranches(actor.role)) throw new AuthzError("Филиал добавляет владелец или администратор-техник");
   const fields = normalizeBranchInput(input);
-  const row = { id: uid("br"), ...fields };
+  const ownerId = resolveOwnerForWrite(actor, snap);
+  const row = { id: uid("br"), ...fields, ownerId };
   return appendAudit({ ...snap, branches: [...snap.branches, row] }, actor, "branch", "network", row.name);
 }
 

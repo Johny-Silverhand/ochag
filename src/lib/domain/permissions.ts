@@ -16,7 +16,8 @@ export type ModuleKey =
   | "schedule"
   | "quality"
   | "ai"
-  | "admin";
+  | "admin"
+  | "debts";
 
 const ALL: Role[] = ["tech_admin", "owner", "manager", "cook", "waiter"];
 
@@ -37,6 +38,7 @@ export const MODULE_ROLES: Record<ModuleKey, Role[]> = {
   quality: ["owner", "manager", "cook"],
   ai: ["owner", "manager"],
   admin: [],
+  debts: ["owner"],
 };
 
 /** Администратор-техник — полный доступ, выше владельца на проверках прав. */
@@ -144,6 +146,36 @@ export function canManageBranches(role: Role) {
   return isNetworkAdmin(role);
 }
 
+/** Учёт долгов (клиенты / зарплата / поставщики) — только владелец. Техник видит как абсолютный доступ. */
+export function canSeeDebts(role: Role) {
+  return grants(role, ["owner"]);
+}
+
+/** Журнал операций (консоль) — только администратор-техник. */
+export function canSeeOpsLog(role: Role) {
+  return hasAbsoluteAccess(role);
+}
+
+export function canManageDebts(role: Role) {
+  return canSeeDebts(role);
+}
+
+export function canVoidSale(role: Role) {
+  return grants(role, ["owner", "manager"]);
+}
+
+export function canDiscountSale(role: Role) {
+  return grants(role, ["owner", "manager"]);
+}
+
+export function canManageHousehold(role: Role) {
+  return grants(role, ["owner", "manager", "cook"]);
+}
+
+export function canEditOllama(role: Role) {
+  return isNetworkAdmin(role);
+}
+
 export function invitableRoles(actorRole: Role): Role[] {
   if (hasAbsoluteAccess(actorRole)) return ["tech_admin", "owner", "manager", "cook", "waiter"];
   if (actorRole === "owner" || actorRole === "manager") return ["manager", "cook", "waiter"];
@@ -191,15 +223,31 @@ export function accountPlaceLabel(
   return "без филиала";
 }
 
-export function adminVisibleUsers<T extends { id: string; role: Role; branchId: string | null }>(
-  actor: { role: Role; userId: string; homeBranchId: string | null; sessionBranchId: string },
+export function adminVisibleUsers<T extends { id: string; role: Role; branchId: string | null; ownerId?: string | null }>(
+  actor: { role: Role; userId: string; homeBranchId: string | null; sessionBranchId: string; actingOwnerId?: string | null },
   users: T[],
 ): T[] {
-  if (hasAbsoluteAccess(actor.role)) return users;
+  if (hasAbsoluteAccess(actor.role)) {
+    if (!actor.actingOwnerId) return users;
+    return users.filter(
+      (u) => u.role === "tech_admin" || u.id === actor.actingOwnerId || u.ownerId === actor.actingOwnerId,
+    );
+  }
   const roles = invitableRoles(actor.role);
+  if (actor.role === "owner") {
+    const ownerCount = users.filter((u) => u.role === "owner").length;
+    return users.filter((u) => {
+      if (u.id === actor.userId) return true;
+      if (u.role === "tech_admin" || u.role === "owner") return false;
+      if (u.ownerId) return u.ownerId === actor.userId;
+      if (ownerCount <= 1) return roles.includes(u.role);
+      return Boolean(u.branchId && u.branchId === actor.homeBranchId);
+    });
+  }
   const allBranches = canSeeAllBranches(actor.role);
   return users.filter((u) => {
     if (u.id === actor.userId) return true;
+    if (u.role === "tech_admin") return false;
     if (!roles.includes(u.role)) return false;
     if (allBranches) return true;
     const scope = actor.sessionBranchId;

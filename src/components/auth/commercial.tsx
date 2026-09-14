@@ -44,7 +44,7 @@ export function CommercialGate({
 
   const flowOpen = flow !== null;
   const flowTitle =
-    flow === "checkout" ? "Оплата тарифа" : flow === "onboard" ? "Создать сеть" : "Тарифы Очаг";
+    flow === "checkout" ? "Оплата тарифа" : flow === "onboard" ? "Создать сеть" : `Тарифы ${NETWORK_NAME}`;
 
   return (
     <div className="space-y-3">
@@ -78,7 +78,7 @@ export function CommercialGate({
         <DialogContent title={`Что такое ${NETWORK_NAME}`} className="max-w-2xl">
           <img
             src="/marketing/hero.png"
-            alt="Планшет с контуром Очаг на фоне кафе"
+            alt="Планшет с контуром RestoPro на фоне кафе"
             className="mb-4 aspect-video w-full rounded-2xl object-cover"
           />
           <p className="text-sm leading-relaxed text-muted">

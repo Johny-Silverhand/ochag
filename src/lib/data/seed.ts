@@ -35,37 +35,40 @@ const int = (a: number, b: number) => Math.floor(between(a, b + 1));
 export const BRANCHES: Branch[] = [
   {
     id: "br-pushkin",
-    name: "Очаг на Пушкина",
+    name: "RestoPro на Пушкина",
     short: "Пушкина",
     city: "Краснодар",
     address: "ул. Пушкина, 18",
     seats: 48,
     phone: "+7 861 200-11-18",
     halls: ["Основной зал", "Веранда"],
+    ownerId: "u-owner",
   },
   {
     id: "br-south",
-    name: "Очаг Южный",
+    name: "RestoPro Южный",
     short: "Южный",
     city: "Краснодар",
     address: "ул. Зиповская, 5",
     seats: 36,
     phone: "+7 861 200-11-05",
     halls: ["Основной зал"],
+    ownerId: "u-owner",
   },
   {
     id: "br-embank",
-    name: "Очаг Набережная",
+    name: "RestoPro Набережная",
     short: "Набережная",
     city: "Краснодар",
     address: "ул. Кубанская наб., 2",
     seats: 72,
     phone: "+7 861 200-11-02",
     halls: ["Банкетный", "Летняя терраса"],
+    ownerId: "u-owner",
   },
 ];
 
-export const USERS: StaffUser[] = [
+const SEED_USERS: StaffUser[] = [
   {
     id: "u-tech",
     name: "Виктор Мост",
@@ -236,6 +239,10 @@ export const USERS: StaffUser[] = [
     phone: "+7 918 000-00-12",
   },
 ];
+
+export const USERS: StaffUser[] = SEED_USERS.map((u) =>
+  u.role === "tech_admin" ? { ...u, ownerId: null } : { ...u, ownerId: "u-owner" },
+);
 
 export const PRODUCTS: Product[] = [
   { id: "prd-pork", name: "Свиная шея", category: "Мясо", unit: "kg", minQty: 18, avgCost: 420 },
@@ -888,6 +895,14 @@ export function createSeed(): Snapshot {
         },
       ];
     })(),
+    ledgerDebts: [],
+    householdItems: [
+      { id: "hz-soap", name: "Жидкое мыло", category: "Гигиена", unit: "шт", minQty: 6 },
+      { id: "hz-box", name: "Ланчбоксы", category: "Расходники", unit: "шт", minQty: 40 },
+      { id: "hz-napkin", name: "Салфетки", category: "Расходники", unit: "шт", minQty: 20 },
+    ],
+    householdStock: [],
+    householdMovements: [],
     payrollAdjustments: [
       {
         id: "adj-1",
