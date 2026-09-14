@@ -1,13 +1,18 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { APP_NAME, APP_ORIGIN, APP_SLUG, DOWNLOAD_SLUG, LOGIN_INTRO, NETWORK_NAME, VENDOR_LINE, VENDOR_URL } from "./brand.ts";
+import { APP_NAME, APP_ORIGIN, APP_ORIGIN_ALIASES, APP_SLUG, DOWNLOAD_SLUG, LOGIN_INTRO, NETWORK_NAME, VENDOR_LINE, VENDOR_URL } from "./brand.ts";
 
 describe("login intro copy", () => {
   it("shows RestoPro as the product name", () => {
     assert.equal(APP_NAME, "RestoPro");
     assert.equal(NETWORK_NAME, "RestoPro");
     assert.equal(DOWNLOAD_SLUG, "restopro");
-    assert.equal(APP_ORIGIN, "https://restopro.vercel.app");
+    assert.equal(APP_ORIGIN, "https://restopro-theta.vercel.app");
+    assert.deepEqual(APP_ORIGIN_ALIASES, [
+      "https://restopro-theta.vercel.app",
+      "https://ochag-theta.vercel.app",
+    ]);
+    assert.equal(APP_ORIGIN.includes("restopro.vercel.app"), false);
     assert.equal(APP_NAME.includes("Очаг"), false);
     assert.equal(NETWORK_NAME.includes("Очаг"), false);
   });

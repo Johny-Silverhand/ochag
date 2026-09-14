@@ -72,10 +72,17 @@ describe("API security helpers", () => {
 
   it("allows the RestoPro production origin", () => {
     const req = new Request("https://preview.example/api/v1/state", {
-      headers: { origin: "https://restopro.vercel.app" },
+      headers: { origin: "https://restopro-theta.vercel.app" },
     });
     const headers = securityHeaders(req);
-    assert.equal(headers["access-control-allow-origin"], "https://restopro.vercel.app");
+    assert.equal(headers["access-control-allow-origin"], "https://restopro-theta.vercel.app");
+  });
+
+  it("does not reflect restopro.vercel.app — that host is not ours", () => {
+    const req = new Request("https://preview.example/api/v1/state", {
+      headers: { origin: "https://restopro.vercel.app" },
+    });
+    assert.equal(securityHeaders(req)["access-control-allow-origin"], undefined);
   });
 
   it("counts a sliding window", () => {

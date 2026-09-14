@@ -6,9 +6,11 @@ export const APP_SLUG = "ochag";
 export const NETWORK_NAME = "RestoPro";
 /** User-visible download / PDF file prefix. */
 export const DOWNLOAD_SLUG = "restopro";
-/** Production host. Parent maps the Vercel project; this is the public origin. */
-export const APP_ORIGIN = "https://restopro.vercel.app";
-export const APP_HOST = "restopro.vercel.app";
+/** Our production Vercel alias. `restopro.vercel.app` is not this project. */
+export const APP_ORIGIN = "https://restopro-theta.vercel.app";
+export const APP_HOST = "restopro-theta.vercel.app";
+/** Same deployment, previous alias still live. */
+export const APP_ORIGIN_ALIASES = [APP_ORIGIN, "https://ochag-theta.vercel.app"] as const;
 export const LOGIN_INTRO =
   "Контур склада, смен и прибыли для кафе и ресторана. Свой логин — форма ниже; если открываете сеть впервые, загляните в «Что это?».";
 export const VENDOR_NAME = "Arach.tech";
