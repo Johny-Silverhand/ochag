@@ -29,7 +29,6 @@ import {
   applyInvoice,
   applyKeeperSales,
   applyManualSale,
-  applyOnboard,
   applyOpenShift,
   applyProfile,
   applyRequestFromNeed,
@@ -70,15 +69,6 @@ interface OpsState extends Snapshot {
   login: (email: string, password: string) => Promise<boolean>;
   loginPin: (email: string, pin: string) => Promise<boolean>;
   loginAs: (email: string) => Promise<boolean>;
-  onboard: (input: {
-    ownerName: string;
-    login: string;
-    password: string;
-    pin: string;
-    branchName: string;
-    city: string;
-    address: string;
-  }) => Promise<void>;
   loadSample: () => Promise<void>;
   logout: () => void;
   setBranch: (branchId: string) => void;
@@ -203,7 +193,6 @@ const ACTION_KEYS = [
   "login",
   "loginPin",
   "loginAs",
-  "onboard",
   "loadSample",
   "logout",
   "setBranch",
@@ -296,43 +285,6 @@ export const useOps = create<OpsState>()(
       },
 
       loginAs: async (email) => get().login(email, "ochag"),
-
-      onboard: async (input) => {
-        try {
-          const res = await api<{ user: { userId: string; branchId: string }; state: Snapshot }>("auth/onboard", {
-            method: "POST",
-            body: input,
-          });
-          applyingRemote = true;
-          const incoming = applyIncoming(get(), res.state);
-          const next = {
-            ...incoming,
-            users: incoming.users.map((u) => {
-              const same =
-                u.id === res.user.userId || u.email.toLowerCase() === input.login.trim().toLowerCase();
-              if (!same) return u;
-              return {
-                ...u,
-                password: u.password || input.password,
-                pin: u.pin || input.pin,
-              };
-            }),
-          };
-          set({ ...next, session: { userId: res.user.userId, branchId: res.user.branchId } });
-          applyingRemote = false;
-        } catch (err) {
-          try {
-            const next = applyOnboard(snapshotOf(get()), input);
-            const owner = next.users[0]!;
-            applyingRemote = true;
-            set({ ...next, session: { userId: owner.id, branchId: next.branches[0]?.id ?? "all" } });
-            applyingRemote = false;
-            void dbAdapter.save(next);
-          } catch (localErr) {
-            throw localErr instanceof Error ? localErr : err;
-          }
-        }
-      },
 
       loadSample: async () => {
         const commit = (snap: Snapshot) => {

@@ -16,7 +16,7 @@ import {
   applyInvoice,
   applyKeeperSales,
   applyManualSale,
-  applyOnboard,
+  applyBootstrap,
   applyOpenShift,
   applyPayrollAdjustment,
   applyProfile,
@@ -46,7 +46,8 @@ import { advisor } from "../ai/advisor";
 import { abcByRevenue, compareRevisions, deviations, periodPayroll, planVsFact, priceHistory, stockCover, stopListHistory } from "../domain/analytics";
 import { isOnboarded } from "../data/empty";
 import { createSeed } from "../data/seed";
-import { can } from "../domain/permissions";
+import { can, isNetworkAdmin, isOpsLead } from "../domain/permissions";
+import { ensureEnvBootstrap, readBootstrapEnv } from "../data/bootstrap";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -98,9 +99,10 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     const path = pathOf(request, splat);
     const url = new URL(request.url);
     const body = await readBody(request);
+    const repo = await getRepo();
+    await ensureEnvBootstrap(repo);
 
     if (method === "GET" && (path === "health" || path === "")) {
-      const repo = await getRepo();
       const status = await repo.status();
       const snap = await repo.load();
       return json({
@@ -114,18 +116,33 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     }
 
     if (method === "POST" && path === "auth/onboard") {
-      const repo = await getRepo();
+      throw new AuthzError("Публичная регистрация закрыта. Обратитесь к администратору.", 403);
+    }
+
+    if (method === "POST" && path === "auth/bootstrap") {
       const snap = await repo.load();
-      const next = applyOnboard(snap, body as never);
+      if (snap.users.length > 0) throw new AuthzError("Сеть уже создана", 400);
+      const expected = readBootstrapEnv().token;
+      if (!expected) throw new AuthzError("Bootstrap выключен", 403);
+      const got = String(body.token ?? request.headers.get("x-ochag-bootstrap") ?? "");
+      if (got !== expected) throw new AuthzError("Неверный токен", 403);
+      const next = applyBootstrap(snap, {
+        name: String(body.name ?? "Администратор-техник"),
+        login: String(body.login ?? body.email ?? ""),
+        password: String(body.password ?? ""),
+        pin: String(body.pin ?? ""),
+        branchName: String(body.branchName ?? "Филиал 1"),
+        city: body.city != null ? String(body.city) : undefined,
+        address: body.address != null ? String(body.address) : undefined,
+      });
       await repo.save(next);
-      const owner = next.users[0]!;
-      const actor = actorFrom(owner, { userId: owner.id, branchId: next.branches[0]?.id ?? "all" });
+      const admin = next.users[0]!;
+      const actor = actorFrom(admin, { userId: admin.id, branchId: next.branches[0]?.id ?? "all" });
       const token = await signActor(actor);
       return json({ token, user: publicActor(actor), state: publicSnapshot(next) });
     }
 
     if (method === "POST" && (path === "auth/login" || path === "auth/pin")) {
-      const repo = await getRepo();
       const snap = await repo.load();
       const login = String(body.login ?? body.email ?? "").trim().toLowerCase();
       const password = body.password != null ? String(body.password) : "";
@@ -150,24 +167,21 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
 
     if (method === "GET" && path === "state") {
       const actor = await requireActor(request);
-      const repo = await getRepo();
       return json({ user: publicActor(actor), state: publicSnapshot(await repo.load()) });
     }
 
     if (method === "POST" && path === "state/reset") {
       const actor = await requireActor(request);
-      if (actor.role !== "owner") throw new AuthzError("Сброс недоступен");
-      const repo = await getRepo();
+      if (!isNetworkAdmin(actor.role)) throw new AuthzError("Сброс недоступен");
       const state = await repo.reset();
       return json({ ok: true, state: publicSnapshot(state) });
     }
 
     if (method === "POST" && path === "state/sample") {
-      const repo = await getRepo();
       const current = await repo.load();
       if (isOnboarded(current)) {
         const actor = await requireActor(request);
-        if (actor.role !== "owner") throw new AuthzError("Выгрузка примера недоступна");
+        if (!isNetworkAdmin(actor.role)) throw new AuthzError("Выгрузка примера недоступна");
       }
       const state = repo.loadSample ? await repo.loadSample() : createSeed();
       if (!repo.loadSample) await repo.save(state);
@@ -266,7 +280,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
 
     if (method === "POST" && path.startsWith("ai/")) {
       const actor = await requireActor(request);
-      if (actor.role !== "owner" && actor.role !== "manager") throw new AuthzError("AI только для управляющих");
+      if (!can(actor.role, "ai")) throw new AuthzError("AI только для управляющих");
       const repo = await getRepo();
       const snap = await repo.load();
       const period = (body.period as Period) ?? "7d";
@@ -390,8 +404,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
 
     if (method === "POST" && path === "notify/flush") {
       const actor = await requireActor(request);
-      if (actor.role !== "owner" && actor.role !== "manager") throw new AuthzError("Очередь недоступна");
-      const repo = await getRepo();
+      if (!isOpsLead(actor.role)) throw new AuthzError("Очередь недоступна");
       const next = await flushOutbox(await repo.load());
       await repo.save(next);
       return json({ ok: true, state: publicSnapshot(next), notify: notifyReady() });

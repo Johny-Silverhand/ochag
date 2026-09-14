@@ -930,6 +930,7 @@ export function createSeed(): Snapshot {
   };
 }
 
+/** QA logins for `createSeed()` / loadSample — not shown on the public login screen. */
 export const DEMO_ACCOUNTS = [
   { email: "owner", role: "Владелец", name: "Кирилл Сорокин", hint: "Все филиалы, финансы, интеграции", pin: "1001" },
   { email: "manager", role: "Управляющий", name: "Анна Лебедева", hint: "Пушкина: смена, закупки, банкеты", pin: "2001" },
