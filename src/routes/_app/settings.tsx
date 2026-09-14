@@ -23,7 +23,7 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { IosInstallCard, useIosInstall } from "@/components/ios/runtime";
 import { downloadWebClip } from "@/lib/ios-profile";
-import { APP_NAME, APP_VERSION, LABS_NAME, LABS_YEAR, SETUP_EXE } from "@/lib/brand";
+import { APP_NAME, APP_VERSION, LABS_NAME, LABS_YEAR } from "@/lib/brand";
 import { useActiveBranch, useOps, useSessionUser } from "@/lib/data/store";
 import { NOTIFY_EVENT_LABEL, ROLE_LABEL, WRITEOFF_LABEL, type NotifyEvent, type Period, type Role, type WriteoffReason } from "@/lib/domain/types";
 import { usePrefs } from "@/lib/prefs";
@@ -710,8 +710,7 @@ function IphonePanel() {
           система его не пустит — это ограничение Apple, не контура.
         </p>
         <p className="mt-2 text-sm text-muted">
-          Нативная оболочка Xcode уже собрана: тот же контур внутри WKWebView, bundle{" "}
-          <span className="font-mono text-xs">labs.victimok.ochag</span>. Из неё архивируется настоящий .ipa, когда
+          Нативная оболочка Xcode уже собрана: тот же контур внутри WKWebView. Из неё архивируется настоящий .ipa, когда
           появится команда разработчика.
         </p>
         <a
@@ -760,26 +759,13 @@ function AboutPanel() {
             </p>
             {ios.apple ? (
               <p className="mt-4 text-sm text-muted">Установка на iPhone — в разделе «iPhone» слева. App Store не нужен.</p>
-            ) : (
-              <>
-                <a
-                  href="/downloads/test-v1.0-Setup.exe"
-                  download
-                  className="mt-4 inline-flex h-10 items-center rounded-sm bg-primary px-4 text-sm text-primary-fg"
-                >
-                  Скачать {SETUP_EXE}
-                </a>
-                <p className="mt-2 text-xs text-muted">
-                  Установщик Windows: ярлыки, «Программы и компоненты», подпись {LABS_NAME}.
-                </p>
-              </>
-            )}
+            ) : null}
           </div>
         </div>
         <Separator className="my-5" />
         <dl className="grid gap-3 text-sm sm:grid-cols-3">
           <div>
-            <dt className="text-xs text-muted">Студия</dt>
+            <dt className="text-xs text-muted">Продукт</dt>
             <dd className="mt-0.5 font-medium">{LABS_NAME}</dd>
           </div>
           <div>
@@ -795,8 +781,7 @@ function AboutPanel() {
       <Card className="bg-sidebar text-sidebar-fg">
         <LabsCredit tone="sidebar" align="left" />
         <p className="mt-3 text-xs leading-relaxed text-sidebar-muted">
-          Товарный знак и код контура «Очаг» принадлежат {LABS_NAME}. Копирование, разбор и перепродажа — только с
-          письменного согласия.
+          Контур «Очаг»: копирование, разбор и перепродажа — только с письменного согласия.
         </p>
       </Card>
     </div>

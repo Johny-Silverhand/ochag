@@ -7,7 +7,7 @@ import { useHydrated, useOps } from "@/lib/data/store";
 import { BootScreen } from "@/components/layout/app-shell";
 import { LabsCredit } from "@/components/brand/labs-credit";
 import { IosInstallCard, useIosInstall } from "@/components/ios/runtime";
-import { APP_NAME, APP_VERSION, LABS_NAME } from "@/lib/brand";
+import { APP_NAME, APP_VERSION } from "@/lib/brand";
 import { usePrefs } from "@/lib/prefs";
 
 export const Route = createFileRoute("/")({
@@ -15,11 +15,6 @@ export const Route = createFileRoute("/")({
   pendingComponent: BootScreen,
   component: LoginPage,
 });
-
-function isAndroidDevice() {
-  if (typeof navigator === "undefined") return false;
-  return /Android/i.test(navigator.userAgent);
-}
 
 function LoginPage() {
   const hydrated = useHydrated();
@@ -38,11 +33,6 @@ function LoginPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const ios = useIosInstall();
-  const [android, setAndroid] = useState(() => isAndroidDevice());
-
-  useEffect(() => {
-    setAndroid(isAndroidDevice());
-  }, []);
 
   useEffect(() => {
     if (hydrated && session) void navigate({ to: "/dashboard" });
@@ -64,8 +54,6 @@ function LoginPage() {
     setPeriod(defaultPeriod);
     void navigate({ to: "/dashboard" });
   }
-
-  const showDesktopDownloads = !ios.apple;
 
   return (
     <main className="max-h-[var(--app-height,100dvh)] min-h-dvh overflow-y-auto scroll-touch bg-bg text-fg lg:max-h-none lg:grid lg:grid-cols-2">
@@ -99,14 +87,6 @@ function LoginPage() {
       </section>
 
       <section className="relative flex min-h-dvh flex-col justify-center px-5 pt-[max(2.5rem,env(safe-area-inset-top))] pb-[max(2.5rem,env(safe-area-inset-bottom))] sm:px-10">
-        {showDesktopDownloads ? (
-          <a
-            href="/win-setup/index.html"
-            className="absolute top-5 right-5 text-[11px] tracking-[0.16em] text-muted uppercase hover:text-fg sm:top-8 sm:right-10"
-          >
-            Windows Setup
-          </a>
-        ) : null}
         <div className="mx-auto w-full max-w-md pb-16">
           <div className="mb-8 lg:hidden">
             <div className="text-xs font-medium tracking-[0.28em] text-muted uppercase">{APP_NAME}</div>
@@ -118,7 +98,7 @@ function LoginPage() {
             </div>
             <h2 className="mt-2 text-3xl font-medium tracking-tight">Вход</h2>
             <p className="mt-2 text-sm text-muted">
-              Логин и пароль. PIN — для зала и кухни. Издатель — {LABS_NAME}.
+              Логин и пароль. PIN — для зала и кухни.
             </p>
           </div>
 
@@ -185,27 +165,6 @@ function LoginPage() {
               {busy ? "Входим…" : "Войти"}
             </Button>
           </form>
-
-          {showDesktopDownloads ? (
-            <div className="mt-4 grid gap-2">
-              <a
-                href="/downloads/test-v1.0-Setup.exe"
-                download
-                className="flex h-11 items-center justify-center border border-border text-sm text-muted transition-colors hover:border-border-strong hover:text-fg"
-              >
-                Скачать test v1.0 Setup.exe
-              </a>
-              <a
-                href="/downloads/test-v1.0.apk"
-                download
-                className={`flex h-11 items-center justify-center border text-sm transition-colors hover:border-border-strong hover:text-fg ${
-                  android ? "border-border-strong text-fg" : "border-border text-muted"
-                }`}
-              >
-                Скачать APK
-              </a>
-            </div>
-          ) : null}
         </div>
         <div className="absolute inset-x-0 bottom-[max(1.25rem,env(safe-area-inset-bottom))] px-5 sm:px-10">
           <LabsCredit />

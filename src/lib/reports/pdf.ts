@@ -43,7 +43,7 @@ export async function banquetPdf(snap: Snapshot, banquet: Banquet, sheet: "guest
   }[sheet];
 
   const buf = await pdfBuffer((doc) => {
-    doc.fontSize(11).fillColor("#17352b").text("Очаг · Victimok Labs", { align: "left" });
+    doc.fontSize(11).fillColor("#17352b").text("Очаг", { align: "left" });
     doc.moveDown(0.3);
     doc.fontSize(20).text(spec.title);
     doc.fontSize(12).fillColor("#222").text(`${banquet.number} · ${banquet.title}`);
