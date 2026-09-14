@@ -10,7 +10,7 @@ export function today() {
 /** @deprecated prefer today() — kept so older imports compile; value is the day this module first loaded. */
 export const TODAY = today();
 
-export type Role = "owner" | "manager" | "cook" | "waiter";
+export type Role = "tech_admin" | "owner" | "manager" | "cook" | "waiter";
 export type Unit = "kg" | "l" | "шт" | "порц";
 export type PaymentType = "cash" | "card" | "qr";
 export type MovementType = "receipt" | "sale" | "writeoff" | "revision" | "prep" | "transfer";
@@ -421,6 +421,7 @@ export interface Snapshot {
 }
 
 export const ROLE_LABEL: Record<Role, string> = {
+  tech_admin: "Администратор-техник",
   owner: "Владелец",
   manager: "Управляющий",
   cook: "Повар",

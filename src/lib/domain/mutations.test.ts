@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { actorFrom, AuthzError } from "../authz/actor.ts";
 import { emptySnapshot } from "../data/empty.ts";
-import { applyClosePeriod, applyManualSale, applyOnboard, applyOpenShift, applyRevision } from "./mutations.ts";
+import { applyBootstrap, applyClosePeriod, applyInviteStaff, applyManualSale, applyOnboard, applyOpenShift, applyRevision } from "./mutations.ts";
 import { defaultSettings } from "./types.ts";
 
 const ownerActor = actorFrom(
@@ -100,6 +100,75 @@ describe("period close", () => {
     assert.throws(
       () => applyManualSale(closed, actor, [], "cash"),
       (err: unknown) => err instanceof AuthzError && /закрыт/i.test(err.message),
+    );
+  });
+});
+
+describe("bootstrap tech admin", () => {
+  it("creates a tech_admin and a first branch on an empty snapshot", () => {
+    const snap = applyBootstrap(emptySnapshot(), {
+      name: "Техник",
+      login: "admin",
+      password: "secret",
+      pin: "9999",
+      branchName: "Центр",
+      city: "Краснодар",
+      address: "ул. Красная, 1",
+    });
+    assert.equal(snap.users.length, 1);
+    assert.equal(snap.users[0]?.role, "tech_admin");
+    assert.equal(snap.users[0]?.email, "admin");
+    assert.equal(snap.users[0]?.branchId, null);
+    assert.equal(snap.branches.length, 1);
+    assert.throws(
+      () =>
+        applyBootstrap(snap, {
+          name: "Ещё",
+          login: "admin2",
+          password: "secret",
+          pin: "8888",
+          branchName: "Юг",
+        }),
+      (err: unknown) => err instanceof AuthzError && /уже создана/i.test(err.message),
+    );
+  });
+
+  it("lets tech_admin invite an owner; owner cannot invite tech_admin", () => {
+    const snap = applyBootstrap(emptySnapshot(), {
+      name: "Техник",
+      login: "admin",
+      password: "secret",
+      pin: "9999",
+      branchName: "Центр",
+    });
+    const admin = snap.users[0]!;
+    const actor = actorFrom(admin, { userId: admin.id, branchId: snap.branches[0]!.id });
+    const withOwner = applyInviteStaff(snap, actor, {
+      name: "Кирилл",
+      login: "owner",
+      password: "ochag",
+      pin: "1001",
+      role: "owner",
+      branchId: snap.branches[0]!.id,
+      shiftPay: 0,
+      salesPercent: 0,
+    });
+    const owner = withOwner.users.find((u) => u.role === "owner")!;
+    assert.equal(owner.branchId, null);
+    const ownerActor = actorFrom(owner, { userId: owner.id, branchId: snap.branches[0]!.id });
+    assert.throws(
+      () =>
+        applyInviteStaff(withOwner, ownerActor, {
+          name: "Другой техник",
+          login: "tech2",
+          password: "ochag",
+          pin: "1111",
+          role: "tech_admin",
+          branchId: snap.branches[0]!.id,
+          shiftPay: 0,
+          salesPercent: 0,
+        }),
+      (err: unknown) => err instanceof AuthzError && /роль/i.test(err.message),
     );
   });
 });

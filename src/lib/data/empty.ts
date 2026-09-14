@@ -30,5 +30,5 @@ export function emptySnapshot(): Snapshot {
 }
 
 export function isOnboarded(snap: Snapshot) {
-  return snap.users.some((u) => u.role === "owner") && snap.branches.length > 0;
+  return snap.users.length > 0 && snap.branches.length > 0;
 }

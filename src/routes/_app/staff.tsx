@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { Field, Input, NativeSelect } from "@/components/ui/input";
 import { useState } from "react";
 import { toast } from "sonner";
-import { canInviteStaff } from "@/lib/domain/permissions";
+import { canInviteStaff, invitableRoles, isNetworkAdmin } from "@/lib/domain/permissions";
 import { isWriteScope, WRITE_SCOPE_HINT } from "@/lib/ui/scope";
 import { periodPayroll } from "@/lib/domain/analytics";
 import { api } from "@/lib/api/client";
@@ -30,7 +30,7 @@ function StaffPage() {
   const adjustPayroll = useOps((s) => s.adjustPayroll);
   const sheet = periodPayroll(snap, period, scope);
   const total = sheet.reduce((s, r) => s + r.payable, 0);
-  const staff = snap.users.filter((u) => u.role !== "owner" && (scope === "all" || u.branchId === scope));
+  const staff = snap.users.filter((u) => !isNetworkAdmin(u.role) && (scope === "all" || u.branchId === scope));
 
   return (
     <div>
@@ -63,6 +63,7 @@ function StaffPage() {
               <InviteStaff
                 branches={snap.branches}
                 defaultBranch={isWriteScope(scope) ? scope : snap.branches[0]?.id ?? ""}
+                roles={invitableRoles(user.role)}
                 onInvite={(input) => {
                   if (!input.branchId) {
                     toast.error(WRITE_SCOPE_HINT);
@@ -96,7 +97,7 @@ function StaffPage() {
             </tr>
           </thead>
           <tbody>
-            {sheet.filter((r) => r.user.role !== "owner").map((r) => (
+            {sheet.filter((r) => !isNetworkAdmin(r.user.role)).map((r) => (
               <tr key={r.user.id} className="border-t border-border">
                 <td className="px-5 py-2.5">
                   <div className="font-medium">{r.user.name}</div>
@@ -202,10 +203,12 @@ function AdjustPayroll({
 function InviteStaff({
   branches,
   defaultBranch,
+  roles,
   onInvite,
 }: {
   branches: { id: string; short: string; name: string }[];
   defaultBranch: string;
+  roles: Role[];
   onInvite: (input: {
     name: string;
     login: string;
@@ -251,9 +254,11 @@ function InviteStaff({
           <div className="grid grid-cols-2 gap-3">
             <Field label="Роль">
               <NativeSelect value={role} onChange={(e) => setRole(e.target.value as Role)}>
-                <option value="manager">Управляющий</option>
-                <option value="cook">Повар</option>
-                <option value="waiter">Официант</option>
+                {roles.map((r) => (
+                  <option key={r} value={r}>
+                    {ROLE_LABEL[r]}
+                  </option>
+                ))}
               </NativeSelect>
             </Field>
             <Field label="Филиал">

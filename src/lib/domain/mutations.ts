@@ -46,7 +46,16 @@ import {
   type Actor,
   writeBranch,
 } from "../authz/actor";
-import { canInviteStaff, canOpenShift, canClosePeriod, canEditNomenclature } from "./permissions";
+import {
+  canInviteStaff,
+  canOpenShift,
+  canClosePeriod,
+  canEditNomenclature,
+  canSeeAllBranches,
+  isNetworkAdmin,
+  isOpsLead,
+  invitableRoles,
+} from "./permissions";
 import { assertPeriodOpen } from "./period";
 import { appendAudit } from "./audit";
 
@@ -612,7 +621,7 @@ export function applySessionBranch(actor: Actor, branchId: string): Actor {
 }
 
 function canSeeAllBranchesSafe(actor: Actor) {
-  return actor.role === "owner";
+  return canSeeAllBranches(actor.role);
 }
 
 export function applyOnboard(
@@ -627,7 +636,7 @@ export function applyOnboard(
     address: string;
   },
 ): Snapshot {
-  if (snap.users.some((u) => u.role === "owner")) throw new AuthzError("Сеть уже создана", 400);
+  if (snap.users.length > 0) throw new AuthzError("Сеть уже создана", 400);
   const login = input.login.trim().toLowerCase();
   if (!login || input.password.length < 4 || !/^\d{4}$/.test(input.pin)) {
     throw new AuthzError("Логин, пароль (от 4 знаков) и PIN из 4 цифр обязательны", 400);
@@ -665,6 +674,56 @@ export function applyOnboard(
   };
 }
 
+export function applyBootstrap(
+  snap: Snapshot,
+  input: {
+    name: string;
+    login: string;
+    password: string;
+    pin: string;
+    branchName: string;
+    city?: string;
+    address?: string;
+  },
+): Snapshot {
+  if (snap.users.length > 0) throw new AuthzError("Сеть уже создана", 400);
+  const login = input.login.trim().toLowerCase();
+  if (!login || input.password.length < 4 || !/^\d{4}$/.test(input.pin)) {
+    throw new AuthzError("Логин, пароль (от 4 знаков) и PIN из 4 цифр обязательны", 400);
+  }
+  const branchId = uid("br");
+  const userId = uid("u");
+  return {
+    ...snap,
+    branches: [
+      {
+        id: branchId,
+        name: input.branchName.trim() || "Филиал 1",
+        short: (input.branchName.trim() || "Филиал").slice(0, 16),
+        city: (input.city ?? "").trim() || "—",
+        address: (input.address ?? "").trim() || "—",
+        seats: 40,
+        phone: "",
+      },
+    ],
+    users: [
+      {
+        id: userId,
+        name: input.name.trim() || "Администратор-техник",
+        email: login,
+        password: input.password,
+        pin: input.pin,
+        role: "tech_admin",
+        position: "Администратор-техник",
+        branchId: null,
+        shiftPay: 0,
+        salesPercent: 0,
+        phone: "",
+      },
+    ],
+  };
+}
+
 export function applyInviteStaff(
   snap: Snapshot,
   actor: Actor,
@@ -682,6 +741,7 @@ export function applyInviteStaff(
   },
 ): Snapshot {
   if (!canInviteStaff(actor.role)) throw new AuthzError("Приглашение недоступно");
+  if (!invitableRoles(actor.role).includes(input.role)) throw new AuthzError("Роль недоступна");
   const login = input.login.trim().toLowerCase();
   if (snap.users.some((u) => u.email.toLowerCase() === login)) throw new AuthzError("Такой логин уже есть");
   if (!/^\d{4}$/.test(input.pin)) throw new AuthzError("PIN — 4 цифры");
@@ -693,7 +753,7 @@ export function applyInviteStaff(
     pin: input.pin,
     role: input.role,
     position: input.position ?? input.role,
-    branchId: input.role === "owner" ? null : input.branchId,
+    branchId: isNetworkAdmin(input.role) ? null : input.branchId,
     shiftPay: input.shiftPay,
     salesPercent: input.salesPercent,
     phone: input.phone ?? "",
@@ -825,7 +885,7 @@ export function applyPayrollAdjustment(
 }
 
 export function applyRevenuePlan(snap: Snapshot, actor: Actor, input: { branchId: string; month: string; target: number }): Snapshot {
-  if (actor.role !== "owner" && actor.role !== "manager") throw new AuthzError("План недоступен");
+  if (!isOpsLead(actor.role)) throw new AuthzError("План недоступен");
   const existing = snap.revenuePlans.find((p) => p.branchId === input.branchId && p.month === input.month);
   const row = existing
     ? { ...existing, target: input.target }
@@ -839,7 +899,7 @@ export function applyRevenuePlan(snap: Snapshot, actor: Actor, input: { branchId
 }
 
 export function applySettings(snap: Snapshot, actor: Actor, patch: Partial<Snapshot["settings"]>): Snapshot {
-  if (actor.role !== "owner" && actor.role !== "manager") throw new AuthzError("Настройки сети недоступны");
+  if (!isOpsLead(actor.role)) throw new AuthzError("Настройки сети недоступны");
   return { ...snap, settings: { ...snap.settings, ...patch, notifyEvents: { ...snap.settings.notifyEvents, ...(patch.notifyEvents ?? {}) } } };
 }
 
@@ -863,7 +923,7 @@ export function applyAddBranch(
   actor: Actor,
   input: { name: string; city: string; address: string; short?: string },
 ): Snapshot {
-  if (actor.role !== "owner") throw new AuthzError("Филиал добавляет владелец");
+  if (!isNetworkAdmin(actor.role)) throw new AuthzError("Филиал добавляет владелец");
   const row = {
     id: uid("br"),
     name: input.name,
@@ -881,7 +941,7 @@ export function applyAddSupplier(
   actor: Actor,
   input: { name: string; email: string; telegram: string; channel: SupplierChannel },
 ): Snapshot {
-  if (actor.role !== "owner" && actor.role !== "manager") throw new AuthzError("Поставщики недоступны");
+  if (!isOpsLead(actor.role)) throw new AuthzError("Поставщики недоступны");
   return { ...snap, suppliers: [{ id: uid("sup"), ...input }, ...snap.suppliers] };
 }
 

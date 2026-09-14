@@ -17,7 +17,7 @@ export type ModuleKey =
   | "quality"
   | "ai";
 
-const ALL: Role[] = ["owner", "manager", "cook", "waiter"];
+const ALL: Role[] = ["tech_admin", "owner", "manager", "cook", "waiter"];
 
 export const MODULE_ROLES: Record<ModuleKey, Role[]> = {
   dashboard: ALL,
@@ -37,62 +37,87 @@ export const MODULE_ROLES: Record<ModuleKey, Role[]> = {
   ai: ["owner", "manager"],
 };
 
+/** Администратор-техник — полный доступ, выше владельца на проверках прав. */
+export function hasAbsoluteAccess(role: Role) {
+  return role === "tech_admin";
+}
+
+/** Сеть целиком: техник или владелец. */
+export function isNetworkAdmin(role: Role) {
+  return role === "tech_admin" || role === "owner";
+}
+
+/** Операционный контур филиала: техник, владелец, управляющий. */
+export function isOpsLead(role: Role) {
+  return role === "tech_admin" || role === "owner" || role === "manager";
+}
+
+function grants(role: Role, allowed: readonly Role[]) {
+  return hasAbsoluteAccess(role) || allowed.includes(role);
+}
+
 export function canTransfer(role: Role) {
-  return role === "owner" || role === "manager";
+  return grants(role, ["owner", "manager"]);
 }
 
 export function canManageStopList(role: Role) {
-  return role === "owner" || role === "manager" || role === "cook";
+  return grants(role, ["owner", "manager", "cook"]);
 }
 
 export function canEditExpenses(role: Role) {
-  return role === "owner" || role === "manager";
+  return grants(role, ["owner", "manager"]);
 }
 
 export function can(role: Role, module: ModuleKey) {
-  return MODULE_ROLES[module].includes(role);
+  return grants(role, MODULE_ROLES[module]);
 }
 
 export function canWriteoff(role: Role) {
-  return role === "owner" || role === "manager" || role === "cook";
+  return grants(role, ["owner", "manager", "cook"]);
 }
 
 export function canEditBanquet(role: Role) {
-  return role === "owner" || role === "manager";
+  return grants(role, ["owner", "manager"]);
 }
 
 export function canManageCash(role: Role) {
-  return role === "owner" || role === "manager";
+  return grants(role, ["owner", "manager"]);
 }
 
 export function canOpenShift(role: Role) {
-  return role === "owner" || role === "manager" || role === "cook";
+  return grants(role, ["owner", "manager", "cook"]);
 }
 
 export function canInviteStaff(role: Role) {
-  return role === "owner" || role === "manager";
+  return grants(role, ["owner", "manager"]);
 }
 
 export function canClosePeriod(role: Role) {
-  return role === "owner" || role === "manager";
+  return grants(role, ["owner", "manager"]);
 }
 
 export function canEditNomenclature(role: Role) {
-  return role === "owner" || role === "manager" || role === "cook";
+  return grants(role, ["owner", "manager", "cook"]);
 }
 
 export function canSeeAllBranches(role: Role) {
-  return role === "owner";
+  return grants(role, ["owner"]);
 }
 
 export function canImportKeeper(role: Role) {
-  return role === "owner" || role === "manager";
+  return grants(role, ["owner", "manager"]);
 }
 
 export function canCreateSale(role: Role) {
-  return role === "owner" || role === "manager" || role === "waiter";
+  return grants(role, ["owner", "manager", "waiter"]);
 }
 
 export function canResetDemo(role: Role) {
-  return role === "owner" || role === "manager";
+  return grants(role, ["owner", "manager"]);
+}
+
+export function invitableRoles(actorRole: Role): Role[] {
+  if (hasAbsoluteAccess(actorRole)) return ["tech_admin", "owner", "manager", "cook", "waiter"];
+  if (actorRole === "owner" || actorRole === "manager") return ["manager", "cook", "waiter"];
+  return [];
 }
