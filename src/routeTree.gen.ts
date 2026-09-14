@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as SetupRouteImport } from './routes/setup'
+import { Route as AppAccountsRouteImport } from './routes/_app/accounts'
 import { Route as AppAiRouteImport } from './routes/_app/ai'
 import { Route as AppBanquetsRouteImport } from './routes/_app/banquets'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
@@ -44,6 +45,11 @@ const SetupRoute = SetupRouteImport.update({
   id: '/setup',
   path: '/setup',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AppAccountsRoute = AppAccountsRouteImport.update({
+  id: '/accounts',
+  path: '/accounts',
+  getParentRoute: () => AppRoute,
 } as any)
 const AppAiRoute = AppAiRouteImport.update({
   id: '/ai',
@@ -139,6 +145,7 @@ const PrintBanquetIdRoute = PrintBanquetIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/setup': typeof SetupRoute
+  '/accounts': typeof AppAccountsRoute
   '/ai': typeof AppAiRoute
   '/banquets': typeof AppBanquetsRouteWithChildren
   '/dashboard': typeof AppDashboardRoute
@@ -161,6 +168,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/setup': typeof SetupRoute
+  '/accounts': typeof AppAccountsRoute
   '/ai': typeof AppAiRoute
   '/banquets': typeof AppBanquetsRouteWithChildren
   '/dashboard': typeof AppDashboardRoute
@@ -185,6 +193,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
   '/setup': typeof SetupRoute
+  '/_app/accounts': typeof AppAccountsRoute
   '/_app/ai': typeof AppAiRoute
   '/_app/banquets': typeof AppBanquetsRouteWithChildren
   '/_app/dashboard': typeof AppDashboardRoute
@@ -209,6 +218,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/setup'
+    | '/accounts'
     | '/ai'
     | '/banquets'
     | '/dashboard'
@@ -231,6 +241,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/setup'
+    | '/accounts'
     | '/ai'
     | '/banquets'
     | '/dashboard'
@@ -254,6 +265,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_app'
     | '/setup'
+    | '/_app/accounts'
     | '/_app/ai'
     | '/_app/banquets'
     | '/_app/dashboard'
@@ -304,6 +316,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/setup'
       preLoaderRoute: typeof SetupRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_app/accounts': {
+      id: '/_app/accounts'
+      path: '/accounts'
+      fullPath: '/accounts'
+      preLoaderRoute: typeof AppAccountsRouteImport
+      parentRoute: typeof AppRoute
     }
     '/_app/ai': {
       id: '/_app/ai'
@@ -447,6 +466,7 @@ const AppBanquetsRouteWithChildren = AppBanquetsRoute._addFileChildren(
 )
 
 interface AppRouteChildren {
+  AppAccountsRoute: typeof AppAccountsRoute
   AppAiRoute: typeof AppAiRoute
   AppBanquetsRoute: typeof AppBanquetsRouteWithChildren
   AppDashboardRoute: typeof AppDashboardRoute
@@ -465,6 +485,7 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppAccountsRoute: AppAccountsRoute,
   AppAiRoute: AppAiRoute,
   AppBanquetsRoute: AppBanquetsRouteWithChildren,
   AppDashboardRoute: AppDashboardRoute,
