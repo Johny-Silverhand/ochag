@@ -1,25 +1,13 @@
 import { createMemoryRepository } from "./memory";
+import { hasDatabaseUrl, resolveStoreSource } from "./store-source";
 import type { OpsRepository, StoreSource } from "./types";
 
 export type { OpsRepository, StoreSource } from "./types";
+export { hasDatabaseUrl, resolveStoreSource } from "./store-source";
 
 const globalRef = globalThis as typeof globalThis & {
   __ochagRepo__?: Promise<OpsRepository>;
 };
-
-/**
- * Default is an empty in-memory snapshot. Set OCHAG_STORE=json to persist locally.
- * Postgres is prepared (migrations + this switch) but not opened yet —
- * DATABASE_URL is ignored on purpose until the owner plugs it in.
- */
-export function resolveStoreSource(): StoreSource {
-  const raw = (typeof process !== "undefined" ? process.env.OCHAG_STORE : undefined)?.trim();
-  if (raw === "json") return "json";
-  if (raw === "postgres" || raw === "neon") {
-    console.warn("[ochag] OCHAG_STORE=postgres is prepared but not wired. Using memory.");
-  }
-  return "memory";
-}
 
 export function getRepo(): Promise<OpsRepository> {
   globalRef.__ochagRepo__ ??= (async () => {
@@ -28,7 +16,16 @@ export function getRepo(): Promise<OpsRepository> {
       const { createJsonRepository } = await import("./json-file");
       return createJsonRepository();
     }
+    if (source === "neon") {
+      const { createPostgresRepository } = await import("./postgres");
+      return createPostgresRepository("neon");
+    }
     return createMemoryRepository();
   })();
   return globalRef.__ochagRepo__;
+}
+
+/** Test helper: drop the memoized repo so the next getRepo() re-reads env. */
+export function resetRepoCache() {
+  globalRef.__ochagRepo__ = undefined;
 }
