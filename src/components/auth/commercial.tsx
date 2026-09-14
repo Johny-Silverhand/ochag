@@ -68,7 +68,7 @@ export function CommercialGate({
       ) : null}
 
       <Dialog open={about} onOpenChange={setAbout}>
-        <DialogContent title={`Что такое ${NETWORK_NAME}`} className="max-h-[min(90dvh,44rem)] max-w-2xl overflow-y-auto bg-elevated">
+        <DialogContent title={`Что такое ${NETWORK_NAME}`} className="max-h-[min(90dvh,44rem)] max-w-2xl overflow-y-auto">
           <img
             src="/marketing/hero.png"
             alt="Планшет с контуром Очаг на фоне кафе"
