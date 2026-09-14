@@ -97,13 +97,13 @@ function DashboardPage() {
         <Kpi label="Чистая прибыль" value={rub(kpis.net)} hint={`ФОТ ${rub(kpis.payroll)} · opex ${rub(kpis.opex)}`} tone={kpis.net >= 0 ? "good" : "bad"} />
       </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-[1.4fr_0.8fr]">
+      <div className="mt-4 grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,0.8fr)]">
         <Card>
           <CardHeader>
             <CardTitle>Выручка по дням</CardTitle>
             <span className="text-xs text-muted">{scope === "all" ? "Все филиалы" : snap.branches.find((b) => b.id === scope)?.short}</span>
           </CardHeader>
-          <div className="h-56">
+          <div className="h-56 min-w-0">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={series} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                 <defs>
@@ -161,7 +161,7 @@ function DashboardPage() {
           <CardHeader>
             <CardTitle>Филиалы рядом</CardTitle>
           </CardHeader>
-          <div className="h-52">
+          <div className="h-52 min-w-0">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={compare.map((c) => ({ name: c.branch.short, revenue: c.revenue, net: c.net }))}>
                 <CartesianGrid stroke="var(--color-border)" vertical={false} />
@@ -209,8 +209,8 @@ function DashboardPage() {
           </CardHeader>
           <ul className="space-y-2">
             {dishes.map((d) => (
-              <li key={d.name} className="flex items-center justify-between text-sm">
-                <span>{d.name}</span>
+              <li key={d.name} className="flex min-w-0 items-center justify-between gap-3 text-sm">
+                <span className="min-w-0 truncate">{d.name}</span>
                 <span className="font-mono text-muted tabular-nums">
                   {d.qty} · {rub(d.sum)}
                 </span>
@@ -233,8 +233,8 @@ function DashboardPage() {
           ) : (
             <ul className="space-y-2">
               {alerts.map((a) => (
-                <li key={`${a.branch}-${a.product.id}`} className="flex items-center justify-between text-sm">
-                  <span>
+                <li key={`${a.branch}-${a.product.id}`} className="flex min-w-0 items-center justify-between gap-3 text-sm">
+                  <span className="min-w-0 truncate">
                     {a.product.name}
                     <span className="ml-2 text-xs text-subtle">{a.branch}</span>
                   </span>

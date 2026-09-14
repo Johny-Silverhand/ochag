@@ -42,7 +42,7 @@ import { getRepo } from "../repo";
 import { mapKeeperReceipts } from "../integrations/keeper";
 import { parseKeeperXml } from "../integrations/keeper-xml";
 import { fetchKeeperReceipts, publicKeeperStatus } from "../integrations/keeper-http";
-import { applySimulatePayment, billingPublic, canSelfOnboard } from "../billing/simulate";
+import { applySimulatePayment, billingPublic, canSelfOnboard, showCommercialEntry, snapshotForCommercialOnboard } from "../billing/simulate";
 import { isTariffId } from "../billing/plans";
 import { askMetrics, periodNarrative, recommendMetrics } from "../ai";
 import { safeMetrics } from "../ai/safe-context";
@@ -169,11 +169,15 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
 
     if (method === "POST" && path === "auth/onboard") {
       const snap = await repo.load();
-      if (snap.users.length > 0) throw new AuthzError("Сеть уже создана", 400);
       if (!canSelfOnboard(snap)) {
-        throw new AuthzError("Сначала выберите тариф и подтвердите оплату (симуляция).", 403);
+        throw new AuthzError(
+          showCommercialEntry(snap)
+            ? "Сначала выберите тариф и подтвердите оплату (симуляция)."
+            : "Сеть уже создана",
+          showCommercialEntry(snap) ? 403 : 400,
+        );
       }
-      const next = applyOnboard(snap, {
+      const next = applyOnboard(snapshotForCommercialOnboard(snap), {
         ownerName: String(body.ownerName ?? body.name ?? ""),
         login: String(body.login ?? body.email ?? ""),
         password: String(body.password ?? ""),
