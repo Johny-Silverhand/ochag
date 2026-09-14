@@ -15,9 +15,24 @@ export const MAX_PASSWORD_CHARS = 256;
 export const MAX_PIN_CHARS = 16;
 
 export function clientIp(request: Request) {
-  const forwarded = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "";
-  const first = forwarded.split(",")[0]?.trim() ?? "";
-  return first.slice(0, 64) || "unknown";
+  const forwarded = request.headers.get("x-forwarded-for") ?? "";
+  const real = request.headers.get("x-real-ip") ?? "";
+  const hops = [...forwarded.split(","), real].map((s) => s.trim()).filter(Boolean);
+  const pub = hops.find((ip) => !isPrivateOrLocalIp(ip));
+  return (pub || hops[0] || "unknown").slice(0, 64);
+}
+
+function isPrivateOrLocalIp(ip: string) {
+  const v = ip.replace(/^\[|\]$/g, "").replace(/^::ffff:/i, "");
+  if (!v || v === "unknown" || v === "::1") return true;
+  if (/^(127\.|10\.|192\.168\.|169\.254\.)/.test(v)) return true;
+  const m = /^172\.(\d+)\./.exec(v);
+  if (m) {
+    const n = Number(m[1]);
+    if (n >= 16 && n <= 31) return true;
+  }
+  if (/^(fc|fd)[0-9a-f]{2}:/i.test(v) || /^fe80:/i.test(v)) return true;
+  return false;
 }
 
 export function rateLimit(key: string, max = AUTH_RATE_MAX, windowMs = AUTH_RATE_WINDOW_MS) {

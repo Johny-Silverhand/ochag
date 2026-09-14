@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { AuthzError } from "../authz/error.ts";
-import { assertAuthRate, assertPayloadSize, MAX_JSON_BYTES, rateLimit, resetRateLimits, securityHeaders } from "./http.ts";
+import { assertAuthRate, assertPayloadSize, clientIp, MAX_JSON_BYTES, rateLimit, resetRateLimits, securityHeaders } from "./http.ts";
 
 describe("API security helpers", () => {
   it("trips rate limit on login spam", () => {
@@ -65,5 +65,12 @@ describe("API security helpers", () => {
     assert.equal(a.ok, true);
     assert.equal(b.ok, true);
     assert.equal(c.ok, false);
+  });
+
+  it("uses the first public hop for client IP", () => {
+    const req = new Request("https://ochag.example/api/v1/state", {
+      headers: { "x-forwarded-for": "10.0.0.4, 203.0.113.9", "x-real-ip": "127.0.0.1" },
+    });
+    assert.equal(clientIp(req), "203.0.113.9");
   });
 });

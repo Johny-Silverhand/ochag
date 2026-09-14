@@ -9,6 +9,7 @@ export type TenantActor = {
   sessionBranchId?: string;
   ownerId?: string | null;
   actingOwnerId?: string | null;
+  sessionId?: string;
 };
 
 export function ownersOf(snap: Snapshot): StaffUser[] {

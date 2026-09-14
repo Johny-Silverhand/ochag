@@ -1,25 +1,39 @@
 import { AuthzError } from "../authz/error.ts";
 import { uid } from "../utils.ts";
 import { hasAbsoluteAccess } from "./permissions.ts";
-import type { DeviceSession, Snapshot } from "./types.ts";
+import type { DeviceSession, Role, Snapshot } from "./types.ts";
 import type { TenantActor } from "./tenancy.ts";
+import { clientIp } from "../security/http.ts";
 
-const ACTIVITY_THROTTLE_MS = 5 * 60 * 1000;
+export { clientIp };
+
+export const ACTIVITY_THROTTLE_MS = 5 * 60 * 1000;
 
 export function deviceLabelFromUa(ua: string) {
   const raw = ua.trim() || "неизвестное устройство";
-  if (/iPhone|iPad|iPod/i.test(raw)) return "iOS";
-  if (/Android/i.test(raw)) return "Android";
-  if (/Macintosh|Mac OS/i.test(raw)) return "Mac";
-  if (/Windows/i.test(raw)) return "Windows";
-  if (/Linux/i.test(raw)) return "Linux";
+  const browser = /Edg\//i.test(raw)
+    ? "Edge"
+    : /Chrome\//i.test(raw)
+      ? "Chrome"
+      : /Firefox\//i.test(raw)
+        ? "Firefox"
+        : /Safari\//i.test(raw) && !/Chrome/i.test(raw)
+          ? "Safari"
+          : "";
+  const os = /iPhone|iPad|iPod/i.test(raw)
+    ? "iOS"
+    : /Android/i.test(raw)
+      ? "Android"
+      : /Macintosh|Mac OS/i.test(raw)
+        ? "Mac"
+        : /Windows/i.test(raw)
+          ? "Windows"
+          : /Linux/i.test(raw)
+            ? "Linux"
+            : "";
+  if (os && browser) return `${browser} · ${os}`;
+  if (os) return os;
   return raw.slice(0, 48);
-}
-
-export function clientIp(request: Request) {
-  const forwarded = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "";
-  const first = forwarded.split(",")[0]?.trim() ?? "";
-  return first.slice(0, 64) || "unknown";
 }
 
 export function mintDeviceSession(input: { userId: string; request?: Request; at?: string }): DeviceSession {
@@ -40,7 +54,7 @@ export function activeSessionsForUser(snap: Snapshot, userId: string): DeviceSes
 }
 
 export function assertSessionActive(snap: Snapshot, actor: TenantActor & { sessionId?: string }) {
-  if (!actor.sessionId) return;
+  if (!actor.sessionId) throw new AuthzError("Сессия отозвана", 401);
   const row = (snap.deviceSessions ?? []).find((s) => s.id === actor.sessionId);
   if (!row || row.userId !== actor.userId || row.revokedAt) {
     throw new AuthzError("Сессия отозвана", 401);
@@ -65,6 +79,15 @@ export function attachSession(snap: Snapshot, session: DeviceSession): Snapshot 
   return { ...snap, deviceSessions: [session, ...live].slice(0, 80) };
 }
 
+function canRevoke(actor: TenantActor, targetUser: { id: string; ownerId?: string | null } | undefined, rowUserId: string) {
+  if (rowUserId === actor.userId) return true;
+  if (hasAbsoluteAccess(actor.role)) return true;
+  if (actor.role === "owner" && targetUser && (targetUser.ownerId === actor.userId || targetUser.id === actor.userId)) {
+    return true;
+  }
+  return false;
+}
+
 export function revokeSession(
   snap: Snapshot,
   actor: TenantActor,
@@ -73,11 +96,8 @@ export function revokeSession(
 ): Snapshot {
   const row = (snap.deviceSessions ?? []).find((s) => s.id === sessionId);
   if (!row) throw new AuthzError("Сессия не найдена", 404);
-  const own = row.userId === actor.userId;
   const target = snap.users.find((u) => u.id === row.userId);
-  const sameOwner =
-    actor.role === "owner" && (target?.ownerId === actor.userId || target?.id === actor.userId);
-  if (!own && !hasAbsoluteAccess(actor.role) && !sameOwner) {
+  if (!canRevoke(actor, target, row.userId)) {
     throw new AuthzError("Нельзя отозвать чужую сессию");
   }
   return {
@@ -105,7 +125,9 @@ export function revokeOtherSessions(
 export function sessionsVisibleTo(snap: Snapshot, actor: TenantActor): DeviceSession[] {
   const rows = snap.deviceSessions ?? [];
   if (hasAbsoluteAccess(actor.role)) {
-    if (!actor.actingOwnerId) return rows.filter((s) => !s.revokedAt || true);
+    if (!actor.actingOwnerId) {
+      return rows.filter((s) => s.userId === actor.userId);
+    }
     const ids = new Set(
       snap.users.filter((u) => u.id === actor.actingOwnerId || u.ownerId === actor.actingOwnerId).map((u) => u.id),
     );
@@ -118,4 +140,36 @@ export function sessionsVisibleTo(snap: Snapshot, actor: TenantActor): DeviceSes
     return rows.filter((s) => ids.has(s.userId));
   }
   return rows.filter((s) => s.userId === actor.userId);
+}
+
+export type SessionListRow = {
+  id: string;
+  userId: string;
+  userName: string;
+  role: Role | null;
+  deviceLabel: string;
+  ip: string;
+  createdAt: string;
+  lastActivityAt: string;
+  revokedAt?: string;
+};
+
+export function sessionListRows(snap: Snapshot, actor: TenantActor): SessionListRow[] {
+  return sessionsVisibleTo(snap, actor)
+    .filter((s) => !s.revokedAt)
+    .slice()
+    .sort((a, b) => Date.parse(b.lastActivityAt) - Date.parse(a.lastActivityAt))
+    .map((s) => {
+      const user = snap.users.find((u) => u.id === s.userId);
+      return {
+        id: s.id,
+        userId: s.userId,
+        userName: user?.name ?? "сотрудник",
+        role: user?.role ?? null,
+        deviceLabel: s.deviceLabel,
+        ip: s.ip,
+        createdAt: s.createdAt,
+        lastActivityAt: s.lastActivityAt,
+      };
+    });
 }

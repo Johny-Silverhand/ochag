@@ -75,7 +75,7 @@ import {
   mintDeviceSession,
   revokeOtherSessions,
   revokeSession,
-  sessionsVisibleTo,
+  sessionListRows,
   touchSession,
 } from "../domain/sessions";
 import { assertReadableBranch, ownerSummaries, snapshotForActor } from "../domain/tenancy";
@@ -137,11 +137,20 @@ async function requireLiveActor(request: Request, snap: Snapshot) {
   return actor;
 }
 
-async function loadScoped(request: Request) {
+async function loadLive(request: Request) {
   const repo = await getRepo();
-  const snap = await repo.load();
+  let snap = await repo.load();
   const actor = await requireLiveActor(request, snap);
+  const touched = touchSession(snap, actor.sessionId);
+  if (touched !== snap) {
+    await repo.save(touched);
+    snap = touched;
+  }
   return { repo, snap, actor, view: snapshotForActor(snap, actor) };
+}
+
+async function loadScoped(request: Request) {
+  return loadLive(request);
 }
 
 async function requireActor(request: Request) {
@@ -423,22 +432,18 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     }
 
     if (method === "GET" && path === "me") {
-      const snap = await repo.load();
-      const actor = await requireLiveActor(request, snap);
+      const { actor } = await loadLive(request);
       return json({ user: publicActor(actor) }, 200, request);
     }
 
     if (method === "GET" && path === "state") {
-      const snap = await repo.load();
-      const actor = await requireLiveActor(request, snap);
-      const touched = touchSession(snap, actor.sessionId);
-      if (touched !== snap) await repo.save(touched);
-      return json({ user: publicActor(actor), state: publicSnapshot(touched, actor) }, 200, request);
+      const { actor, snap } = await loadLive(request);
+      return json({ user: publicActor(actor), state: publicSnapshot(snap, actor) }, 200, request);
     }
 
     if (method === "POST" && path === "state/reset") {
-      const actor = await requireActor(request);
       const current = await repo.load();
+      const actor = await requireLiveActor(request, current);
       assertResetAllowed(current, actor.role);
       if (!canResetDemo(actor.role)) throw new AuthzError("Сброс недоступен");
       const state = appendOpsLog(await repo.reset(), {
@@ -454,7 +459,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
 
     if (method === "POST" && path === "state/sample") {
       const current = await repo.load();
-      const actor = await requireActor(request);
+      const actor = await requireLiveActor(request, current);
       if (!canLoadSample(actor.role)) throw new AuthzError("Учебный срез доступен только администратору-технику");
       assertSampleLoadAllowed(current, actor.role);
       let state = repo.loadSample ? await repo.loadSample() : createSeed();
@@ -494,9 +499,8 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     }
 
     if (method === "GET" && path === "session/list") {
-      const snap = await repo.load();
-      const actor = await requireLiveActor(request, snap);
-      return json({ rows: sessionsVisibleTo(snap, actor), currentId: actor.sessionId }, 200, request);
+      const { snap, actor } = await loadLive(request);
+      return json({ rows: sessionListRows(snap, actor), currentId: actor.sessionId }, 200, request);
     }
 
     if (method === "POST" && path === "session/revoke") {
@@ -508,8 +512,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     }
 
     if (method === "GET" && path === "owners") {
-      const snap = await repo.load();
-      const actor = await requireLiveActor(request, snap);
+      const { snap, actor } = await loadLive(request);
       assertApiAuthz(method, path, actor);
       return json(
         {
@@ -522,9 +525,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     }
 
     if (method === "GET" && path === "kpis") {
-      const snap = await repo.load();
-      const actor = await requireLiveActor(request, snap);
-      const view = snapshotForActor(snap, actor);
+      const { snap, actor, view } = await loadLive(request);
       const period = (url.searchParams.get("period") ?? "7d") as Period;
       const branchId = url.searchParams.get("branch") ?? actor.sessionBranchId;
       if (branchId && branchId !== "all") assertReadableBranch(snap, actor, branchId);
@@ -538,7 +539,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     }
 
     if (method === "GET" && path === "integrations/keeper") {
-      await requireActor(request);
+      await loadLive(request);
       const status = await repo.status();
       return json({ ...publicKeeperStatus(), store: status.source });
     }
@@ -655,11 +656,9 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     }
 
     if (method === "GET" && path === "ai/status") {
-      const actor = await requireActor(request);
+      const { actor, view } = await loadLive(request);
       if (!can(actor.role, "ai")) throw new AuthzError("AI только для управляющих");
-      const repo = await getRepo();
-      const snap = await repo.load();
-      const cfg = resolveOllamaConfig(snap.settings);
+      const cfg = resolveOllamaConfig(view.settings);
       const ping = cfg.configured ? await ollamaAvailable(cfg) : { ok: false, error: "Ollama не настроена" };
       return json({
         configured: cfg.configured,
@@ -826,7 +825,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     }
 
     if (method === "POST" && path === "notify/flush") {
-      const actor = await requireActor(request);
+      const { actor } = await loadLive(request);
       if (!isOpsLead(actor.role)) throw new AuthzError("Очередь недоступна");
       const next = await flushOutbox(await repo.load());
       await repo.save(next);
@@ -898,7 +897,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     }
 
     if (method === "GET" && path === "nomenclature/template") {
-      await requireActor(request);
+      await loadLive(request);
       return json({
         filename: "ochag-nomenclature.csv",
         csv: toCsv(["name", "category", "unit", "minQty", "avgCost"], [["Свинина шея", "Мясо", "kg", 10, 420]]),
