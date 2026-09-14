@@ -129,7 +129,14 @@ function AccountsPage() {
               </div>
               {editable ? (
                 <div className="flex flex-wrap gap-2">
-                  <Button type="button" variant="secondary" onClick={() => setEditing(row)}>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => {
+                      setIssued(null);
+                      setEditing(row);
+                    }}
+                  >
                     Изменить
                   </Button>
                   <Button
@@ -199,6 +206,8 @@ function HandoffCard({ issued, onDismiss }: { issued: Issued; onDismiss: () => v
           <h2 className="text-sm font-medium tracking-tight">Передайте клиенту</h2>
           <p className="mt-1 text-sm text-muted">Пароль и PIN показываем один раз. Скопируйте сейчас.</p>
           <dl className="mt-3 grid gap-2 font-mono text-sm">
+            <HandoffRow label="Имя" value={issued.name} />
+            <HandoffRow label="Роль" value={ROLE_LABEL[issued.role]} />
             <HandoffRow label="Логин" value={issued.login} />
             <HandoffRow label="Пароль" value={issued.password} />
             <HandoffRow label="PIN" value={issued.pin} />
