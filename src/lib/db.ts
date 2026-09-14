@@ -93,10 +93,19 @@ function createNeonSql(): Promise<Sql> {
     types.setTypeParser(OID_INT8, Number);
     types.setTypeParser(OID_DATE, identity);
     types.setTypeParser(OID_INTERVAL, identity);
-    const pool = new Pool({ connectionString: databaseUrl });
+    const pool = new Pool({
+      connectionString: databaseUrl,
+      connectionTimeoutMillis: 8_000,
+      idleTimeoutMillis: 30_000,
+    });
+    const { withDbRetry, wrapDbError } = await import("./repo/db-errors");
     return toSql(async <T>(text: string, params: unknown[]) => {
-      const res = await pool.query(text, params);
-      return res.rows as T[];
+      try {
+        const res = await withDbRetry(() => pool.query(text, params));
+        return res.rows as T[];
+      } catch (err) {
+        throw wrapDbError(err);
+      }
     });
   })().catch((err) => {
     globalRef.__pgSqlPromise__ = undefined;

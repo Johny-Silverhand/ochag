@@ -51,10 +51,17 @@ import { banquetPdf, periodPdf, revisionActPdf, toCsv } from "../reports/pdf";
 import { advisor } from "../ai/advisor";
 import { abcByRevenue, compareRevisions, deviations, periodPayroll, planVsFact, priceHistory, stockCover, stopListHistory } from "../domain/analytics";
 import { isOnboarded } from "../data/empty";
-import { createSeed } from "../data/seed";
+import { createSeed, USERS } from "../data/seed";
 import { can, isNetworkAdmin, isOpsLead } from "../domain/permissions";
-import { ensureEnvBootstrap, readBootstrapEnv } from "../data/bootstrap";
+import { ensureEnvBootstrap, readBootstrapEnv, repairLegacySnapshot } from "../data/bootstrap";
+import { rematerializeSeedSecrets } from "../data/secrets";
 import { appendOpsLog, recordAuthAttempt, resolveStaffAuth, ACCOUNT_BLOCKED_MSG } from "../domain/ops-log";
+import {
+  DB_UNAVAILABLE_MSG,
+  StoreUnavailableError,
+  isDbUnavailableError,
+  publicErrorMessage,
+} from "../repo/db-errors";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -100,6 +107,63 @@ async function persistOpsLog(entry: Parameters<typeof appendOpsLog>[1]) {
   }
 }
 
+function authSnapshot(snap: Snapshot): Snapshot {
+  return rematerializeSeedSecrets(repairLegacySnapshot(snap), USERS);
+}
+
+async function healthResponse(): Promise<Response> {
+  try {
+    const repo = await getRepo();
+    try {
+      await ensureEnvBootstrap(repo);
+    } catch (err) {
+      if (!isDbUnavailableError(err)) throw err;
+      return json(
+        {
+          ok: false,
+          service: "ochag",
+          error: DB_UNAVAILABLE_MSG,
+          store: { source: repo.source, ready: false, updatedAt: null, sales: 0 },
+        },
+        503,
+      );
+    }
+    const status = await repo.status();
+    if (!status.ready) {
+      return json(
+        {
+          ok: false,
+          service: "ochag",
+          error: DB_UNAVAILABLE_MSG,
+          store: status,
+        },
+        503,
+      );
+    }
+    const snap = await repo.load();
+    return json({
+      ok: true,
+      service: "ochag",
+      stage: 3,
+      onboarded: isOnboarded(snap),
+      store: status,
+      notify: notifyReady(),
+      billing: billingPublic(snap),
+    });
+  } catch (err) {
+    const { resolveStoreSource } = await import("../repo/store-source");
+    return json(
+      {
+        ok: false,
+        service: "ochag",
+        error: publicErrorMessage(err, DB_UNAVAILABLE_MSG),
+        store: { source: resolveStoreSource(), ready: false, updatedAt: null, sales: 0 },
+      },
+      503,
+    );
+  }
+}
+
 async function mutate(
   request: Request,
   fn: (snap: Snapshot, actor: ReturnType<typeof actorFrom>) => Snapshot | Promise<Snapshot>,
@@ -138,22 +202,13 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     const path = pathOf(request, splat);
     const url = new URL(request.url);
     const body = await readBody(request);
-    const repo = await getRepo();
-    await ensureEnvBootstrap(repo);
 
     if (method === "GET" && (path === "health" || path === "")) {
-      const status = await repo.status();
-      const snap = await repo.load();
-      return json({
-        ok: true,
-        service: "ochag",
-        stage: 3,
-        onboarded: isOnboarded(snap),
-        store: status,
-        notify: notifyReady(),
-        billing: billingPublic(snap),
-      });
+      return healthResponse();
     }
+
+    const repo = await getRepo();
+    await ensureEnvBootstrap(repo);
 
     if (method === "GET" && path === "billing") {
       return json(billingPublic(await repo.load()));
@@ -187,7 +242,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
         address: String(body.address ?? ""),
       });
       await repo.save(next);
-      const owner = next.users[0]!;
+      const owner = next.users.find((u) => u.role === "owner") ?? next.users.at(-1)!;
       const actor = actorFrom(owner, { userId: owner.id, branchId: next.branches[0]?.id ?? "all" });
       const token = await signActor(actor);
       return json({ token, user: publicActor(actor), state: publicSnapshot(next) });
@@ -217,7 +272,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     }
 
     if (method === "POST" && (path === "auth/login" || path === "auth/pin")) {
-      const snap = await repo.load();
+      const snap = authSnapshot(await repo.load());
       const login = String(body.login ?? body.email ?? "").trim().toLowerCase();
       const password = body.password != null ? String(body.password) : "";
       const pin = body.pin != null ? String(body.pin) : "";
@@ -613,8 +668,11 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
       }
       return json({ error: err.message }, err.status);
     }
-    const message = err instanceof Error ? err.message : "Ошибка контура";
+    if (err instanceof StoreUnavailableError || isDbUnavailableError(err)) {
+      return json({ error: DB_UNAVAILABLE_MSG }, 503);
+    }
+    const message = publicErrorMessage(err);
     await persistOpsLog({ level: "error", event: "api", detail: message, path });
-    return json({ error: message }, 400);
+    return json({ error: message }, isDbUnavailableError(err) ? 503 : 400);
   }
 }

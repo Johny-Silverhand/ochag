@@ -5,9 +5,10 @@
  */
 import { emptySnapshot } from "../data/empty";
 import { normalizeSnapshot } from "../data/normalize";
-import { retainSecrets } from "../data/secrets";
+import { rematerializeSeedSecrets, retainSecrets, SEED_LOGIN_PEERS } from "../data/secrets";
 import { createSeed } from "../data/seed";
 import type { Snapshot } from "../domain/types";
+import { withDbRetry } from "./db-errors";
 import type { OpsRepository, StoreSource } from "./types";
 
 type QuerySql = {
@@ -52,9 +53,9 @@ export function createPostgresRepository(
   let ensured = false;
 
   async function sql(): Promise<QuerySql> {
-    const client = await sqlProvider();
+    const client = await withDbRetry(() => sqlProvider());
     if (!ensured) {
-      await client.query(ENSURE_SQL);
+      await withDbRetry(() => client.query(ENSURE_SQL));
       ensured = true;
     }
     return client;
@@ -62,27 +63,32 @@ export function createPostgresRepository(
 
   async function read(): Promise<{ snap: Snapshot; updatedAt: string | null }> {
     const client = await sql();
-    const rows = await client.query<{ payload: unknown; updated_at: string | Date | null }>(
-      "select payload, updated_at from ops_state where id = $1",
-      [OPS_STATE_ID],
+    const rows = await withDbRetry(() =>
+      client.query<{ payload: unknown; updated_at: string | Date | null }>(
+        "select payload, updated_at from ops_state where id = $1",
+        [OPS_STATE_ID],
+      ),
     );
     const row = rows[0];
     if (!row) return { snap: emptySnapshot(), updatedAt: null };
     const updatedAt =
       row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at ? String(row.updated_at) : null;
-    return { snap: asPayload(row.payload), updatedAt };
+    const snap = rematerializeSeedSecrets(asPayload(row.payload), SEED_LOGIN_PEERS);
+    return { snap, updatedAt };
   }
 
   async function write(snapshot: Snapshot): Promise<Snapshot> {
     const client = await sql();
     const prev = (await read()).snap;
-    const next = retainSecrets(prev, normalizeSnapshot(snapshot));
+    const next = rematerializeSeedSecrets(retainSecrets(prev, normalizeSnapshot(snapshot)), SEED_LOGIN_PEERS);
     const now = new Date().toISOString();
-    await client.query(
-      `insert into ops_state (id, payload, updated_at)
-       values ($1, $2::jsonb, $3::timestamptz)
-       on conflict (id) do update set payload = excluded.payload, updated_at = excluded.updated_at`,
-      [OPS_STATE_ID, toJson(next), now],
+    await withDbRetry(() =>
+      client.query(
+        `insert into ops_state (id, payload, updated_at)
+         values ($1, $2::jsonb, $3::timestamptz)
+         on conflict (id) do update set payload = excluded.payload, updated_at = excluded.updated_at`,
+        [OPS_STATE_ID, toJson(next), now],
+      ),
     );
     return next;
   }
@@ -106,13 +112,17 @@ export function createPostgresRepository(
       return structuredClone(seed);
     },
     async status() {
-      const cur = await read();
-      return {
-        source,
-        ready: true,
-        updatedAt: cur.updatedAt,
-        sales: cur.snap.sales.length,
-      };
+      try {
+        const cur = await read();
+        return {
+          source,
+          ready: true,
+          updatedAt: cur.updatedAt,
+          sales: cur.snap.sales.length,
+        };
+      } catch {
+        return { source, ready: false, updatedAt: null, sales: 0 };
+      }
     },
   };
 }

@@ -8,7 +8,7 @@
  */
 import type { OpsRepository } from "../repo/types.ts";
 import type { Snapshot, StaffUser } from "../domain/types.ts";
-import { rematerializeSeedSecrets } from "./secrets.ts";
+import { rematerializeSeedSecrets, SEED_LOGIN_PEERS } from "./secrets.ts";
 
 export function readBootstrapEnv() {
   const env = typeof process !== "undefined" ? process.env : undefined;
@@ -40,22 +40,6 @@ export function envBootstrapInput() {
 
 export type BootstrapInput = NonNullable<ReturnType<typeof envBootstrapInput>>;
 
-const SEED_SECRET_PEERS: StaffUser[] = [
-  {
-    id: "u-owner",
-    name: "Кирилл Сорокин",
-    email: "owner",
-    password: "ochag",
-    pin: "1001",
-    role: "owner",
-    position: "Собственник",
-    branchId: null,
-    shiftPay: 0,
-    salesPercent: 0,
-    phone: "",
-  },
-];
-
 /** Leftover учебная сеть (seed ids or sampleLoaded) — not a commercial «Создать сеть». */
 export function looksLikeSeedNetwork(snap: Snapshot) {
   return snap.settings.sampleLoaded || snap.users.some((u) => u.id === "u-owner");
@@ -68,7 +52,7 @@ export function repairLegacySnapshot(snap: Snapshot): Snapshot {
     ...snap,
     settings: { ...snap.settings, sampleLoaded: true },
   };
-  return rematerializeSeedSecrets(flagged, SEED_SECRET_PEERS);
+  return rematerializeSeedSecrets(flagged, SEED_LOGIN_PEERS);
 }
 
 function enabledTechAdmins(snap: Snapshot) {
