@@ -89,6 +89,12 @@
   --palette-sidebar-hover: #1f4438;
   color-scheme: light;
 
+  --scene-login-mobile: url("/backgrounds/login-mobile.jpg");
+  --scene-login-desktop: url("/backgrounds/login-desktop.jpg");
+  --scene-app-mobile: url("/backgrounds/app-mobile.jpg");
+  --scene-app-shell: url("/backgrounds/app-shell.jpg");
+  --scene-app-opacity: 0.46;
+
   --color-bg: var(--palette-bg);
   --color-surface: var(--palette-surface);
   --color-elevated: var(--palette-elevated);
@@ -390,6 +396,64 @@ body {
   color: var(--palette-fg);
 }
 
+.dark {
+  --scene-app-opacity: 0.16;
+}
+
+.login-scene {
+  position: relative;
+  isolation: isolate;
+}
+
+.login-scene-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-color: var(--palette-bg);
+  background-image: var(--scene-login-mobile);
+  background-size: cover;
+  background-position: center;
+}
+
+@media (min-width: 1024px) {
+  .login-scene-bg {
+    background-image: var(--scene-login-desktop);
+    background-position: center right;
+  }
+}
+
+.login-card {
+  border-radius: var(--radius-2xl);
+  background: color-mix(in srgb, var(--palette-surface) 88%, transparent);
+  box-shadow: var(--elev-border);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+}
+
+.app-frame {
+  position: relative;
+}
+
+.app-scene {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  grid-column: 1 / -1;
+  grid-row: 1 / -1;
+  background-image: var(--scene-app-mobile);
+  background-size: cover;
+  background-position: center;
+  opacity: var(--scene-app-opacity);
+}
+
+@media (min-width: 768px) {
+  .app-scene {
+    background-image: var(--scene-app-shell);
+  }
+}
+
 @layer base {
   button:not(:disabled),
   [role="button"]:not(:disabled) {
@@ -684,6 +748,10 @@ html.keyboard-open .ios-tabbar {
   body {
     background: white;
     color: black;
+  }
+  .login-scene-bg,
+  .app-scene {
+    display: none;
   }
   .print-page {
     break-after: page;

@@ -62,26 +62,22 @@ function LoginPage() {
   }
 
   return (
-    <main className="max-h-[var(--app-height,100dvh)] min-h-dvh overflow-y-auto scroll-touch bg-bg text-fg lg:max-h-none lg:grid lg:grid-cols-2">
-      <section className="relative hidden flex-col justify-between overflow-hidden bg-sidebar px-12 pt-[max(3rem,env(safe-area-inset-top))] pb-12 text-sidebar-fg lg:flex">
-        <div>
-          <div className="text-xs font-medium tracking-[0.28em] text-sidebar-muted uppercase">{NETWORK_NAME}</div>
+    <main className="login-scene max-h-[var(--app-height,100dvh)] min-h-dvh overflow-y-auto scroll-touch text-fg lg:max-h-none lg:grid lg:grid-cols-2">
+      <div className="login-scene-bg" aria-hidden="true" />
+      <section className="relative z-10 hidden flex-col justify-end overflow-hidden px-12 pt-[max(3rem,env(safe-area-inset-top))] pb-12 lg:flex">
+        <div className="login-card max-w-md px-7 py-7">
+          <div className="text-xs font-medium tracking-[0.28em] text-muted uppercase">{NETWORK_NAME}</div>
           <h1 className="mt-6 max-w-md text-5xl leading-tight font-medium tracking-tight">
             Товароучёт и управление кафе на продажах r_keeper.
           </h1>
-          <p className="mt-5 max-w-md text-sm leading-relaxed text-sidebar-muted">
+          <p className="mt-5 max-w-md text-sm leading-relaxed text-muted">
             Склад, роли, филиалы, смены, банкеты и прибыль. Новый контур — после тарифа. Выданный логин работает сразу.
           </p>
         </div>
-        <img
-          src="/marketing/hero.png"
-          alt="Очаг на планшете в зале кафе"
-          className="mt-8 aspect-video w-full max-w-lg rounded-3xl object-cover"
-        />
       </section>
 
-      <section className="relative flex min-h-dvh flex-col justify-center px-5 pt-[max(2.5rem,env(safe-area-inset-top))] pb-[max(2.5rem,env(safe-area-inset-bottom))] sm:px-10">
-        <div className="mx-auto w-full max-w-md pb-10">
+      <section className="relative z-10 flex min-h-dvh flex-col justify-center px-5 pt-[max(2.5rem,env(safe-area-inset-top))] pb-[max(2.5rem,env(safe-area-inset-bottom))] sm:px-10">
+        <div className="login-card mx-auto w-full max-w-md px-5 py-7 pb-10 sm:px-8">
           <div className="mb-8">
             <div className="text-xs font-medium tracking-[0.28em] text-muted uppercase">{NETWORK_NAME}</div>
             <h1 className="mt-2 text-3xl font-medium tracking-tight lg:hidden">Вход в контур</h1>

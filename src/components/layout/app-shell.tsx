@@ -143,7 +143,8 @@ export function AppShell() {
 
   return (
     <div className="app-frame flex h-[var(--app-height,100dvh)] min-h-0 flex-col overflow-hidden bg-bg text-fg md:grid md:h-dvh md:grid-cols-[240px_1fr]">
-      <aside className="no-print hidden bg-sidebar text-sidebar-fg md:flex md:h-full md:flex-col md:overflow-hidden">
+      <div className="app-scene" aria-hidden="true" />
+      <aside className="no-print relative z-10 hidden bg-sidebar text-sidebar-fg md:col-start-1 md:row-start-1 md:flex md:h-full md:flex-col md:overflow-hidden">
         <div className="flex items-center gap-2.5 px-5 pt-6 pb-5">
           <Mark className="size-9 text-sidebar-fg" />
           <div>
@@ -191,8 +192,8 @@ export function AppShell() {
         </div>
       </aside>
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto scroll-touch pb-[calc(5.25rem+env(safe-area-inset-bottom))] md:h-full md:overflow-hidden md:pb-0">
-        <header className="no-print sticky top-0 z-30 flex items-center gap-2 border-b border-border bg-bg/90 px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 backdrop-blur-md sm:px-6">
+      <div className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto scroll-touch pb-[calc(5.25rem+env(safe-area-inset-bottom))] md:col-start-2 md:row-start-1 md:h-full md:overflow-hidden md:pb-0">
+        <header className="no-print sticky top-0 z-30 flex items-center gap-2 border-b border-border bg-bg/75 px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 backdrop-blur-md sm:px-6">
           <div className="flex items-center gap-2 md:hidden">
             <Mark className="size-8 text-primary" />
             <span className="text-sm font-semibold tracking-wide">{NETWORK_NAME}</span>
