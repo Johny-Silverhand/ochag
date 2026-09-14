@@ -30,13 +30,15 @@ export function canSelfOnboard(snap: Snapshot) {
   return looksLikeSeedNetwork(snap);
 }
 
-/** Drop leftover training rows so «Создать сеть» can replace them. Keep tariff/pay. */
+/** Drop leftover training rows so «Создать сеть» can replace them. Keep tariff/pay and technicians. */
 export function snapshotForCommercialOnboard(snap: Snapshot): Snapshot {
   if (snap.users.length === 0) return snap;
   if (!looksLikeSeedNetwork(snap)) return snap;
   const blank = emptySnapshot();
+  const techs = snap.users.filter((u) => u.role === "tech_admin");
   return {
     ...blank,
+    users: techs,
     settings: {
       ...blank.settings,
       tariff: snap.settings.tariff,

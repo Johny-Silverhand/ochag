@@ -7,9 +7,14 @@ function asSnapshot(value: unknown): Snapshot {
 }
 
 export const getOpsStatus = createServerFn({ method: "GET" }).handler(async () => {
-  const { getRepo } = await import("@/lib/repo");
-  const repo = await getRepo();
-  return repo.status();
+  try {
+    const { getRepo } = await import("@/lib/repo");
+    const repo = await getRepo();
+    return repo.status();
+  } catch {
+    const { resolveStoreSource } = await import("@/lib/repo/store-source");
+    return { source: resolveStoreSource(), ready: false as const, updatedAt: null, sales: 0 };
+  }
 });
 
 export const loadOpsSnapshot = createServerFn({ method: "GET" }).handler(async () => {

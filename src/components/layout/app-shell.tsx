@@ -221,11 +221,13 @@ export function AppShell() {
                 sync.status === "error" ? "bg-danger-soft text-danger" : "bg-surface text-muted",
               )}
               title={
-                sync.source === "neon"
-                  ? "Neon Postgres"
-                  : sync.source === "json"
-                    ? "JSON store"
-                    : "Память / контур"
+                sync.status === "error"
+                  ? sync.error || "База временно недоступна"
+                  : sync.source === "neon"
+                    ? "Neon Postgres"
+                    : sync.source === "json"
+                      ? "JSON store"
+                      : "Память / контур"
               }
             >
               <span
@@ -238,7 +240,11 @@ export function AppShell() {
                       : "bg-success",
                 )}
               />
-              {sync.status === "saving" ? "запись" : sync.status === "error" ? "база" : "база"}
+              {sync.status === "saving"
+                ? "запись"
+                : sync.status === "error"
+                  ? "нет базы"
+                  : "база"}
             </span>
             <ThemeSwitcher />
             <Link

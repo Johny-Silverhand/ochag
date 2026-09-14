@@ -50,7 +50,7 @@ import { normalizeSnapshot } from "./normalize";
 import { dbAdapter } from "./adapter";
 import { getOpsStatus } from "@/lib/data/ops";
 import { useSync } from "./sync";
-import { api, setToken } from "../api/client";
+import { api, fetchStoreHealth, getToken, setToken } from "../api/client";
 import { createSeed, USERS } from "./seed";
 import {
   applyPublicState,
@@ -60,10 +60,16 @@ import {
   matchLocalPin,
 } from "./secrets";
 import { AUTH_BAD_CREDENTIALS_MSG, recordAuthAttempt, resolveStaffAuth } from "../domain/ops-log";
+import {
+  DB_WAIT_MSG,
+  clientErrorMessage,
+  isTransientClientFailure,
+  isUnauthorizedFailure,
+  sleep,
+} from "../repo/db-errors";
+import { keepStoredSession, shouldReplaceSnapshot } from "./session-keep";
 
 export type LoginResult = { ok: true } | { ok: false; reason: string };
-
-const AUTH_KNOWN_FAIL = /неверн|отключена|заблок/i;
 
 interface OpsState extends Snapshot {
   session: Session | null;
@@ -185,18 +191,27 @@ async function applyRemote(path: string, body: unknown, local: (snap: Snapshot, 
     applyingRemote = false;
     return true;
   } catch (err) {
+    if (isUnauthorizedFailure(err)) {
+      setToken(null);
+      useOps.setState((s) => ({ ...s, session: null }));
+      toast.error("Сессия истекла");
+      return false;
+    }
     const s = useOps.getState();
     const actor = actorOf(s);
     if (!actor) {
-      toast.error(err instanceof Error ? err.message : "Нужен вход");
+      toast.error(isTransientClientFailure(err) ? DB_WAIT_MSG : clientErrorMessage(err, "Нужен вход"));
       return false;
+    }
+    if (isTransientClientFailure(err)) {
+      toast.error(DB_WAIT_MSG);
     }
     try {
       const next = local(snapshotOf(s), actor);
       useOps.setState({ ...next });
       return true;
     } catch (localErr) {
-      toast.error(localErr instanceof Error ? localErr.message : err instanceof Error ? err.message : "Операция отклонена");
+      toast.error(localErr instanceof Error ? localErr.message : clientErrorMessage(err, "Операция отклонена"));
       return false;
     }
   }
@@ -287,8 +302,16 @@ export const useOps = create<OpsState>()(
           applyingRemote = false;
           return { ok: true };
         } catch (err) {
-          const msg = err instanceof Error ? err.message : "";
-          if (AUTH_KNOWN_FAIL.test(msg)) return { ok: false, reason: msg || AUTH_BAD_CREDENTIALS_MSG };
+          if (isTransientClientFailure(err)) {
+            return { ok: false, reason: DB_WAIT_MSG };
+          }
+          const msg = clientErrorMessage(err);
+          if (/отключена|заблок/i.test(msg)) {
+            return { ok: false, reason: msg };
+          }
+          if (!isUnauthorizedFailure(err) && !/неверн/i.test(msg)) {
+            return { ok: false, reason: msg };
+          }
           const { snap, user } = matchLocalPassword(snapshotOf(get()), email, password, USERS);
           const verdict = resolveStaffAuth({ user, credentialsOk: Boolean(user) });
           const logged = recordAuthAttempt(snap, {
@@ -325,8 +348,16 @@ export const useOps = create<OpsState>()(
           applyingRemote = false;
           return { ok: true };
         } catch (err) {
-          const msg = err instanceof Error ? err.message : "";
-          if (AUTH_KNOWN_FAIL.test(msg)) return { ok: false, reason: msg || AUTH_BAD_CREDENTIALS_MSG };
+          if (isTransientClientFailure(err)) {
+            return { ok: false, reason: DB_WAIT_MSG };
+          }
+          const msg = clientErrorMessage(err);
+          if (/отключена|заблок/i.test(msg)) {
+            return { ok: false, reason: msg };
+          }
+          if (!isUnauthorizedFailure(err) && !/неверн/i.test(msg)) {
+            return { ok: false, reason: msg };
+          }
           const { snap, user } = matchLocalPin(snapshotOf(get()), email, pin, USERS);
           const verdict = resolveStaffAuth({ user, credentialsOk: Boolean(user) });
           const logged = recordAuthAttempt(snap, {
@@ -533,7 +564,7 @@ export const useOps = create<OpsState>()(
           set({ ...applyIncoming(get(), res.state), session });
           applyingRemote = false;
         } catch (err) {
-          toast.error(err instanceof Error ? err.message : "Очередь не отправлена");
+          toast.error(clientErrorMessage(err, "Очередь не отправлена"));
         }
       },
 
@@ -557,7 +588,7 @@ export const useOps = create<OpsState>()(
           applyingRemote = false;
           return true;
         } catch (err) {
-          toast.error(err instanceof Error ? err.message : "Не удалось зафиксировать тариф");
+          toast.error(clientErrorMessage(err, "Не удалось зафиксировать тариф"));
           return false;
         }
       },
@@ -576,7 +607,9 @@ export const useOps = create<OpsState>()(
           applyingRemote = false;
           return { ok: true as const };
         } catch (err) {
-          return { ok: false as const, reason: err instanceof Error ? err.message : "Не удалось создать сеть" };
+          const reason = clientErrorMessage(err, "Не удалось создать сеть");
+          toast.error(reason);
+          return { ok: false as const, reason };
         }
       },
     }),
@@ -626,35 +659,73 @@ export function useHydrated() {
         ]);
       }
       try {
-        const snap = await dbAdapter.load();
+        let snap = await dbAdapter.load();
         if (cancelled) return;
+        const prev = useOps.getState();
+        const hadSession = Boolean(prev.session) || Boolean(getToken());
+        if (hadSession && snap.users.length === 0) {
+          await sleep(1000);
+          try {
+            snap = await dbAdapter.load();
+          } catch (retryErr) {
+            if (isUnauthorizedFailure(retryErr)) throw retryErr;
+          }
+        }
         applyingRemote = true;
         useOps.setState((s) => {
-          const merged = applyIncoming(s, snap);
-          const session =
-            s.session && merged.users.some((u) => u.id === s.session?.userId) ? s.session : null;
-          return { ...s, ...merged, session };
+          const incoming = shouldReplaceSnapshot(s, snap) ? snap : snapshotOf(s);
+          const merged = applyIncoming(s, incoming);
+          return { ...s, ...merged, session: keepStoredSession(s.session, merged) };
         });
         applyingRemote = false;
+        const live = useOps.getState();
         try {
           const meta = await getOpsStatus();
           if (!cancelled) {
             useSync.getState().setMeta({
               source: meta.source,
               updatedAt: meta.updatedAt,
-              sales: meta.sales || snap.sales.length,
+              sales: meta.sales || live.sales.length,
             });
+            if (meta.ready === false) {
+              const health = await fetchStoreHealth().catch(() => null);
+              const message = health?.error || DB_WAIT_MSG;
+              useSync.getState().setError(message);
+              toast.error(message);
+            }
           }
         } catch {
-          useSync.getState().setMeta({
-            source: "memory",
-            updatedAt: new Date().toISOString(),
-            sales: snap.sales.length,
-          });
+          const health = await fetchStoreHealth().catch(() => null);
+          if (health && health.store?.ready === false) {
+            useSync.getState().setError(health.error || DB_WAIT_MSG);
+            toast.error(health.error || DB_WAIT_MSG);
+          } else if (hadSession && live.users.length === 0) {
+            useSync.getState().setError(DB_WAIT_MSG);
+            toast.error(DB_WAIT_MSG);
+          } else {
+            useSync.getState().setMeta({
+              source: "memory",
+              updatedAt: new Date().toISOString(),
+              sales: live.sales.length,
+            });
+          }
+        }
+        if (!cancelled && hadSession && live.users.length === 0 && useSync.getState().status !== "error") {
+          useSync.getState().setError(DB_WAIT_MSG);
+          toast.error(DB_WAIT_MSG);
         }
       } catch (err) {
         applyingRemote = false;
-        useSync.getState().setError(err instanceof Error ? err.message : "База недоступна");
+        if (isUnauthorizedFailure(err)) {
+          setToken(null);
+          useOps.setState((s) => ({ ...s, session: null }));
+          useSync.getState().setError("Сессия истекла");
+          toast.error("Сессия истекла");
+        } else {
+          const msg = clientErrorMessage(err, DB_WAIT_MSG);
+          useSync.getState().setError(msg);
+          toast.error(msg);
+        }
       } finally {
         bootDone = true;
         if (!cancelled) setOk(true);

@@ -21,7 +21,10 @@ export function getRepo(): Promise<OpsRepository> {
       return createPostgresRepository("neon");
     }
     return createMemoryRepository();
-  })();
+  })().catch((err) => {
+    globalRef.__ochagRepo__ = undefined;
+    throw err;
+  });
   return globalRef.__ochagRepo__;
 }
 

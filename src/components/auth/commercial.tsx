@@ -65,7 +65,7 @@ export function CommercialGate({
           Создать сеть
         </Button>
       ) : null}
-      {paidTariff && !onboarded ? (
+      {canCreateNetwork && paidTariff ? (
         <p className="text-xs text-muted">
           Тариф «{tariffById(paidTariff).name}» зафиксирован. Осталось создать сеть.
         </p>
@@ -135,7 +135,7 @@ export function CommercialGate({
           {flow === "onboard" ? (
             <OnboardStep
               submit={onboardNetwork}
-              onBack={() => setFlow("plans")}
+              onBack={() => setFlow(canCreateNetwork ? null : "plans")}
               onDone={() => setFlow(null)}
             />
           ) : null}

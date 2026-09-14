@@ -90,6 +90,18 @@ describe("postgres repository", () => {
     assert.equal(again.users.find((u) => u.email === "owner")?.password, "ochag");
   });
 
+  it("reports ready:false when the database probe fails", async () => {
+    const query = async () => {
+      throw Object.assign(new Error("connect ETIMEDOUT"), { code: "ETIMEDOUT" });
+    };
+    const tagged = (async () => []) as unknown as Sql;
+    tagged.query = query;
+    const repo = createPostgresRepository("neon", async () => tagged);
+    const status = await repo.status();
+    assert.equal(status.ready, false);
+    assert.equal(status.source, "neon");
+  });
+
   it("does not let a blank public snapshot wipe stored secrets", async () => {
     const shared = fakeSql();
     const repo = createPostgresRepository("neon", async () => shared);

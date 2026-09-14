@@ -84,7 +84,36 @@ describe("rematerializeSeedSecrets", () => {
     assert.equal(out.users[0]?.pin, "1001");
   });
 
-  it("leaves a non-sample network alone", () => {
+  it("restores tech_admin seed credentials by id even if sampleLoaded is lost", () => {
+    const tech: StaffUser = {
+      id: "u-tech",
+      name: "Виктор Мост",
+      email: "admin",
+      password: "",
+      pin: "",
+      role: "tech_admin",
+      position: "Администратор-техник",
+      branchId: null,
+      shiftPay: 0,
+      salesPercent: 0,
+      phone: "",
+    };
+    const stripped = snap([tech], false);
+    const out = rematerializeSeedSecrets(stripped, [
+      { ...tech, password: "ochag", pin: "0001" },
+      owner,
+    ]);
+    assert.equal(out.users[0]?.password, "ochag");
+    assert.equal(out.users[0]?.pin, "0001");
+    const byPassword = matchLocalPassword(stripped, "admin", "ochag", [
+      { ...tech, password: "ochag", pin: "0001" },
+      owner,
+    ]);
+    assert.ok(byPassword.user);
+    assert.equal(byPassword.user?.email, "admin");
+  });
+
+  it("leaves a non-sample commercial owner alone", () => {
     const custom = snap(
       [
         {
@@ -100,6 +129,32 @@ describe("rematerializeSeedSecrets", () => {
     const out = rematerializeSeedSecrets(custom, seedUsers);
     assert.equal(out.users[0]?.password, "");
     assert.equal(out.users[0]?.email, "boss");
+  });
+
+  it("restores a blank tech_admin by email even when the id is u-boot-*", () => {
+    const boot: StaffUser = {
+      id: "u-boot-admin",
+      name: "Администратор-техник",
+      email: "admin",
+      password: "",
+      pin: "",
+      role: "tech_admin",
+      position: "Администратор-техник",
+      branchId: null,
+      shiftPay: 0,
+      salesPercent: 0,
+      phone: "",
+    };
+    const seedTech: StaffUser = {
+      ...boot,
+      id: "u-tech",
+      password: "ochag",
+      pin: "0001",
+    };
+    const out = rematerializeSeedSecrets(snap([boot], false), [seedTech, owner]);
+    assert.equal(out.users[0]?.password, "ochag");
+    assert.equal(out.users[0]?.pin, "0001");
+    assert.equal(out.users[0]?.id, "u-boot-admin");
   });
 });
 

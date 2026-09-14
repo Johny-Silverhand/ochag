@@ -17,6 +17,36 @@ function findPeer(users: StaffUser[], user: StaffUser) {
   return users.find((p) => p.id === user.id) ?? users.find((p) => sameLogin(p.email, user.email));
 }
 
+/** Seed logins that publicSnapshot may blank. Never used to overwrite a live custom password. */
+export const SEED_LOGIN_PEERS: StaffUser[] = [
+  {
+    id: "u-tech",
+    name: "Виктор Мост",
+    email: "admin",
+    password: "ochag",
+    pin: "0001",
+    role: "tech_admin",
+    position: "Администратор-техник",
+    branchId: null,
+    shiftPay: 0,
+    salesPercent: 0,
+    phone: "+7 918 000-00-00",
+  },
+  {
+    id: "u-owner",
+    name: "Кирилл Сорокин",
+    email: "owner",
+    password: "ochag",
+    pin: "1001",
+    role: "owner",
+    position: "Собственник",
+    branchId: null,
+    shiftPay: 0,
+    salesPercent: 0,
+    phone: "+7 918 000-00-01",
+  },
+];
+
 /** Client/API payloads strip password and PIN. Never let a blank overwrite a live secret. */
 export function retainSecrets(prev: Snapshot, next: Snapshot): Snapshot {
   return {
@@ -29,13 +59,28 @@ export function hasBlankSecrets(snap: Snapshot): boolean {
   return snap.users.some((u) => !u.password || !u.pin);
 }
 
-/** When sampleLoaded but publicSnapshot wiped pin/password, restore from seed users by id/email. */
+/**
+ * Restore blank PIN/password from seed peers.
+ * Known seed ids (u-tech, u-owner) heal even if sampleLoaded was lost.
+ * Blank tech_admin rows also match seed tech by email (u-boot-* after env bootstrap).
+ * Other email matching stays sample-only so a commercial «owner» login is not overwritten.
+ */
 export function rematerializeSeedSecrets(snap: Snapshot, seedUsers: StaffUser[]): Snapshot {
-  if (!snap.settings?.sampleLoaded) return snap;
   if (!hasBlankSecrets(snap)) return snap;
+  const sample = Boolean(snap.settings?.sampleLoaded);
   return {
     ...snap,
-    users: snap.users.map((u) => withKeptSecret(u, findPeer(seedUsers, u))),
+    users: snap.users.map((u) => {
+      if (u.password && u.pin) return u;
+      const byId = seedUsers.find((p) => p.id === u.id);
+      if (byId) return withKeptSecret(u, byId);
+      if (u.role === "tech_admin") {
+        const byEmail = seedUsers.find((p) => p.role === "tech_admin" && sameLogin(p.email, u.email));
+        if (byEmail) return withKeptSecret(u, byEmail);
+      }
+      if (!sample) return u;
+      return withKeptSecret(u, findPeer(seedUsers, u));
+    }),
   };
 }
 
