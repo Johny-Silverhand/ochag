@@ -621,62 +621,7 @@ function canSeeAllBranchesSafe(actor: Actor) {
   return canSeeAllBranches(actor.role);
 }
 
-export function applyOnboard(
-  snap: Snapshot,
-  input: {
-    ownerName: string;
-    login: string;
-    password: string;
-    pin: string;
-    branchName: string;
-    city: string;
-    address: string;
-  },
-): Snapshot {
-  const techs = snap.users.filter((u) => u.role === "tech_admin");
-  const others = snap.users.filter((u) => u.role !== "tech_admin");
-  if (others.length > 0) throw new AuthzError("Сеть уже создана", 400);
-  const login = input.login.trim().toLowerCase();
-  if (techs.some((u) => u.email.trim().toLowerCase() === login)) {
-    throw new AuthzError("Этот логин уже занят", 400);
-  }
-  if (!login || input.password.length < 4 || !/^\d{4}$/.test(input.pin)) {
-    throw new AuthzError("Логин, пароль (от 4 знаков) и PIN из 4 цифр обязательны", 400);
-  }
-  const branchId = uid("br");
-  const userId = uid("u");
-  return {
-    ...snap,
-    branches: [
-      {
-        id: branchId,
-        name: input.branchName.trim() || "Филиал 1",
-        short: (input.branchName.trim() || "Филиал").slice(0, 16),
-        city: input.city.trim() || "—",
-        address: input.address.trim() || "—",
-        seats: 40,
-        phone: "",
-      },
-    ],
-    users: [
-      ...techs,
-      {
-        id: userId,
-        name: input.ownerName.trim() || "Владелец",
-        email: login,
-        password: input.password,
-        pin: input.pin,
-        role: "owner",
-        position: "Собственник",
-        branchId: null,
-        shiftPay: 0,
-        salesPercent: 0,
-        phone: "",
-        disabled: false,
-      },
-    ],
-  };
-}
+export { applyOnboard } from "./onboard.ts";
 
 export function applyBootstrap(
   snap: Snapshot,

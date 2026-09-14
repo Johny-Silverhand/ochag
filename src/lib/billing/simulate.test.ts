@@ -201,4 +201,53 @@ describe("billing simulation", () => {
     assert.equal(same.users[0]?.email, "maria");
     assert.equal(showCommercialEntry(live), false);
   });
+
+  it("keeps Создать сеть when a technician is already in the store", () => {
+    const paid = applySimulatePayment(blank(), "mid");
+    paid.users = [
+      {
+        id: "u-tech",
+        name: "Виктор",
+        email: "admin",
+        password: "secret",
+        pin: "0001",
+        role: "tech_admin",
+        position: "Администратор-техник",
+        branchId: null,
+        shiftPay: 0,
+        salesPercent: 0,
+        phone: "",
+      },
+      {
+        id: "u-cafe",
+        name: "Мария",
+        email: "maria",
+        password: "cafe",
+        pin: "2002",
+        role: "owner",
+        position: "Собственник",
+        branchId: "br-1",
+        shiftPay: 0,
+        salesPercent: 0,
+        phone: "",
+      },
+    ];
+    paid.branches = [
+      {
+        id: "br-1",
+        name: "Центр",
+        short: "Центр",
+        city: "Краснодар",
+        address: "—",
+        seats: 40,
+        phone: "",
+      },
+    ];
+    assert.equal(showCommercialEntry(paid), true);
+    assert.equal(canSelfOnboard(paid), true);
+    const same = snapshotForCommercialOnboard(paid);
+    assert.equal(same.users.length, 2);
+    assert.equal(same.users.find((u) => u.role === "tech_admin")?.password, "secret");
+    assert.equal(same.users.find((u) => u.email === "maria")?.email, "maria");
+  });
 });
