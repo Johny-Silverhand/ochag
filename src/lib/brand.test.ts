@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { LOGIN_INTRO, VENDOR_LINE } from "./brand.ts";
+import { LOGIN_INTRO, VENDOR_LINE, VENDOR_URL } from "./brand.ts";
 
 describe("login intro copy", () => {
   it("keeps the polished product line from the login screen", () => {
@@ -11,6 +11,7 @@ describe("login intro copy", () => {
 
   it("names Arach.tech only as the vendor line", () => {
     assert.equal(VENDOR_LINE, "Разработано Arach.tech");
+    assert.equal(VENDOR_URL, "https://arach.tech");
     assert.equal(VENDOR_LINE.includes("Victimok"), false);
   });
 });

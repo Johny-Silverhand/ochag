@@ -7,6 +7,7 @@ export const LOGIN_INTRO =
   "Контур склада, смен и прибыли для кафе и ресторана. Свой логин — форма ниже; если открываете сеть впервые, загляните в «Что это?».";
 export const VENDOR_NAME = "Arach.tech";
 export const VENDOR_LINE = "Разработано Arach.tech";
+export const VENDOR_URL = "https://arach.tech";
 export const LABS_NAME = VENDOR_NAME;
 export const LABS_LINE = VENDOR_LINE;
 export const LABS_RIGHTS = "Все права защищены";
