@@ -13,7 +13,6 @@ import { canCreateSale, canImportKeeper } from "@/lib/domain/permissions";
 import { filterByBranch, filterPeriod, openShiftFor, periodStart, salePayments, topDishes } from "@/lib/domain/engine";
 import { PAYMENT_LABEL, today, type PaymentType, type Period, type SaleItem } from "@/lib/domain/types";
 import { pct, ruDateTime, rub } from "@/lib/format";
-import { demoKeeperZReport, mapKeeperReceipts } from "@/lib/integrations/keeper";
 import { SAMPLE_KEEPER_XML } from "@/lib/integrations/keeper-xml";
 import { isStopped } from "@/lib/domain/stoplist";
 import { isWriteScope, WRITE_SCOPE_HINT } from "@/lib/ui/scope";
@@ -27,8 +26,8 @@ function SalesPage() {
   const period = useOps((s) => s.period);
   const setPeriod = useOps((s) => s.setPeriod);
   const user = useSessionUser()!;
-  const importKeeperSales = useOps((s) => s.importKeeperSales);
   const importKeeperXml = useOps((s) => s.importKeeperXml);
+  const pullKeeperSales = useOps((s) => s.pullKeeperSales);
   const addManualSale = useOps((s) => s.addManualSale);
   const ownSalesOnly = usePrefs((s) => s.waiterOwnSalesOnly);
   const scope = session.branchId;
@@ -86,18 +85,21 @@ function SalesPage() {
                       toast.error("Откройте смену, затем импортируйте отчёт кипера");
                       return;
                     }
-                    const mapped = mapKeeperReceipts(demoKeeperZReport(), snap.recipes, session.userId);
-                    const n = importKeeperSales(mapped);
-                    toast.success(`Забрано ${n} чеков из Z-отчёта`);
+                    void pullKeeperSales()
+                      .then((n) => toast.success(n ? `Забрано ${n} чеков с кассы` : "Новых чеков нет"))
+                      .catch((err: unknown) =>
+                        toast.error(err instanceof Error ? err.message : "Касса недоступна. Загрузите XML-файл."),
+                      );
                   }}
                 >
-                  Z-отчёт
+                  Забрать с кассы
                 </Button>
                 <KeeperXmlDialog
                   disabled={!open || !canWrite}
-                  onImport={(xml) => {
-                    importKeeperXml(xml);
-                    toast.success("XML кипера разобран и проведён");
+                  onImport={async (xml) => {
+                    const n = await importKeeperXml(xml);
+                    toast.success(n ? `Проведено ${n} чеков из XML` : "Новых чеков нет — возможно, эта выгрузка уже загружена");
+                    return n;
                   }}
                 />
               </>
@@ -124,7 +126,8 @@ function SalesPage() {
       {scope === "all" ? <p className="mb-3 text-xs text-muted">{WRITE_SCOPE_HINT}</p> : null}
       {canWrite && snap.settings.keeperCashLink ? (
         <p className="mb-3 text-xs text-muted">
-          Кассовая связь с кипером включена — ручной чек закрыт. Z-отчёт и XML остаются.
+          Кассовая связь с кипером включена — ручной чек закрыт. Импорт XML и «Забрать с кассы» остаются. Инструкция — в
+          разделе Интеграции.
         </p>
       ) : null}
 
@@ -279,33 +282,75 @@ function ManualSaleDialog({
   );
 }
 
-function KeeperXmlDialog({ disabled, onImport }: { disabled: boolean; onImport: (xml: string) => void }) {
+function KeeperXmlDialog({
+  disabled,
+  onImport,
+}: {
+  disabled: boolean;
+  onImport: (xml: string) => Promise<number>;
+}) {
   const [open, setOpen] = useState(false);
-  const [xml, setXml] = useState(SAMPLE_KEEPER_XML);
+  const [xml, setXml] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  function onFile(file: File | undefined) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setXml(String(reader.result ?? ""));
+    reader.readAsText(file);
+  }
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="secondary" disabled={disabled}>
-          XML кипера
+          Загрузить XML
         </Button>
       </DialogTrigger>
-      <DialogContent title="Заглушка r_keeper XML">
+      <DialogContent title="Импорт r_keeper XML" className="max-h-[min(86dvh,40rem)] overflow-y-auto">
         <div className="space-y-3">
-          <p className="text-sm text-muted">
-            Живой RK7 не подключаем. Сюда кладётся выгрузка чеков — парсер понимает Receipt/Item.
+          <ol className="list-decimal space-y-1 pl-4 text-sm text-muted">
+            <li>На кассе выгрузите Z-отчёт или чеки смены в XML (UTF-8).</li>
+            <li>В Очаге выберите филиал и откройте смену.</li>
+            <li>Загрузите файл или вставьте текст и нажмите «Провести».</li>
+            <li>Сверьте сумму на этом экране с Z-отчётом. Повтор той же выгрузки не дублирует чеки.</li>
+          </ol>
+          <p className="text-xs text-muted">
+            Понимаем Receipt/Item, Check/Dish и Order. Живой HTTP с облака часто не достаёт кассу в зале — тогда только
+            файл. Подробности: Интеграции → Кипер.
           </p>
-          <Field label="XML">
+          <Field label="Файл .xml">
+            <Input
+              type="file"
+              accept=".xml,text/xml,application/xml"
+              onChange={(e) => onFile(e.target.files?.[0])}
+            />
+          </Field>
+          <Field label="Или текст XML">
             <Textarea value={xml} onChange={(e) => setXml(e.target.value)} rows={8} className="font-mono text-xs" />
           </Field>
-          <Button
-            className="w-full"
-            onClick={() => {
-              onImport(xml);
-              setOpen(false);
-            }}
-          >
-            Провести XML
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="ghost"
+              type="button"
+              onClick={() => setXml(SAMPLE_KEEPER_XML)}
+            >
+              Подставить пример
+            </Button>
+            <Button
+              className="flex-1"
+              disabled={busy || !xml.trim()}
+              onClick={() => {
+                setBusy(true);
+                void onImport(xml)
+                  .then(() => setOpen(false))
+                  .catch((err: unknown) => toast.error(err instanceof Error ? err.message : "Не удалось провести XML"))
+                  .finally(() => setBusy(false));
+              }}
+            >
+              {busy ? "Проводим…" : "Провести XML"}
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

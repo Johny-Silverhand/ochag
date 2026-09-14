@@ -596,7 +596,8 @@ function WorkspacePanel({ role }: { role: Role }) {
       <Card>
         <h2 className="text-sm font-medium tracking-tight">Касса и кипер</h2>
         <p className="mt-1 text-sm text-muted">
-          Если связь с кипером включена, ручной чек закрыт. Z-отчёт и XML остаются. По умолчанию связь включена — так безопаснее в зале.
+          Если связь с кипером включена, ручной чек закрыт. Импорт XML и забор с кассы остаются. Как подключить r_keeper —
+          в разделе Интеграции.
         </p>
         <div className="mt-3 divide-y divide-border">
           <PrefRow title="Кассовая связь с кипером" hint="Выключите, только если зал бьёт чеки вручную.">

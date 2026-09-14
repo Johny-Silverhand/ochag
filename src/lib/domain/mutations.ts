@@ -390,7 +390,7 @@ export function applyKeeperSales(
   assertBranchScope(actor, branchId);
   assertPeriodOpen(snap, branchId, today());
   const shift = openShiftFor(snap.shifts, branchId);
-  if (!shift) return { snap, added: 0 };
+  if (!shift) throw new AuthzError("Откройте смену, затем импортируйте отчёт кипера");
   let stock = snap.stock;
   const movs = [];
   const newSales: Sale[] = [];

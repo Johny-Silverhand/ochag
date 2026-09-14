@@ -1,18 +1,25 @@
 /**
- * Коннектор r_keeper: Z-отчёт → чеки и списание по техкартам.
+ * Коннектор r_keeper: Z-отчёт / XML → чеки и списание по техкартам.
+ * HTTP-вызов живёт в keeper-http.ts (только сервер): отсюда не тянуть Node APIs.
  */
 import type { PaymentType, Recipe } from "../domain/types";
 
 export interface KeeperConfig {
   baseUrl: string;
   terminalId: string;
+  user: string;
+  passwordSet: boolean;
   enabled: boolean;
+  querySet: boolean;
 }
 
 export const defaultKeeperConfig: KeeperConfig = {
-  baseUrl: "https://keeper.local/api",
+  baseUrl: "",
   terminalId: "POS-01",
+  user: "",
+  passwordSet: false,
   enabled: false,
+  querySet: false,
 };
 
 export interface KeeperLine {
@@ -36,9 +43,7 @@ export function demoKeeperZReport(): KeeperReceipt[] {
       datetime: new Date().toISOString(),
       sum: 1380,
       payType: "card",
-      items: [
-        { name: "Шашлык из свинины", qty: 2, sum: 1380 },
-      ],
+      items: [{ name: "Шашлык из свинины", qty: 2, sum: 1380 }],
     },
     {
       number: "K-9002",
@@ -55,15 +60,32 @@ export function demoKeeperZReport(): KeeperReceipt[] {
   ];
 }
 
+function normalizeName(name: string) {
+  return name.trim().toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ");
+}
+
+export function matchRecipe(recipes: Recipe[], name: string): Recipe | undefined {
+  const n = normalizeName(name);
+  if (!n) return undefined;
+  return (
+    recipes.find((x) => normalizeName(x.name) === n) ??
+    recipes.find((x) => {
+      const rn = normalizeName(x.name);
+      return rn.includes(n) || n.includes(rn);
+    })
+  );
+}
+
 export function mapKeeperReceipts(receipts: KeeperReceipt[], recipes: Recipe[], waiterId: string) {
   return receipts.map((r) => {
     const items = r.items.map((line) => {
-      const recipe = recipes.find((x) => x.name.toLowerCase() === line.name.toLowerCase());
+      const recipe = matchRecipe(recipes, line.name);
+      const qty = line.qty > 0 ? line.qty : 1;
       return {
-        recipeId: recipe?.id ?? "rcp-pork",
+        recipeId: recipe?.id ?? "",
         name: line.name,
-        qty: line.qty,
-        price: recipe?.price ?? Math.round(line.sum / line.qty),
+        qty,
+        price: recipe?.price ?? Math.round(line.sum / qty),
         sum: line.sum,
       };
     });
@@ -75,11 +97,7 @@ export function mapKeeperReceipts(receipts: KeeperReceipt[], recipes: Recipe[], 
       total: r.sum,
       waiterId,
       source: "keeper" as const,
+      number: r.number,
     };
   });
-}
-
-export async function fetchKeeperZReport(_cfg: KeeperConfig): Promise<KeeperReceipt[]> {
-  // Real integration: GET `${cfg.baseUrl}/zreport?terminal=${cfg.terminalId}`
-  return demoKeeperZReport();
 }
