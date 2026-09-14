@@ -85,13 +85,18 @@ async function requireActor(request: Request) {
 }
 
 async function mutate(request: Request, fn: (snap: Snapshot, actor: ReturnType<typeof actorFrom>) => Snapshot | Promise<Snapshot>) {
-  const actor = await requireActor(request);
-  const repo = await getRepo();
-  const snap = await repo.load();
-  let next = await fn(snap, actor);
-  next = await flushOutbox(next);
-  await repo.save(next);
-  return json({ ok: true, state: publicSnapshot(next) });
+  try {
+    const actor = await requireActor(request);
+    const repo = await getRepo();
+    const snap = await repo.load();
+    let next = await fn(snap, actor);
+    next = await flushOutbox(next);
+    await repo.save(next);
+    return json({ ok: true, state: publicSnapshot(next) });
+  } catch (err) {
+    if (err instanceof AuthzError) return json({ error: err.message }, err.status);
+    throw err;
+  }
 }
 
 export async function handleApiRequest(request: Request, splat?: string): Promise<Response> {
