@@ -471,7 +471,7 @@ body {
   opacity: var(--scene-app-opacity);
 }
 
-@media (min-width: 768px) {
+@media (min-width: 1024px) {
   .app-scene {
     background-image: var(--scene-app-shell);
     background-position: center center;

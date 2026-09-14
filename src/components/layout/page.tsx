@@ -13,7 +13,7 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <div className="mb-[var(--page-pad-y)] flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <div className="mb-[var(--page-pad-y)] flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
       <div className="min-w-0">
         {eyebrow ? (
           <div className="mb-1 text-xs font-medium tracking-[0.16em] text-muted uppercase">{eyebrow}</div>
@@ -21,7 +21,7 @@ export function PageHeader({
         <h1 className="page-title font-medium tracking-tight text-fg">{title}</h1>
         {description ? <p className="mt-1 max-w-2xl text-pretty text-sm text-muted">{description}</p> : null}
       </div>
-      {actions ? <div className="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">{actions}</div> : null}
+      {actions ? <div className="flex min-w-0 flex-wrap items-center gap-2 md:justify-end">{actions}</div> : null}
     </div>
   );
 }

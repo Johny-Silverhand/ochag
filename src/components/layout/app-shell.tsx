@@ -142,9 +142,9 @@ export function AppShell() {
   const sync = useSync();
 
   return (
-    <div className="app-frame flex h-[var(--app-height,100dvh)] min-h-0 flex-col overflow-hidden bg-bg text-fg md:grid md:h-dvh md:grid-cols-[var(--shell-sidebar)_minmax(0,1fr)]">
+    <div className="app-frame flex h-[var(--app-height,100dvh)] min-h-0 flex-col overflow-hidden bg-bg text-fg lg:grid lg:h-dvh lg:grid-cols-[var(--shell-sidebar)_minmax(0,1fr)]">
       <div className="app-scene" aria-hidden="true" />
-      <aside className="no-print relative z-10 hidden bg-sidebar text-sidebar-fg md:col-start-1 md:row-start-1 md:flex md:h-full md:flex-col md:overflow-hidden">
+      <aside className="no-print relative z-10 hidden bg-sidebar text-sidebar-fg lg:col-start-1 lg:row-start-1 lg:flex lg:h-full lg:flex-col lg:overflow-hidden">
         <div className="flex items-center gap-2.5 px-5 pt-6 pb-5">
           <Mark className="size-9 text-sidebar-fg" />
           <div>
@@ -192,9 +192,9 @@ export function AppShell() {
         </div>
       </aside>
 
-      <div className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto scroll-touch pb-[calc(5.25rem+env(safe-area-inset-bottom))] md:col-start-2 md:row-start-1 md:h-full md:overflow-hidden md:pb-0">
+      <div className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto scroll-touch pb-[calc(5.25rem+env(safe-area-inset-bottom))] lg:col-start-2 lg:row-start-1 lg:h-full lg:overflow-hidden lg:pb-0">
         <header className="no-print sticky top-0 z-30 flex min-w-0 items-center gap-2 border-b border-border bg-bg/75 px-[var(--page-pad-x)] pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 backdrop-blur-md">
-          <div className="flex min-w-0 items-center gap-2 md:hidden">
+          <div className="flex min-w-0 items-center gap-2 lg:hidden">
             <Mark className="size-8 shrink-0 text-primary" />
             <span className="truncate text-sm font-semibold tracking-wide">{NETWORK_NAME}</span>
           </div>
@@ -253,7 +253,7 @@ export function AppShell() {
             </Link>
           </div>
         </header>
-        <main className="mx-auto flex w-full min-w-0 max-w-6xl flex-1 flex-col px-[var(--page-pad-x)] py-[var(--page-pad-y)] md:min-h-0 md:overflow-y-auto md:scroll-touch">
+        <main className="mx-auto flex w-full min-w-0 max-w-6xl flex-1 flex-col px-[var(--page-pad-x)] py-[var(--page-pad-y)] lg:min-h-0 lg:overflow-y-auto lg:scroll-touch">
           <div key={pathname} className="route-enter flex-1">
             {current && !can(role, current.module) ? (
               <p className="text-sm text-muted">Раздел закрыт для вашей роли. Прямой адрес не открывает чужие модули.</p>
@@ -264,7 +264,7 @@ export function AppShell() {
         </main>
       </div>
 
-      <div className={cn("fixed inset-0 z-50 md:hidden", moreOpen ? "pointer-events-auto" : "pointer-events-none")}>
+      <div className={cn("fixed inset-0 z-50 lg:hidden", moreOpen ? "pointer-events-auto" : "pointer-events-none")}>
         <button
           type="button"
           className={cn("sheet-backdrop absolute inset-0 bg-fg/40", moreOpen ? "opacity-100" : "opacity-0")}
@@ -302,7 +302,7 @@ export function AppShell() {
       </div>
 
       <nav
-        className="ios-tabbar no-print fixed inset-x-0 bottom-0 z-40 grid border-t border-border bg-elevated/95 backdrop-blur-md md:hidden"
+        className="ios-tabbar no-print fixed inset-x-0 bottom-0 z-40 grid border-t border-border bg-elevated/95 backdrop-blur-md lg:hidden"
         style={{ gridTemplateColumns: `repeat(${primary.length + 1}, minmax(0, 1fr))` }}
       >
         {primary.map((item) => {
