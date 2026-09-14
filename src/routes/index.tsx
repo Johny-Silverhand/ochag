@@ -84,8 +84,9 @@ function LoginPage() {
             <div className="text-xs font-medium tracking-[0.28em] text-muted uppercase">{NETWORK_NAME}</div>
             <h1 className="mt-2 text-3xl font-medium tracking-tight lg:hidden">Вход в контур</h1>
             <h2 className="mt-2 hidden text-3xl font-medium tracking-tight lg:block">Вход</h2>
-            <p className="mt-2 text-sm text-muted">
-              Новый объект — тариф и «Создать сеть». Сотрудник с выданной учёткой — логин ниже.
+            <p className="mt-2 text-sm leading-relaxed text-muted">
+              Контур склада, смен и прибыли для кафе и ресторана. Свой логин — форма ниже; если открываете сеть
+              впервые, загляните в «Что это?».
             </p>
           </div>
 
@@ -163,7 +164,7 @@ function LoginPage() {
             {error ? <p className="text-sm text-danger">{error}</p> : null}
             {!ready ? (
               <p className="text-sm text-muted">
-                Нет учётки — сначала тариф и «Создать сеть», либо обратитесь к администратору.
+                Нет своей учётки — её выдаёт администратор сети. Если заводите контур сами, начните с «Что это?».
               </p>
             ) : null}
             <Button type="submit" className="w-full" variant={canCreateNetwork ? "secondary" : "default"} disabled={busy}>
