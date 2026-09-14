@@ -53,6 +53,14 @@ import { useSync } from "./sync";
 import { api, setToken } from "../api/client";
 import { mapKeeperReceipts } from "../integrations/keeper";
 import { parseKeeperXml } from "../integrations/keeper-xml";
+import { createSeed, USERS } from "./seed";
+import {
+  applyPublicState,
+  ensureSampleCredentials,
+  hasBlankSecrets,
+  matchLocalPassword,
+  matchLocalPin,
+} from "./secrets";
 
 export type BranchFilter = string | "all";
 
@@ -151,7 +159,11 @@ async function applyRemote(path: string, body: unknown, local: (snap: Snapshot, 
   try {
     const res = await api<{ state: Snapshot }>(path, { method: "POST", body });
     applyingRemote = true;
-    useOps.setState((s) => ({ ...s, ...res.state, session: session ?? s.session }));
+    useOps.setState((s) => ({
+      ...s,
+      ...applyIncoming(s, res.state),
+      session: session ?? s.session,
+    }));
     applyingRemote = false;
   } catch (err) {
     const s = useOps.getState();
@@ -171,6 +183,20 @@ async function applyRemote(path: string, body: unknown, local: (snap: Snapshot, 
 
 function snapshotOf(s: OpsState | Snapshot): Snapshot {
   return normalizeSnapshot(s);
+}
+
+function applyIncoming(s: OpsState | Snapshot, incoming: Snapshot): Snapshot {
+  return applyPublicState(snapshotOf(s), incoming, USERS);
+}
+
+async function localSampleSnapshot(): Promise<Snapshot> {
+  try {
+    const snap = ensureSampleCredentials(await dbAdapter.loadSample(), USERS, createSeed);
+    if (snap.settings.sampleLoaded && !hasBlankSecrets(snap)) return snap;
+  } catch {
+    /* server fn may fail or return a stripped public snapshot */
+  }
+  return createSeed();
 }
 
 const ACTION_KEYS = [
@@ -230,15 +256,18 @@ export const useOps = create<OpsState>()(
             body: { login: email, password },
           });
           applyingRemote = true;
-          set({ ...res.state, session: { userId: res.user.userId, branchId: res.user.branchId } });
+          set({
+            ...applyIncoming(get(), res.state),
+            session: { userId: res.user.userId, branchId: res.user.branchId },
+          });
           applyingRemote = false;
           return true;
         } catch {
-          const user = get().users.find(
-            (u) => u.email.toLowerCase() === email.trim().toLowerCase() && u.password === password,
-          );
+          const { snap, user } = matchLocalPassword(snapshotOf(get()), email, password, USERS);
           if (!user) return false;
-          set({ session: { userId: user.id, branchId: user.branchId ?? "all" } });
+          applyingRemote = true;
+          set({ ...snap, session: { userId: user.id, branchId: user.branchId ?? "all" } });
+          applyingRemote = false;
           return true;
         }
       },
@@ -250,15 +279,18 @@ export const useOps = create<OpsState>()(
             body: { login: email, pin },
           });
           applyingRemote = true;
-          set({ ...res.state, session: { userId: res.user.userId, branchId: res.user.branchId } });
+          set({
+            ...applyIncoming(get(), res.state),
+            session: { userId: res.user.userId, branchId: res.user.branchId },
+          });
           applyingRemote = false;
           return true;
         } catch {
-          const user = get().users.find(
-            (u) => u.email.toLowerCase() === email.trim().toLowerCase() && u.pin === pin,
-          );
+          const { snap, user } = matchLocalPin(snapshotOf(get()), email, pin, USERS);
           if (!user) return false;
-          set({ session: { userId: user.id, branchId: user.branchId ?? "all" } });
+          applyingRemote = true;
+          set({ ...snap, session: { userId: user.id, branchId: user.branchId ?? "all" } });
+          applyingRemote = false;
           return true;
         }
       },
@@ -272,7 +304,21 @@ export const useOps = create<OpsState>()(
             body: input,
           });
           applyingRemote = true;
-          set({ ...res.state, session: { userId: res.user.userId, branchId: res.user.branchId } });
+          const incoming = applyIncoming(get(), res.state);
+          const next = {
+            ...incoming,
+            users: incoming.users.map((u) => {
+              const same =
+                u.id === res.user.userId || u.email.toLowerCase() === input.login.trim().toLowerCase();
+              if (!same) return u;
+              return {
+                ...u,
+                password: u.password || input.password,
+                pin: u.pin || input.pin,
+              };
+            }),
+          };
+          set({ ...next, session: { userId: res.user.userId, branchId: res.user.branchId } });
           applyingRemote = false;
         } catch (err) {
           try {
@@ -289,18 +335,23 @@ export const useOps = create<OpsState>()(
       },
 
       loadSample: async () => {
-        try {
-          const res = await api<{ state: Snapshot }>("state/sample", { method: "POST" });
-          setToken(null);
-          applyingRemote = true;
-          set({ ...res.state, session: null });
-          applyingRemote = false;
-        } catch {
-          const snap = await dbAdapter.loadSample();
+        const commit = (snap: Snapshot) => {
           setToken(null);
           applyingRemote = true;
           set({ ...snap, session: null });
           applyingRemote = false;
+        };
+
+        try {
+          const res = await api<{ state: Snapshot }>("state/sample", { method: "POST" });
+          const next = ensureSampleCredentials(applyIncoming(get(), res.state), USERS, createSeed);
+          if (!next.settings.sampleLoaded || hasBlankSecrets(next)) {
+            commit(await localSampleSnapshot());
+            return;
+          }
+          commit(next);
+        } catch {
+          commit(await localSampleSnapshot());
         }
       },
 
@@ -439,7 +490,7 @@ export const useOps = create<OpsState>()(
           const res = await api<{ state: Snapshot }>("notify/flush", { method: "POST" });
           const session = get().session;
           applyingRemote = true;
-          set({ ...res.state, session });
+          set({ ...applyIncoming(get(), res.state), session });
           applyingRemote = false;
         } catch (err) {
           toast.error(err instanceof Error ? err.message : "Очередь не отправлена");
@@ -507,9 +558,10 @@ export function useHydrated() {
         if (cancelled) return;
         applyingRemote = true;
         useOps.setState((s) => {
+          const merged = applyIncoming(s, snap);
           const session =
-            s.session && snap.users.some((u) => u.id === s.session?.userId) ? s.session : null;
-          return { ...s, ...snap, session };
+            s.session && merged.users.some((u) => u.id === s.session?.userId) ? s.session : null;
+          return { ...s, ...merged, session };
         });
         applyingRemote = false;
         try {
