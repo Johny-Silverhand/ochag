@@ -81,8 +81,14 @@ function IntegrationsPage() {
                   : "На проде нужен DATABASE_URL (Neon). Без него новый экземпляр сервера забывает созданные учётки."}
               </p>
             </div>
-            <Badge tone={dbOk && (status?.ready || sync.status === "ok") ? "success" : "warning"}>
-              {sync.status === "saving" ? "запись" : dbOk ? "онлайн" : "не постоянно"}
+            <Badge tone={dbOk && (status?.ready || sync.status === "ok") && sync.status !== "error" ? "success" : "warning"}>
+              {sync.status === "saving"
+                ? "запись"
+                : sync.status === "error" || status?.ready === false
+                  ? "нет связи"
+                  : dbOk
+                    ? "онлайн"
+                    : "не постоянно"}
             </Badge>
           </div>
           <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-3">

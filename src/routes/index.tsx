@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { CommercialGate } from "@/components/auth/commercial";
+import { StoreHealthBanner } from "@/components/auth/store-health";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
 import { isOnboarded } from "@/lib/data/empty";
@@ -84,6 +85,8 @@ function LoginPage() {
             <h2 className="login-title mt-2 hidden font-medium tracking-tight lg:block">Вход</h2>
             <p className="mt-2 text-sm leading-relaxed text-muted">{LOGIN_INTRO}</p>
           </div>
+
+          <StoreHealthBanner />
 
           {ios.apple ? (
             <div className="mb-6">
