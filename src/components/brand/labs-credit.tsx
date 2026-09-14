@@ -1,25 +1,51 @@
 import { cn } from "@/lib/utils";
-import { VENDOR_LINE, LABS_RIGHTS, LABS_YEAR } from "@/lib/brand";
+import { VENDOR_LINE, VENDOR_URL, LABS_RIGHTS, LABS_YEAR } from "@/lib/brand";
 
-/** Settings footer only — not on login, nav, or every screen. */
+/** Login + settings footer — not on nav or every screen. */
+export function VendorLink({ className }: { className?: string }) {
+  return (
+    <a
+      href={VENDOR_URL}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={cn(
+        "font-medium underline-offset-2 transition-colors hover:underline",
+        className,
+      )}
+    >
+      {VENDOR_LINE}
+    </a>
+  );
+}
+
 export function LabsCredit({
   className,
   align = "left",
   tone = "muted",
+  compact = false,
 }: {
   className?: string;
   align?: "center" | "left";
   tone?: "muted" | "sidebar";
+  compact?: boolean;
 }) {
   const color = tone === "sidebar" ? "text-sidebar-muted" : "text-subtle";
+  const linkColor =
+    tone === "sidebar"
+      ? "text-sidebar-fg hover:text-sidebar-fg"
+      : compact
+        ? "text-subtle hover:text-fg"
+        : "text-fg hover:text-fg";
   return (
-    <div className={cn("select-none", align === "center" ? "text-center" : "text-left", color, className)}>
+    <div className={cn(align === "center" ? "text-center" : "text-left", color, className)}>
       <p className="text-[11px] leading-snug tracking-wide">
-        <span className="font-medium text-fg">{VENDOR_LINE}</span>
+        <VendorLink className={linkColor} />
       </p>
-      <p className="mt-0.5 text-[10px] tracking-wide opacity-80">
-        {LABS_RIGHTS} © {LABS_YEAR}
-      </p>
+      {compact ? null : (
+        <p className="mt-0.5 text-[10px] tracking-wide opacity-80">
+          {LABS_RIGHTS} © {LABS_YEAR}
+        </p>
+      )}
     </div>
   );
 }

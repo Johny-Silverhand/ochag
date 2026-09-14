@@ -8,6 +8,7 @@ import { isOnboarded } from "@/lib/data/empty";
 import { useHydrated, useOps } from "@/lib/data/store";
 import { BootScreen } from "@/components/layout/app-shell";
 import { IosInstallCard, useIosInstall } from "@/components/ios/runtime";
+import { LabsCredit } from "@/components/brand/labs-credit";
 import { LOGIN_INTRO, NETWORK_NAME } from "@/lib/brand";
 import { canSelfOnboard } from "@/lib/billing/simulate";
 import { looksLikeSeedNetwork } from "@/lib/data/bootstrap";
@@ -178,6 +179,7 @@ function LoginPage() {
             </Button>
           </form>
         </div>
+        <LabsCredit compact align="center" className="mx-auto mt-5 w-full max-w-md" />
       </section>
     </main>
   );
