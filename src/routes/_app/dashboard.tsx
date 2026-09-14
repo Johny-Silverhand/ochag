@@ -31,7 +31,7 @@ import { today } from "@/lib/domain/types";
 import { pct, ruDate, rub } from "@/lib/format";
 import { useOps, useSessionUser } from "@/lib/data/store";
 import { usePrefs } from "@/lib/prefs";
-import { isNetworkAdmin, isOpsLead } from "@/lib/domain/permissions";
+import { isNetworkAdmin, isOpsLead, canSeeNetworkStats, scopedBranchId } from "@/lib/domain/permissions";
 
 export const Route = createFileRoute("/_app/dashboard")({ component: DashboardPage });
 
@@ -41,7 +41,15 @@ function DashboardPage() {
   const period = useOps((s) => s.period);
   const setPeriod = useOps((s) => s.setPeriod);
   const user = useSessionUser();
-  const scope = session?.branchId ?? "all";
+  const role = user?.role ?? "waiter";
+  const homeBranch = user?.branchId ?? null;
+  const networkStats = canSeeNetworkStats(role);
+  const scoped = scopedBranchId(role, session?.branchId, homeBranch);
+  const scope = networkStats
+    ? scoped || session?.branchId || "all"
+    : scoped && scoped !== "all"
+      ? scoped
+      : homeBranch || snap.branches[0]?.id || "";
   const pinLowStock = usePrefs((s) => s.kitchenPinLowStock);
   const showAdvisor = usePrefs((s) => s.showAdvisor);
   const showLowStock =
@@ -76,7 +84,13 @@ function DashboardPage() {
       <PageHeader
         eyebrow={greeting}
         title="Обзор"
-        description="Выручка, себестоимость, списания, фонд оплаты и чистая прибыль — без ручных таблиц."
+        description={
+          networkStats
+            ? "Выручка, себестоимость, списания, фонд оплаты и чистая прибыль — без ручных таблиц."
+            : role === "cook"
+              ? "Склад, списания и блюда вашего филиала. Сводка по сети закрыта."
+              : "Чеки и смена вашего филиала. Цифры соседних точек не показываем."
+        }
         actions={
           <Segmented
             value={period}
@@ -91,10 +105,28 @@ function DashboardPage() {
       />
 
       <div className="stagger-in grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Kpi label="Выручка" value={rub(kpis.revenue)} hint={`${kpis.checks} чеков · ср. ${rub(kpis.avgCheck)}`} />
-        <Kpi label="Фудкост" value={pct(kpis.foodCost)} hint={`себест. ${rub(kpis.cogs)}`} tone={kpis.foodCost > 32 ? "bad" : "good"} />
-        <Kpi label="Списания" value={rub(kpis.writeoffs)} hint="порча, питание, недостача" tone={kpis.writeoffs > kpis.revenue * 0.02 ? "bad" : "default"} />
-        <Kpi label="Чистая прибыль" value={rub(kpis.net)} hint={`ФОТ ${rub(kpis.payroll)} · opex ${rub(kpis.opex)}`} tone={kpis.net >= 0 ? "good" : "bad"} />
+        {networkStats ? (
+          <>
+            <Kpi label="Выручка" value={rub(kpis.revenue)} hint={`${kpis.checks} чеков · ср. ${rub(kpis.avgCheck)}`} />
+            <Kpi label="Фудкост" value={pct(kpis.foodCost)} hint={`себест. ${rub(kpis.cogs)}`} tone={kpis.foodCost > 32 ? "bad" : "good"} />
+            <Kpi label="Списания" value={rub(kpis.writeoffs)} hint="порча, питание, недостача" tone={kpis.writeoffs > kpis.revenue * 0.02 ? "bad" : "default"} />
+            <Kpi label="Чистая прибыль" value={rub(kpis.net)} hint={`ФОТ ${rub(kpis.payroll)} · opex ${rub(kpis.opex)}`} tone={kpis.net >= 0 ? "good" : "bad"} />
+          </>
+        ) : role === "cook" ? (
+          <>
+            <Kpi label="Списания филиала" value={rub(kpis.writeoffs)} hint="за выбранный период" />
+            <Kpi label="Блюда в топе" value={String(dishes.length)} hint="по продажам точки" />
+            <Kpi label="Ниже минимума" value={String(alerts.length)} hint="склад филиала" tone={alerts.length ? "bad" : "good"} />
+            <Kpi label="Чеки точки" value={String(kpis.checks)} hint={scope === "all" ? "выберите филиал" : snap.branches.find((b) => b.id === scope)?.short} />
+          </>
+        ) : (
+          <>
+            <Kpi label="Выручка смены" value={rub(kpis.revenue)} hint={`${kpis.checks} чеков`} />
+            <Kpi label="Наличные" value={rub(kpis.cash)} />
+            <Kpi label="Карта / QR" value={rub(kpis.card + kpis.qr)} />
+            <Kpi label="Перевод" value={rub(kpis.transfer)} />
+          </>
+        )}
       </div>
 
       <div className="mt-4 grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,0.8fr)]">
@@ -135,8 +167,10 @@ function DashboardPage() {
               </Link>
             ) : null}
           </CardHeader>
-          {!showAdvisor ? (
-            <p className="text-sm text-muted">Сигналы скрыты в настройках сети.</p>
+          {!showAdvisor || !networkStats ? (
+            <p className="text-sm text-muted">
+              {!networkStats ? "Сигналы по сети для этой роли закрыты." : "Сигналы скрыты в настройках сети."}
+            </p>
           ) : (
           <ul className="space-y-3">
             {insights.slice(0, 4).map((i) => (
@@ -156,7 +190,7 @@ function DashboardPage() {
         </Card>
       </div>
 
-      {isOpsLead(user?.role ?? "waiter") ? (
+      {networkStats ? (
         <Card className="mt-4">
           <CardHeader>
             <CardTitle>Филиалы рядом</CardTitle>

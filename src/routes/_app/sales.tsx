@@ -47,9 +47,10 @@ function SalesPage() {
       acc.cash += p.cash;
       acc.card += p.card;
       acc.qr += p.qr;
+      acc.transfer += p.transfer;
       return acc;
     },
-    { cash: 0, card: 0, qr: 0 },
+    { cash: 0, card: 0, qr: 0, transfer: 0 },
   );
   const dishes = topDishes(rows, 6);
   const open = openShiftFor(snap.shifts, writeScope);
@@ -131,11 +132,12 @@ function SalesPage() {
         </p>
       ) : null}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <Kpi label="Выручка" value={rub(revenue)} hint={`${rows.length} чеков`} />
         <Kpi label="Наличные" value={rub(pays.cash)} />
         <Kpi label="Карта" value={rub(pays.card)} />
         <Kpi label="QR" value={rub(pays.qr)} />
+        <Kpi label="Перевод" value={rub(pays.transfer)} />
       </div>
 
       <div className="mt-4 grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,0.8fr)]">
@@ -262,6 +264,7 @@ function ManualSaleDialog({
               <option value="cash">Наличные</option>
               <option value="card">Карта</option>
               <option value="qr">QR</option>
+              <option value="transfer">Перевод</option>
             </NativeSelect>
           </Field>
           <Button

@@ -92,7 +92,7 @@ function ShiftsPage() {
           <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Kpi label="Размен" value={rub(current.openCash)} />
             <Kpi label="Нал по чекам" value={rub(totals.cash)} />
-            <Kpi label="Безнал" value={rub(totals.card + totals.qr)} />
+            <Kpi label="Безнал" value={rub(totals.card + totals.qr + totals.transfer)} />
             <Kpi label="Ожидается в кассе" value={rub(totals.expected)} hint={`${totals.checks} чеков`} />
           </div>
         </Card>

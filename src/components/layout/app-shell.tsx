@@ -31,6 +31,7 @@ import { NativeSelect } from "@/components/ui/input";
 import { NETWORK_NAME } from "@/lib/brand";
 import { ThemeSwitcher } from "@/components/theme/switcher";
 import { useSync } from "@/lib/data/sync";
+import { PinOfferDialog } from "@/components/auth/pin-offer";
 
 interface NavItem {
   to: string;
@@ -145,35 +146,35 @@ export function AppShell() {
     <div className="app-frame flex h-[var(--app-height,100dvh)] min-h-0 flex-col overflow-hidden bg-bg text-fg lg:grid lg:h-dvh lg:grid-cols-[var(--shell-sidebar)_minmax(0,1fr)]">
       <div className="app-scene" aria-hidden="true" />
       <aside className="no-print relative z-10 hidden bg-sidebar text-sidebar-fg lg:col-start-1 lg:row-start-1 lg:flex lg:h-full lg:flex-col lg:overflow-hidden">
-        <div className="flex items-center gap-2.5 px-5 pt-6 pb-5">
-          <Mark className="size-9 text-sidebar-fg" />
+        <div className="flex items-center gap-2 px-3 pt-4 pb-3">
+          <Mark className="size-7 text-sidebar-fg" />
           <div>
             <div className="text-sm font-semibold tracking-wide">{NETWORK_NAME}</div>
             <div className="text-xs text-sidebar-muted">Контур кафе</div>
           </div>
         </div>
-        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 scroll-touch">
+        <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 scroll-touch">
           {items.map((item) => (
             <NavLink
               key={item.to}
               item={item}
               pathname={pathname}
-              className="app-nav-link flex min-w-0 items-center gap-3 rounded-xl px-3 text-sm transition-[color,background-color,transform] duration-200 ease-[var(--ease-out-smooth)] active:scale-[0.98]"
+              className="app-nav-link flex min-w-0 items-center gap-2 rounded-lg px-2.5 text-[13px] leading-tight transition-[color,background-color,transform] duration-200 ease-[var(--ease-out-smooth)] active:scale-[0.98]"
               activeClass="bg-sidebar-fg/14 text-sidebar-fg"
               idleClass="text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-fg"
             />
           ))}
         </nav>
-        <div className="mt-auto px-3 pb-2">
+        <div className="mt-auto px-2 pb-1">
           <NavLink
             item={SETTINGS_ITEM}
             pathname={pathname}
-            className="app-nav-link flex min-w-0 items-center gap-3 rounded-xl px-3 text-sm transition-[color,background-color,transform] duration-200 ease-[var(--ease-out-smooth)] active:scale-[0.98]"
+            className="app-nav-link flex min-w-0 items-center gap-2 rounded-lg px-2.5 text-[13px] leading-tight transition-[color,background-color,transform] duration-200 ease-[var(--ease-out-smooth)] active:scale-[0.98]"
             activeClass="bg-sidebar-fg/14 text-sidebar-fg"
             idleClass="text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-fg"
           />
         </div>
-        <div className="border-t border-sidebar-fg/10 p-4">
+        <div className="border-t border-sidebar-fg/10 px-3 py-3">
           <Link to="/settings" className="block rounded-xl py-1 hover:opacity-90">
             <div className="text-sm font-medium">{user?.name}</div>
             <div className="text-xs text-sidebar-muted">{ROLE_LABEL[role]}</div>
@@ -339,6 +340,7 @@ export function AppShell() {
           <span>Ещё</span>
         </button>
       </nav>
+      <PinOfferDialog />
     </div>
   );
 }
