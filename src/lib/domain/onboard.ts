@@ -53,6 +53,7 @@ export function applyOnboard(snap: Snapshot, input: OnboardInput): Snapshot {
         seats,
         phone: "",
         halls: halls.length ? halls : ["Основной зал"],
+        ownerId: userId,
       },
     ],
     users: [
@@ -66,6 +67,7 @@ export function applyOnboard(snap: Snapshot, input: OnboardInput): Snapshot {
         role: "owner",
         position: "Собственник",
         branchId,
+        ownerId: userId,
         shiftPay: 0,
         salesPercent: 0,
         phone: "",

@@ -23,6 +23,8 @@ export interface TokenPayload {
   branch: string | null;
   name: string;
   sb: string;
+  ao?: string | null;
+  oid?: string | null;
 }
 
 export async function signActor(actor: Actor, ttl = "12h") {
@@ -31,9 +33,12 @@ export async function signActor(actor: Actor, ttl = "12h") {
     branch: actor.homeBranchId,
     name: actor.name,
     sb: actor.sessionBranchId,
+    ao: actor.actingOwnerId ?? null,
+    oid: actor.ownerId ?? null,
   })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(actor.userId)
+    .setJti(actor.sessionId || `${actor.userId}-legacy`)
     .setIssuedAt()
     .setExpirationTime(ttl)
     .sign(secretBytes());
@@ -47,6 +52,9 @@ export async function verifyActor(token: string): Promise<Actor> {
     homeBranchId: (payload.branch as string | null) ?? null,
     sessionBranchId: String(payload.sb ?? payload.branch ?? "all"),
     name: String(payload.name ?? ""),
+    actingOwnerId: (payload.ao as string | null | undefined) ?? null,
+    ownerId: (payload.oid as string | null | undefined) ?? null,
+    sessionId: typeof payload.jti === "string" ? payload.jti : undefined,
   };
 }
 

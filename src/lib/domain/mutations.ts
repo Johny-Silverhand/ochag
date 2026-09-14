@@ -53,6 +53,7 @@ import { attachIncidentals } from "./incidentals.ts";
 import { appendAudit } from "./audit.ts";
 import { appendOpsLog } from "./ops-log.ts";
 import { assertPeriodOpen } from "./period.ts";
+import { assertReadableBranch, resolveOwnerForWrite } from "./tenancy.ts";
 
 function queueEvent(snap: Snapshot, event: NotifyEvent, title: string, body: string, to?: string): Snapshot {
   if (snap.settings.notifyEvents[event] === false) return snap;
@@ -643,11 +644,23 @@ export function applyProfile(
   };
 }
 
-export function applySessionBranch(actor: Actor, branchId: string): Actor {
+export function applySessionBranch(actor: Actor, branchId: string, snap?: Snapshot): Actor {
+  if (snap && branchId !== "all") assertReadableBranch(snap, actor, branchId);
   if (!canSeeAllBranchesSafe(actor) && actor.homeBranchId && branchId !== actor.homeBranchId && branchId !== "all") {
     return actor;
   }
   return { ...actor, sessionBranchId: canSeeAllBranchesSafe(actor) ? branchId : (actor.homeBranchId ?? branchId) };
+}
+
+export function applySessionOwner(actor: Actor, ownerId: string | null, snap: Snapshot): Actor {
+  if (!hasAbsoluteAccess(actor.role)) {
+    throw new AuthzError("Контур владельца переключает только администратор-техник");
+  }
+  const id = ownerId?.trim() || null;
+  if (!id) return { ...actor, actingOwnerId: null, sessionBranchId: "all" };
+  const owner = snap.users.find((u) => u.id === id && u.role === "owner");
+  if (!owner) throw new AuthzError("Владелец не найден", 404);
+  return { ...actor, actingOwnerId: owner.id, sessionBranchId: "all" };
 }
 
 function canSeeAllBranchesSafe(actor: Actor) {
@@ -743,8 +756,14 @@ export function applyInviteStaff(
   if (!isNetworkAdmin(input.role) && !snap.branches.some((b) => b.id === input.branchId)) {
     throw new AuthzError("Выберите филиал", 400);
   }
+  if (!isNetworkAdmin(input.role) && input.branchId) {
+    assertReadableBranch(snap, actor, input.branchId);
+  }
+  const userId = uid("u");
+  const ownerId =
+    input.role === "tech_admin" ? null : input.role === "owner" ? userId : resolveOwnerForWrite(actor, snap);
   const user = {
-    id: uid("u"),
+    id: userId,
     name: input.name.trim(),
     email: login,
     password: input.password,
@@ -752,6 +771,7 @@ export function applyInviteStaff(
     role: input.role,
     position: input.position ?? input.role,
     branchId: isNetworkAdmin(input.role) ? null : input.branchId,
+    ownerId,
     shiftPay: input.shiftPay,
     salesPercent: input.salesPercent,
     monthlyPremium: input.monthlyPremium ?? 0,
@@ -1142,7 +1162,8 @@ export function applyAddBranch(
 ): Snapshot {
   if (!canManageBranches(actor.role)) throw new AuthzError("Филиал добавляет владелец или администратор-техник");
   const fields = normalizeBranchInput(input);
-  const row = { id: uid("br"), ...fields };
+  const ownerId = resolveOwnerForWrite(actor, snap);
+  const row = { id: uid("br"), ...fields, ownerId };
   return appendAudit({ ...snap, branches: [...snap.branches, row] }, actor, "branch", "network", row.name);
 }
 

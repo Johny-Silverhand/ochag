@@ -30,6 +30,7 @@ export function emptySnapshot(): Snapshot {
     opsLogs: [],
     outbox: [],
     pushSubs: [],
+    deviceSessions: [],
     settings: defaultSettings(),
   };
 }

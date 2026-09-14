@@ -56,6 +56,7 @@ interface OpsState extends Snapshot {
   loadSample: () => Promise<{ ok: true } | { ok: false; reason: string }>;
   logout: () => void;
   setBranch: (branchId: string) => void;
+  setOwner: (ownerId: string | null) => Promise<void>;
   setPeriod: (period: Period) => void;
   resetDemo: () => Promise<void>;
   updateProfile: (patch: { name?: string; phone?: string; password?: string }) => void;
@@ -239,6 +240,7 @@ const ACTION_KEYS = [
   "loadSample",
   "logout",
   "setBranch",
+  "setOwner",
   "setPeriod",
   "resetDemo",
   "updateProfile",
@@ -306,7 +308,12 @@ export const useOps = create<OpsState>()(
           applyingRemote = true;
           set({
             ...applyIncoming(get(), res.state),
-            session: { userId: res.user.userId, branchId: res.user.branchId },
+            session: {
+              userId: res.user.userId,
+              branchId: res.user.branchId,
+              actingOwnerId: "actingOwnerId" in res.user ? (res.user as { actingOwnerId?: string | null }).actingOwnerId : null,
+              sessionId: "sessionId" in res.user ? (res.user as { sessionId?: string }).sessionId : undefined,
+            },
           });
           applyingRemote = false;
           return { ok: true };
@@ -352,7 +359,12 @@ export const useOps = create<OpsState>()(
           applyingRemote = true;
           set({
             ...applyIncoming(get(), res.state),
-            session: { userId: res.user.userId, branchId: res.user.branchId },
+            session: {
+              userId: res.user.userId,
+              branchId: res.user.branchId,
+              actingOwnerId: "actingOwnerId" in res.user ? (res.user as { actingOwnerId?: string | null }).actingOwnerId : null,
+              sessionId: "sessionId" in res.user ? (res.user as { sessionId?: string }).sessionId : undefined,
+            },
           });
           applyingRemote = false;
           return { ok: true };
@@ -419,7 +431,49 @@ export const useOps = create<OpsState>()(
         const session = get().session;
         if (!session) return;
         set({ session: { ...session, branchId } });
-        void api("session/branch", { method: "POST", body: { branchId } }).catch(() => undefined);
+        void api<{ user?: { userId: string; branchId: string; actingOwnerId?: string | null; sessionId?: string }; state?: Snapshot }>(
+          "session/branch",
+          { method: "POST", body: { branchId } },
+        )
+          .then((res) => {
+            if (!res.state || !res.user) return;
+            applyingRemote = true;
+            set({
+              ...applyIncoming(get(), res.state),
+              session: {
+                userId: res.user.userId,
+                branchId: res.user.branchId,
+                actingOwnerId: res.user.actingOwnerId,
+                sessionId: res.user.sessionId,
+              },
+            });
+            applyingRemote = false;
+          })
+          .catch(() => undefined);
+      },
+
+      setOwner: async (ownerId) => {
+        const session = get().session;
+        if (!session) return;
+        try {
+          const res = await api<{
+            user: { userId: string; branchId: string; actingOwnerId?: string | null; sessionId?: string };
+            state: Snapshot;
+          }>("session/owner", { method: "POST", body: { ownerId } });
+          applyingRemote = true;
+          set({
+            ...applyIncoming(get(), res.state),
+            session: {
+              userId: res.user.userId,
+              branchId: res.user.branchId,
+              actingOwnerId: res.user.actingOwnerId,
+              sessionId: res.user.sessionId,
+            },
+          });
+          applyingRemote = false;
+        } catch (err) {
+          toast.error(clientErrorMessage(err, "Не удалось переключить контур"));
+        }
       },
 
       setPeriod: (period) => set({ period }),
@@ -649,7 +703,12 @@ export const useOps = create<OpsState>()(
           applyingRemote = true;
           set({
             ...applyIncoming(get(), res.state),
-            session: { userId: res.user.userId, branchId: res.user.branchId },
+            session: {
+              userId: res.user.userId,
+              branchId: res.user.branchId,
+              actingOwnerId: "actingOwnerId" in res.user ? (res.user as { actingOwnerId?: string | null }).actingOwnerId : null,
+              sessionId: "sessionId" in res.user ? (res.user as { sessionId?: string }).sessionId : undefined,
+            },
           });
           applyingRemote = false;
           return { ok: true as const };

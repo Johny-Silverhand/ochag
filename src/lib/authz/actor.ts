@@ -11,15 +11,22 @@ export interface Actor {
   homeBranchId: string | null;
   sessionBranchId: string;
   name: string;
+  ownerId?: string | null;
+  actingOwnerId?: string | null;
+  sessionId?: string;
 }
 
 export function actorFrom(user: StaffUser, session: Session): Actor {
+  const ownerId = user.role === "tech_admin" ? null : user.role === "owner" ? user.id : user.ownerId ?? null;
   return {
     userId: user.id,
     role: user.role,
     homeBranchId: user.branchId,
     sessionBranchId: session.branchId,
     name: user.name,
+    ownerId,
+    actingOwnerId: user.role === "tech_admin" ? session.actingOwnerId ?? null : ownerId,
+    sessionId: session.sessionId,
   };
 }
 
@@ -73,5 +80,8 @@ export function publicActor(actor: Actor) {
     role: actor.role,
     branchId: actor.sessionBranchId,
     name: actor.name,
+    ownerId: actor.ownerId ?? null,
+    actingOwnerId: actor.actingOwnerId ?? null,
+    sessionId: actor.sessionId,
   };
 }

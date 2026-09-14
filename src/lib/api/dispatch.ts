@@ -29,6 +29,7 @@ import {
   applyRevenuePlan,
   applyRevision,
   applySessionBranch,
+  applySessionOwner,
   applySettings,
   applyStopList,
   applyTopUpDebt,
@@ -67,7 +68,18 @@ import { createSeed, USERS } from "../data/seed";
 import { can, canLoadSample, canResetDemo, canSeeDebts, isNetworkAdmin, isOpsLead } from "../domain/permissions";
 import { ensureEnvBootstrap, readBootstrapEnv, rematerializeLoginSecrets } from "../data/bootstrap";
 import { assertResetAllowed, assertSampleLoadAllowed } from "../data/sample-guard";
-import { appendOpsLog, recordAuthAttempt, resolveStaffAuth, ACCOUNT_BLOCKED_MSG } from "../domain/ops-log";
+import { appendOpsLog, recordAuthAttempt, resolveStaffAuth, ACCOUNT_BLOCKED_MSG, AUTH_LOCKED_MSG } from "../domain/ops-log";
+import {
+  attachSession,
+  assertSessionActive,
+  mintDeviceSession,
+  revokeOtherSessions,
+  revokeSession,
+  sessionsVisibleTo,
+  touchSession,
+} from "../domain/sessions";
+import { assertReadableBranch, canSwitchOwner, ownersOf, snapshotForActor } from "../domain/tenancy";
+import { assertAuthRate, assertPayloadSize, assertSameOriginOrNone, assertWriteRate, opaqueApiError, securityHeaders } from "../security/http";
 import {
   DB_UNAVAILABLE_MSG,
   StoreUnavailableError,
@@ -75,10 +87,10 @@ import {
   publicErrorMessage,
 } from "../repo/db-errors";
 
-function json(data: unknown, status = 200) {
+function json(data: unknown, status = 200, request?: Request) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { "content-type": "application/json; charset=utf-8" },
+    headers: { "content-type": "application/json; charset=utf-8", ...securityHeaders(request) },
   });
 }
 
@@ -93,10 +105,24 @@ function pathOf(request: Request, splat?: string) {
 }
 
 async function readBody(request: Request): Promise<Record<string, unknown>> {
-  if (request.method === "GET" || request.method === "HEAD") return {};
+  if (request.method === "GET" || request.method === "HEAD" || request.method === "OPTIONS") return {};
   const text = await request.text();
+  assertPayloadSize(request, text);
   if (!text) return {};
   return JSON.parse(text) as Record<string, unknown>;
+}
+
+async function requireLiveActor(request: Request, snap: Snapshot) {
+  const actor = await requireActor(request);
+  assertSessionActive(snap, actor);
+  return actor;
+}
+
+async function loadScoped(request: Request) {
+  const repo = await getRepo();
+  const snap = await repo.load();
+  const actor = await requireLiveActor(request, snap);
+  return { repo, snap, actor, view: snapshotForActor(snap, actor) };
 }
 
 async function requireActor(request: Request) {
@@ -192,13 +218,19 @@ async function mutateWith(
 ) {
   const path = pathOf(request);
   try {
-    const actor = await requireActor(request);
     const repo = await getRepo();
-    const snap = await repo.load();
+    let snap = await repo.load();
+    const actor = await requireLiveActor(request, snap);
+    assertWriteRate(request, actor.userId);
+    snap = touchSession(snap, actor.sessionId);
     const result = await fn(snap, actor);
     const next = await flushOutbox(result.snap);
     await repo.save(next);
-    return json({ ok: true, state: publicSnapshot(next, actor.role), added: result.added ?? 0, skipped: result.skipped ?? 0 });
+    return json(
+      { ok: true, state: publicSnapshot(next, actor), added: result.added ?? 0, skipped: result.skipped ?? 0 },
+      200,
+      request,
+    );
   } catch (err) {
     if (err instanceof AuthzError) {
       await persistOpsLog({ level: "warn", event: "api", detail: err.message, path });
@@ -213,6 +245,10 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     const method = request.method.toUpperCase();
     const path = pathOf(request, splat);
     const url = new URL(request.url);
+    if (method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: securityHeaders(request) });
+    }
+    assertSameOriginOrNone(request);
     const body = await readBody(request);
 
     if (method === "GET" && (path === "health" || path === "")) {
@@ -256,7 +292,6 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
         seats: body.seats != null ? Number(body.seats) : undefined,
         halls: Array.isArray(body.halls) ? (body.halls as string[]) : typeof body.halls === "string" ? [body.halls] : undefined,
       });
-      await repo.save(next);
       const loginKey = login.trim().toLowerCase();
       const owner =
         next.users.find((u) => u.email.trim().toLowerCase() === loginKey) ??
@@ -266,8 +301,12 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
         ? next.branches.find((b) => b.id === owner.branchId)?.id
         : next.branches.at(-1)?.id;
       const actor = actorFrom(owner, { userId: owner.id, branchId: homeBranch ?? "all" });
+      const sess = mintDeviceSession({ userId: owner.id, request });
+      actor.sessionId = sess.id;
+      const stored = attachSession(next, sess);
+      await repo.save(stored);
       const token = await signActor(actor);
-      return json({ token, user: publicActor(actor), state: publicSnapshot(next, actor.role) });
+      return json({ token, user: publicActor(actor), state: publicSnapshot(stored, actor) }, 200, request);
     }
 
     if (method === "POST" && path === "auth/bootstrap") {
@@ -288,12 +327,16 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
       });
       await repo.save(next);
       const admin = next.users[0]!;
-      const actor = actorFrom(admin, { userId: admin.id, branchId: next.branches[0]?.id ?? "all" });
+      const sess = mintDeviceSession({ userId: admin.id, request });
+      const stored = attachSession(next, sess);
+      await repo.save(stored);
+      const actor = actorFrom(admin, { userId: admin.id, branchId: next.branches[0]?.id ?? "all", sessionId: sess.id });
       const token = await signActor(actor);
-      return json({ token, user: publicActor(actor), state: publicSnapshot(next, actor.role) });
+      return json({ token, user: publicActor(actor), state: publicSnapshot(stored, actor) }, 200, request);
     }
 
     if (method === "POST" && (path === "auth/login" || path === "auth/pin")) {
+      assertAuthRate(request, String(body.login ?? body.email ?? ""));
       const snap = authSnapshot(await repo.load());
       const login = String(body.login ?? body.email ?? "").trim().toLowerCase();
       const password = body.password != null ? String(body.password) : "";
@@ -310,29 +353,41 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
         ok: verdict.ok,
         reason: verdict.reason,
       });
-      await repo.save(logged.snap);
       if (!logged.ok) {
-        return json(
-          { error: logged.reason ?? "Неверный логин или PIN" },
-          logged.reason === ACCOUNT_BLOCKED_MSG ? 403 : 401,
-        );
+        await repo.save(logged.snap);
+        const status =
+          logged.reason === ACCOUNT_BLOCKED_MSG ? 403 : logged.reason === AUTH_LOCKED_MSG ? 429 : 401;
+        return json({ error: logged.reason ?? "Неверный логин или PIN" }, status, request);
       }
-      const actor = actorFrom(user!, { userId: user!.id, branchId: user!.branchId ?? "all" });
+      const sess = mintDeviceSession({ userId: user!.id, request });
+      const withSess = attachSession(logged.snap, sess);
+      await repo.save(withSess);
+      const branchId = user!.role === "tech_admin" || user!.role === "owner" ? "all" : user!.branchId ?? "all";
+      const actor = actorFrom(user!, { userId: user!.id, branchId, sessionId: sess.id });
       const token = await signActor(actor);
-      return json({
-        token,
-        user: publicActor(actor),
-        state: publicSnapshot(logged.snap, actor.role),
-      });
+      return json(
+        {
+          token,
+          user: publicActor(actor),
+          state: publicSnapshot(withSess, actor),
+        },
+        200,
+        request,
+      );
     }
 
     if (method === "GET" && path === "me") {
-      return json({ user: publicActor(await requireActor(request)) });
+      const snap = await repo.load();
+      const actor = await requireLiveActor(request, snap);
+      return json({ user: publicActor(actor) }, 200, request);
     }
 
     if (method === "GET" && path === "state") {
-      const actor = await requireActor(request);
-      return json({ user: publicActor(actor), state: publicSnapshot(await repo.load(), actor.role) });
+      const snap = await repo.load();
+      const actor = await requireLiveActor(request, snap);
+      const touched = touchSession(snap, actor.sessionId);
+      if (touched !== snap) await repo.save(touched);
+      return json({ user: publicActor(actor), state: publicSnapshot(touched, actor) }, 200, request);
     }
 
     if (method === "POST" && path === "state/reset") {
@@ -348,7 +403,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
         path,
       });
       await repo.save(state);
-      return json({ ok: true, state: publicSnapshot(state, actor.role) });
+      return json({ ok: true, state: publicSnapshot(state, actor) }, 200, request);
     }
 
     if (method === "POST" && path === "state/sample") {
@@ -365,23 +420,75 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
         path,
       });
       await repo.save(state);
-      return json({ ok: true, state: publicSnapshot(state, actor.role) });
+      return json({ ok: true, state: publicSnapshot(state, actor) }, 200, request);
     }
 
     if (method === "POST" && path === "session/branch") {
-      const actor = await requireActor(request);
-      const next = applySessionBranch(actor, String(body.branchId ?? "all"));
+      const snap = await repo.load();
+      const actor = await requireLiveActor(request, snap);
+      const next = applySessionBranch(actor, String(body.branchId ?? "all"), snap);
       const token = await signActor(next);
-      return json({ token, user: publicActor(next) });
+      return json({ token, user: publicActor(next), state: publicSnapshot(snap, next) }, 200, request);
+    }
+
+    if (method === "POST" && path === "session/owner") {
+      const snap = await repo.load();
+      const actor = await requireLiveActor(request, snap);
+      if (!canSwitchOwner(actor.role)) throw new AuthzError("Контур владельца переключает только администратор-техник");
+      const next = applySessionOwner(actor, body.ownerId != null ? String(body.ownerId) : null, snap);
+      const token = await signActor(next);
+      await persistOpsLog({
+        level: "info",
+        event: "api",
+        detail: next.actingOwnerId ? `контур владельца ${next.actingOwnerId}` : "контур владельца сброшен",
+        userId: actor.userId,
+        path,
+      });
+      return json({ token, user: publicActor(next), state: publicSnapshot(snap, next) }, 200, request);
+    }
+
+    if (method === "GET" && path === "session/list") {
+      const snap = await repo.load();
+      const actor = await requireLiveActor(request, snap);
+      return json({ rows: sessionsVisibleTo(snap, actor), currentId: actor.sessionId }, 200, request);
+    }
+
+    if (method === "POST" && path === "session/revoke") {
+      return mutate(request, (snap, actor) => revokeSession(snap, actor, String(body.sessionId ?? "")));
+    }
+
+    if (method === "POST" && path === "session/revoke-others") {
+      return mutate(request, (snap, actor) => revokeOtherSessions(snap, actor, actor.sessionId));
+    }
+
+    if (method === "GET" && path === "owners") {
+      const snap = await repo.load();
+      const actor = await requireLiveActor(request, snap);
+      if (!canSwitchOwner(actor.role)) throw new AuthzError("Список владельцев только для администратора-техника");
+      return json(
+        {
+          rows: ownersOf(snap).map((o) => ({
+            id: o.id,
+            name: o.name,
+            email: o.email,
+            branchId: o.branchId,
+            lastLoginAt: o.lastLoginAt,
+          })),
+          actingOwnerId: actor.actingOwnerId ?? null,
+        },
+        200,
+        request,
+      );
     }
 
     if (method === "GET" && path === "kpis") {
-      const actor = await requireActor(request);
-      const repo = await getRepo();
       const snap = await repo.load();
+      const actor = await requireLiveActor(request, snap);
+      const view = snapshotForActor(snap, actor);
       const period = (url.searchParams.get("period") ?? "7d") as Period;
       const branchId = url.searchParams.get("branch") ?? actor.sessionBranchId;
-      return json({ kpis: computeKpis(snap, { period, branchId }) });
+      if (branchId && branchId !== "all") assertReadableBranch(snap, actor, branchId);
+      return json({ kpis: computeKpis(view, { period, branchId }) }, 200, request);
     }
 
     if (method === "POST" && path === "sales/manual") {
@@ -525,22 +632,19 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     }
 
     if (method === "GET" && path === "debts/ledger") {
-      const actor = await requireActor(request);
+      const { actor, view } = await loadScoped(request);
       if (!canSeeDebts(actor.role)) throw new AuthzError("Учёт долгов доступен только владельцу");
-      const repo = await getRepo();
-      const snap = await repo.load();
-      return json({ rows: snap.ledgerDebts ?? [] });
+      return json({ rows: view.ledgerDebts ?? [] }, 200, request);
     }
 
     if (method === "POST" && path.startsWith("ai/")) {
-      const actor = await requireActor(request);
+      const { actor, view } = await loadScoped(request);
       if (!can(actor.role, "ai")) throw new AuthzError("AI только для управляющих");
-      const repo = await getRepo();
-      const snap = await repo.load();
       const period = (body.period as Period) ?? "7d";
       const branchId = String(body.branchId ?? actor.sessionBranchId);
-      const metrics = safeMetrics(snap, period, branchId);
-      const cfg = resolveOllamaConfig(snap.settings);
+      if (branchId && branchId !== "all") assertReadableBranch(view, actor, branchId);
+      const metrics = safeMetrics(view, period, branchId);
+      const cfg = resolveOllamaConfig(view.settings);
       if (path === "ai/status") {
         const ping = cfg.configured ? await ollamaAvailable(cfg) : { ok: false, error: "Ollama не настроена" };
         return json({
@@ -553,7 +657,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
         });
       }
       if (path === "ai/narrative") {
-        const out = await periodNarrative(metrics, snap.settings);
+        const out = await periodNarrative(metrics, view.settings);
         return json({ ...out, metrics });
       }
       if (path === "ai/ask") {
@@ -563,12 +667,12 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
         if (!isCalcTask(body.task)) {
           return json({ error: "Задача: margin, forecast или shift" }, 400);
         }
-        const out = await explainCalc(body.task, metrics, snap.settings);
+        const out = await explainCalc(body.task, metrics, view.settings);
         return json({ ...out, metrics, calc: calcSnapshot(body.task, metrics), task: body.task });
       }
       if (path === "ai/recommend") {
-        const out = await recommendMetrics(metrics, snap.settings);
-        const local = await advisor.analyze(snap, branchId);
+        const out = await recommendMetrics(metrics, view.settings);
+        const local = await advisor.analyze(view, branchId);
         return json({ ...out, value: [...out.value, ...local].slice(0, 8), metrics });
       }
     }
@@ -622,98 +726,63 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
       return mutate(request, (snap, actor) => applyAddSupplier(snap, actor, body as never));
     }
 
-    if (method === "GET" && path === "analytics/abc") {
-      const actor = await requireActor(request);
-      if (!can(actor.role, "planning")) throw new AuthzError("Аналитика недоступна");
-      const repo = await getRepo();
-      const snap = await repo.load();
+    if (method === "GET" && path.startsWith("analytics/")) {
+      const { actor, view } = await loadScoped(request);
       const period = (url.searchParams.get("period") ?? "30d") as Period;
       const branchId = url.searchParams.get("branch") ?? actor.sessionBranchId;
-      return json({ rows: abcByRevenue(snap, period, branchId) });
-    }
-    if (method === "GET" && path === "analytics/plan") {
-      const actor = await requireActor(request);
-      const repo = await getRepo();
-      const snap = await repo.load();
-      const month = url.searchParams.get("month") ?? today().slice(0, 7);
-      const branchId = url.searchParams.get("branch") ?? writeOrAll(actor);
-      if (branchId === "all") return json({ note: "Выберите филиал", days: [], target: 0, fact: 0 });
-      return json(planVsFact(snap, branchId, month));
-    }
-    if (method === "GET" && path === "analytics/cover") {
-      const actor = await requireActor(request);
-      const repo = await getRepo();
-      const snap = await repo.load();
-      const branchId = url.searchParams.get("branch") ?? writeOrAll(actor);
-      if (branchId === "all") return json({ note: "Выберите филиал", rows: [] });
-      return json({ rows: stockCover(snap, branchId, (url.searchParams.get("period") ?? "7d") as Period) });
-    }
-    if (method === "GET" && path === "analytics/deviations") {
-      const actor = await requireActor(request);
-      const repo = await getRepo();
-      return json({ rows: deviations(await repo.load(), (url.searchParams.get("period") ?? "30d") as Period, url.searchParams.get("branch") ?? actor.sessionBranchId) });
-    }
-    if (method === "GET" && path === "analytics/revisions") {
-      const actor = await requireActor(request);
-      const repo = await getRepo();
-      const snap = await repo.load();
-      const branchId = url.searchParams.get("branch") ?? writeOrAll(actor);
-      if (branchId === "all") return json({ note: "Выберите филиал" });
-      return json(compareRevisions(snap, branchId));
-    }
-    if (method === "GET" && path === "analytics/prices") {
-      const actor = await requireActor(request);
-      const repo = await getRepo();
-      return json({
-        rows: priceHistory(
-          await repo.load(),
-          String(url.searchParams.get("product") ?? ""),
-          url.searchParams.get("branch") ?? actor.sessionBranchId,
-        ),
-      });
-    }
-    if (method === "GET" && path === "analytics/stoplist") {
-      const actor = await requireActor(request);
-      const repo = await getRepo();
-      const from = url.searchParams.get("from") ?? today().slice(0, 7) + "-01";
-      const to = url.searchParams.get("to") ?? today();
-      return json({
-        rows: stopListHistory(await repo.load(), url.searchParams.get("branch") ?? actor.sessionBranchId, from, to),
-      });
-    }
-    if (method === "GET" && path === "analytics/payroll") {
-      const actor = await requireActor(request);
-      const repo = await getRepo();
-      return json({
-        rows: periodPayroll(await repo.load(), (url.searchParams.get("period") ?? "30d") as Period, url.searchParams.get("branch") ?? actor.sessionBranchId),
-      });
-    }
-    if (method === "GET" && path === "analytics/avg-check") {
-      const actor = await requireActor(request);
-      if (!can(actor.role, "reports")) throw new AuthzError("Отчёты недоступны");
-      const repo = await getRepo();
-      const snap = await repo.load();
-      const period = (url.searchParams.get("period") ?? "7d") as Period;
-      const branchId = url.searchParams.get("branch") ?? actor.sessionBranchId;
-      return json(averageCheque(snap, period, branchId));
-    }
-    if (method === "GET" && path === "analytics/hourly") {
-      const actor = await requireActor(request);
-      if (!can(actor.role, "reports")) throw new AuthzError("Отчёты недоступны");
-      const repo = await getRepo();
-      const snap = await repo.load();
-      const period = (url.searchParams.get("period") ?? "7d") as Period;
-      const branchId = url.searchParams.get("branch") ?? actor.sessionBranchId;
-      return json(revenueByHour(snap, period, branchId));
-    }
-    if (method === "GET" && path === "analytics/waiter-voids") {
-      const actor = await requireActor(request);
-      if (!can(actor.role, "reports")) throw new AuthzError("Отчёты недоступны");
-      const repo = await getRepo();
-      const snap = await repo.load();
-      const period = (url.searchParams.get("period") ?? "7d") as Period;
-      const branchId = url.searchParams.get("branch") ?? actor.sessionBranchId;
-      return json({ rows: waiterVoidsAndDiscounts(snap, period, branchId) });
+      if (branchId && branchId !== "all") assertReadableBranch(view, actor, branchId);
+      if (path === "analytics/abc") {
+        if (!can(actor.role, "planning")) throw new AuthzError("Аналитика недоступна");
+        return json({ rows: abcByRevenue(view, (url.searchParams.get("period") ?? "30d") as Period, branchId) });
+      }
+      if (path === "analytics/plan") {
+        const month = url.searchParams.get("month") ?? today().slice(0, 7);
+        const bid = url.searchParams.get("branch") ?? writeOrAll(actor);
+        if (bid === "all") return json({ note: "Выберите филиал", days: [], target: 0, fact: 0 });
+        assertReadableBranch(view, actor, bid);
+        return json(planVsFact(view, bid, month));
+      }
+      if (path === "analytics/cover") {
+        const bid = url.searchParams.get("branch") ?? writeOrAll(actor);
+        if (bid === "all") return json({ note: "Выберите филиал", rows: [] });
+        assertReadableBranch(view, actor, bid);
+        return json({ rows: stockCover(view, bid, (url.searchParams.get("period") ?? "7d") as Period) });
+      }
+      if (path === "analytics/deviations") {
+        return json({ rows: deviations(view, period, branchId) });
+      }
+      if (path === "analytics/revisions") {
+        const bid = url.searchParams.get("branch") ?? writeOrAll(actor);
+        if (bid === "all") return json({ note: "Выберите филиал" });
+        assertReadableBranch(view, actor, bid);
+        return json(compareRevisions(view, bid));
+      }
+      if (path === "analytics/prices") {
+        return json({
+          rows: priceHistory(view, String(url.searchParams.get("product") ?? ""), branchId),
+        });
+      }
+      if (path === "analytics/stoplist") {
+        const from = url.searchParams.get("from") ?? today().slice(0, 7) + "-01";
+        const to = url.searchParams.get("to") ?? today();
+        return json({ rows: stopListHistory(view, branchId, from, to) });
+      }
+      if (path === "analytics/payroll") {
+        return json({ rows: periodPayroll(view, period, branchId) });
+      }
+      if (path === "analytics/avg-check") {
+        if (!can(actor.role, "reports")) throw new AuthzError("Отчёты недоступны");
+        return json(averageCheque(view, (url.searchParams.get("period") ?? "7d") as Period, branchId));
+      }
+      if (path === "analytics/hourly") {
+        if (!can(actor.role, "reports")) throw new AuthzError("Отчёты недоступны");
+        return json(revenueByHour(view, (url.searchParams.get("period") ?? "7d") as Period, branchId));
+      }
+      if (path === "analytics/waiter-voids") {
+        if (!can(actor.role, "reports")) throw new AuthzError("Отчёты недоступны");
+        return json({ rows: waiterVoidsAndDiscounts(view, (url.searchParams.get("period") ?? "7d") as Period, branchId) });
+      }
+      return json({ error: "not_found", path }, 404);
     }
 
     if (method === "POST" && path === "notify/flush") {
@@ -721,7 +790,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
       if (!isOpsLead(actor.role)) throw new AuthzError("Очередь недоступна");
       const next = await flushOutbox(await repo.load());
       await repo.save(next);
-      return json({ ok: true, state: publicSnapshot(next, actor.role), notify: notifyReady() });
+      return json({ ok: true, state: publicSnapshot(next, actor), notify: notifyReady() }, 200, request);
     }
 
     if (method === "GET" && path === "reports/pdf") {
@@ -804,8 +873,8 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     if (err instanceof StoreUnavailableError || isDbUnavailableError(err)) {
       return json({ error: DB_UNAVAILABLE_MSG }, 503);
     }
-    const message = publicErrorMessage(err);
+    const message = opaqueApiError(err);
     await persistOpsLog({ level: "error", event: "api", detail: message, path });
-    return json({ error: message }, isDbUnavailableError(err) ? 503 : 400);
+    return json({ error: message }, isDbUnavailableError(err) ? 503 : 400, request);
   }
 }

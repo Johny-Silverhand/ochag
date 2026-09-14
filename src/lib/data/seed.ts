@@ -42,6 +42,7 @@ export const BRANCHES: Branch[] = [
     seats: 48,
     phone: "+7 861 200-11-18",
     halls: ["Основной зал", "Веранда"],
+    ownerId: "u-owner",
   },
   {
     id: "br-south",
@@ -52,6 +53,7 @@ export const BRANCHES: Branch[] = [
     seats: 36,
     phone: "+7 861 200-11-05",
     halls: ["Основной зал"],
+    ownerId: "u-owner",
   },
   {
     id: "br-embank",
@@ -62,10 +64,11 @@ export const BRANCHES: Branch[] = [
     seats: 72,
     phone: "+7 861 200-11-02",
     halls: ["Банкетный", "Летняя терраса"],
+    ownerId: "u-owner",
   },
 ];
 
-export const USERS: StaffUser[] = [
+const SEED_USERS: StaffUser[] = [
   {
     id: "u-tech",
     name: "Виктор Мост",
@@ -236,6 +239,10 @@ export const USERS: StaffUser[] = [
     phone: "+7 918 000-00-12",
   },
 ];
+
+export const USERS: StaffUser[] = SEED_USERS.map((u) =>
+  u.role === "tech_admin" ? { ...u, ownerId: null } : { ...u, ownerId: "u-owner" },
+);
 
 export const PRODUCTS: Product[] = [
   { id: "prd-pork", name: "Свиная шея", category: "Мясо", unit: "kg", minQty: 18, avgCost: 420 },

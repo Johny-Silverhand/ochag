@@ -50,6 +50,8 @@ export interface Branch {
   phone: string;
   /** Hall names for banquet seating. Empty → «Основной зал». */
   halls?: string[];
+  /** Owner who owns this branch. Missing on old snapshots until normalize. */
+  ownerId?: string;
 }
 
 export interface StaffUser {
@@ -71,11 +73,27 @@ export interface StaffUser {
   disabled?: boolean;
   /** ISO timestamp of the last successful password or PIN login. */
   lastLoginAt?: string;
+  /** Owner network this staff belongs to. Owners: self. Technicians: unset. */
+  ownerId?: string | null;
+  /** Temporary lock after repeated failed logins. */
+  authLockedUntil?: string;
 }
 
 export interface Session {
   userId: string;
   branchId: string;
+  actingOwnerId?: string | null;
+  sessionId?: string;
+}
+
+export interface DeviceSession {
+  id: string;
+  userId: string;
+  deviceLabel: string;
+  ip: string;
+  createdAt: string;
+  lastActivityAt: string;
+  revokedAt?: string;
 }
 
 export interface Product {
@@ -553,6 +571,7 @@ export interface Snapshot {
   opsLogs: OpsLogEntry[];
   outbox: OutboxItem[];
   pushSubs: PushSubscriptionRecord[];
+  deviceSessions?: DeviceSession[];
   settings: NetworkSettings;
 }
 

@@ -32,6 +32,8 @@ import { canLoadSample, canManageBranches, canResetDemo, isNetworkAdmin, isOpsLe
 import { parseHalls } from "@/lib/domain/types";
 import { LabsFooter } from "@/components/brand/labs-credit";
 import { canEnterWithPin, canOfferPin, setPinEnabled } from "@/lib/auth/pin-gate";
+import { api } from "@/lib/api/client";
+import { ruDateTime } from "@/lib/format";
 
 export const Route = createFileRoute("/_app/settings")({ component: SettingsPage });
 
@@ -335,6 +337,7 @@ function ProfilePanel() {
         </div>
       </Card>
       <PinDeviceCard login={user.email} />
+      <DeviceSessionsCard />
       <Card>
         <h2 className="text-sm font-medium tracking-tight">Сессия</h2>
         <p className="mt-1 text-sm text-muted">Выход возвращает на экран входа. Операции остаются в базе.</p>
@@ -353,6 +356,87 @@ function ProfilePanel() {
         </div>
       </Card>
     </div>
+  );
+}
+
+function DeviceSessionsCard() {
+  const session = useOps((s) => s.session);
+  const [rows, setRows] = useState<
+    Array<{ id: string; deviceLabel: string; ip: string; createdAt: string; lastActivityAt: string; revokedAt?: string }>
+  >([]);
+  const [busy, setBusy] = useState("");
+
+  function load() {
+    void api<{ rows: typeof rows; currentId?: string }>("session/list")
+      .then((res) => setRows((res.rows ?? []).filter((r) => !r.revokedAt)))
+      .catch(() => setRows([]));
+  }
+
+  useEffect(() => {
+    load();
+  }, [session?.sessionId]);
+
+  async function revoke(id: string) {
+    setBusy(id);
+    try {
+      await api("session/revoke", { method: "POST", body: { sessionId: id } });
+      toast.success("Сессия отозвана");
+      load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Не удалось отозвать");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function revokeOthers() {
+    setBusy("others");
+    try {
+      await api("session/revoke-others", { method: "POST" });
+      toast.success("Другие устройства отключены");
+      load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Не удалось отозвать");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  return (
+    <Card>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h2 className="text-sm font-medium tracking-tight">Устройства</h2>
+          <p className="mt-1 text-sm text-muted">
+            Можно быть в системе сразу на нескольких телефонах. Отзыв выкидывает только выбранное устройство.
+          </p>
+        </div>
+        <Button type="button" variant="secondary" disabled={Boolean(busy)} onClick={() => void revokeOthers()}>
+          {busy === "others" ? "…" : "Отозвать остальные"}
+        </Button>
+      </div>
+      <ul className="mt-3 space-y-2">
+        {rows.map((row) => (
+          <li key={row.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-bg px-3 py-2">
+            <div className="min-w-0">
+              <div className="text-sm font-medium">
+                {row.deviceLabel}
+                {row.id === session?.sessionId ? <span className="ml-2 text-xs text-muted">это устройство</span> : null}
+              </div>
+              <p className="text-xs text-muted">
+                {row.ip} · вход {ruDateTime(row.createdAt)} · активность {ruDateTime(row.lastActivityAt)}
+              </p>
+            </div>
+            {row.id !== session?.sessionId ? (
+              <Button type="button" variant="ghost" disabled={busy === row.id} onClick={() => void revoke(row.id)}>
+                Отозвать
+              </Button>
+            ) : null}
+          </li>
+        ))}
+        {rows.length === 0 ? <p className="text-sm text-muted">Пока нет записей — войдите заново, чтобы увидеть это устройство.</p> : null}
+      </ul>
+    </Card>
   );
 }
 

@@ -2,6 +2,7 @@ import type { Snapshot } from "../domain/types";
 import { defaultSettings, today } from "../domain/types";
 import { freezeSaleCosts } from "../domain/finance";
 import { emptySnapshot } from "./empty";
+import { assignOwnerIds } from "../domain/tenancy";
 
 /** Bring an older persisted blob up to the current Snapshot shape. Never invents a demo network. */
 export function normalizeSnapshot(raw: Partial<Snapshot> | null | undefined): Snapshot {
@@ -15,7 +16,7 @@ export function normalizeSnapshot(raw: Partial<Snapshot> | null | undefined): Sn
   const products = raw.products ?? [];
   const recipes = raw.recipes ?? [];
 
-  return {
+  const normalized: Snapshot = {
     branches: (raw.branches ?? []).map((b) => ({
       ...b,
       seats: b.seats ?? 40,
@@ -93,7 +94,9 @@ export function normalizeSnapshot(raw: Partial<Snapshot> | null | undefined): Sn
       ...(raw.settings ?? {}),
       notifyEvents: { ...defaultSettings().notifyEvents, ...(raw.settings?.notifyEvents ?? {}) },
     },
+    deviceSessions: raw.deviceSessions ?? [],
   };
+  return assignOwnerIds(normalized);
 }
 
 export function dayOf(iso: string) {

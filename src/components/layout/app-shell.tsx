@@ -26,13 +26,14 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useActiveBranch, useOps, useSessionUser } from "@/lib/data/store";
-import { can, canSeeAllBranches, type ModuleKey } from "@/lib/domain/permissions";
+import { can, canSeeAllBranches, hasAbsoluteAccess, type ModuleKey } from "@/lib/domain/permissions";
 import { ROLE_LABEL, type Role } from "@/lib/domain/types";
 import { NativeSelect } from "@/components/ui/input";
 import { NETWORK_NAME } from "@/lib/brand";
 import { ThemeSwitcher } from "@/components/theme/switcher";
 import { useSync } from "@/lib/data/sync";
 import { PinOfferDialog } from "@/components/auth/pin-offer";
+import { api } from "@/lib/api/client";
 
 interface NavItem {
   to: string;
@@ -115,6 +116,7 @@ export function AppShell() {
   const session = useOps((s) => s.session);
   const branches = useOps((s) => s.branches);
   const setBranch = useOps((s) => s.setBranch);
+  const setOwner = useOps((s) => s.setOwner);
   const logout = useOps((s) => s.logout);
   const navigate = useNavigate();
   const role = user?.role ?? "waiter";
@@ -202,6 +204,7 @@ export function AppShell() {
             <span className="truncate text-sm font-semibold tracking-wide">{NETWORK_NAME}</span>
           </div>
           <div className="ml-auto flex min-w-0 items-center gap-1.5 sm:gap-2">
+            {hasAbsoluteAccess(role) ? <OwnerContourSelect value={session?.actingOwnerId ?? ""} onChange={setOwner} /> : null}
             {canSeeAllBranches(role) ? (
               <NativeSelect
                 className="h-11 w-[min(9rem,38vw)] min-w-0 shrink bg-surface sm:w-52 md:h-10"
@@ -344,6 +347,38 @@ export function AppShell() {
       </nav>
       <PinOfferDialog />
     </div>
+  );
+}
+
+function OwnerContourSelect({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (ownerId: string | null) => Promise<void>;
+}) {
+  const [owners, setOwners] = useState<Array<{ id: string; name: string; email: string }>>([]);
+  useEffect(() => {
+    void api<{ rows: Array<{ id: string; name: string; email: string }> }>("owners")
+      .then((res) => setOwners(res.rows ?? []))
+      .catch(() => setOwners([]));
+  }, []);
+  return (
+    <NativeSelect
+      className="h-11 w-[min(10rem,42vw)] min-w-0 shrink bg-surface sm:w-52 md:h-10"
+      value={value}
+      onChange={(e) => {
+        void onChange(e.target.value || null);
+      }}
+      aria-label="Контур владельца"
+    >
+      <option value="">Все владельцы</option>
+      {owners.map((o) => (
+        <option key={o.id} value={o.id}>
+          {o.name}
+        </option>
+      ))}
+    </NativeSelect>
   );
 }
 
