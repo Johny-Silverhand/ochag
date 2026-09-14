@@ -99,7 +99,7 @@ export function computeKpis(
 ): KpiBundle {
   const from = periodStart(opts.period);
   const to = today();
-  const sales = filterPeriod(filterByBranch(snap.sales, opts.branchId), from, to);
+  const sales = filterPeriod(filterByBranch(snap.sales, opts.branchId), from, to).filter((s) => !s.voided);
   const expenses = filterPeriod(filterByBranch(snap.expenses, opts.branchId), from, to);
   const payroll = filterPeriod(filterByBranch(snap.payroll, opts.branchId), from, to);
   const writeoffs = snap.movements.filter(
@@ -160,6 +160,7 @@ export function dailyRevenue(sales: Sale[], from: string, to: string) {
     d = addDays(d, 1);
   }
   for (const s of sales) {
+    if (s.voided) continue;
     const day = s.at.slice(0, 10);
     if (map.has(day)) map.set(day, (map.get(day) ?? 0) + s.total);
   }
@@ -248,7 +249,7 @@ export function deductSaleFromStock(
 }
 
 export function shiftTotals(shift: Shift, sales: Sale[]) {
-  const rows = sales.filter((s) => s.shiftId === shift.id);
+  const rows = sales.filter((s) => s.shiftId === shift.id && !s.voided);
   let cash = 0;
   let card = 0;
   let qr = 0;
@@ -260,8 +261,20 @@ export function shiftTotals(shift: Shift, sales: Sale[]) {
     qr += p.qr;
     transfer += p.transfer;
   }
-  const expected = expectedCash(shift.openCash, cash);
-  return { cash, card, qr, transfer, expected, checks: rows.length, revenue: cash + card + qr + transfer };
+  const incidentalCash = (shift.incidentals ?? [])
+    .filter((i) => i.paidFromTill)
+    .reduce((s, i) => s + i.amount, 0);
+  const expected = roundMoney(expectedCash(shift.openCash, cash) - incidentalCash);
+  return {
+    cash,
+    card,
+    qr,
+    transfer,
+    incidentalCash,
+    expected,
+    checks: rows.length,
+    revenue: cash + card + qr + transfer,
+  };
 }
 
 export function shiftHours(shift: Shift) {

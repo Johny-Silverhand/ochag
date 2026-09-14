@@ -14,8 +14,9 @@
  *
  * cost_at_sale is frozen on the cheque line at sale time.
  */
-import type { Product, Recipe, Sale, SaleItem, Snapshot, StockLevel } from "./types.ts";
+import type { Role, Snapshot } from "./types.ts";
 import { defaultSettings } from "./types.ts";
+import { canSeeDebts } from "./permissions.ts";
 
 export function roundMoney(value: number, digits = 2) {
   const f = 10 ** digits;
@@ -149,14 +150,18 @@ export function publicUser<T extends { password: string; pin: string }>(user: T)
   return rest;
 }
 
-export function publicSnapshot(snap: Snapshot): Snapshot {
-  return {
+export function publicSnapshot(snap: Snapshot, role?: Role): Snapshot {
+  const base: Snapshot = {
     ...snap,
     users: snap.users.map((u) => ({ ...u, password: "", pin: "" })),
     settings: snap.settings ?? defaultSettings(),
     suppliers: snap.suppliers ?? [],
     closedPeriods: snap.closedPeriods ?? [],
     debts: snap.debts ?? [],
+    ledgerDebts: snap.ledgerDebts ?? [],
+    householdItems: snap.householdItems ?? [],
+    householdStock: snap.householdStock ?? [],
+    householdMovements: snap.householdMovements ?? [],
     payrollAdjustments: snap.payrollAdjustments ?? [],
     revenuePlans: snap.revenuePlans ?? [],
     audit: snap.audit ?? [],
@@ -164,4 +169,8 @@ export function publicSnapshot(snap: Snapshot): Snapshot {
     outbox: snap.outbox ?? [],
     pushSubs: (snap.pushSubs ?? []).map((s) => ({ ...s, keys: { p256dh: "", auth: "" } })),
   };
+  if (role && !canSeeDebts(role)) {
+    return { ...base, ledgerDebts: [] };
+  }
+  return base;
 }

@@ -1,6 +1,7 @@
 import type {
   Banquet,
   BanquetStatus,
+  DocumentPhoto,
   ExpenseKind,
   InvoiceLine,
   PaymentType,
@@ -47,7 +48,8 @@ import {
   isOpsLead,
   invitableRoles,
 } from "./permissions.ts";
-import { assertPeriodOpen } from "./period.ts";
+import { sanitizePhotos } from "./photos.ts";
+import { attachIncidentals } from "./incidentals.ts";
 import { appendAudit } from "./audit.ts";
 import { appendOpsLog } from "./ops-log.ts";
 
@@ -105,7 +107,7 @@ export function applyWriteoff(
 export function applyInvoice(
   snap: Snapshot,
   actor: Actor,
-  input: { supplier: string; number: string; date: string; lines: InvoiceLine[] },
+  input: { supplier: string; number: string; date: string; lines: InvoiceLine[]; photos?: DocumentPhoto[] },
 ): Snapshot {
   const branchId = writeBranch(actor);
   assertBranchScope(actor, branchId);
@@ -120,6 +122,7 @@ export function applyInvoice(
     lines: input.lines,
     total,
     userId: actor.userId,
+    photos: sanitizePhotos(input.photos),
   };
   const movs = input.lines.map((l) => ({
     id: uid("m"),
@@ -230,7 +233,14 @@ export function applyRequestStatus(
 export function applyOpenShift(
   snap: Snapshot,
   actor: Actor,
-  input: { openCash: number; staffIds: string[]; startList: string[]; topUpDebtId?: string; topUpAmount?: number },
+  input: {
+    openCash: number;
+    staffIds: string[];
+    startList: string[];
+    topUpDebtId?: string;
+    topUpAmount?: number;
+    incidentals?: Array<{ title: string; amount: number; paidFromTill?: boolean; note?: string }>;
+  },
 ): Snapshot {
   if (!canOpenShift(actor.role)) throw new AuthzError("Открытие смены недоступно");
   const branchId = writeBranch(actor);
@@ -255,6 +265,7 @@ export function applyOpenShift(
         qrTotal: 0,
         staffIds: input.staffIds,
         startList: input.startList,
+        incidentals: [],
       },
       ...snap.shifts,
     ],
@@ -270,21 +281,32 @@ export function applyOpenShift(
     };
   }
   next = appendAudit(next, actor, "shift_open", "shift", `старт-лист ${input.startList.length} блюд`, branchId);
-  return queueEvent(next, "shift_open", "Смена открыта", `${actor.name} открыл смену. Старт-лист: ${input.startList.length} позиций.`);
+  next = queueEvent(next, "shift_open", "Смена открыта", `${actor.name} открыл смену. Старт-лист: ${input.startList.length} позиций.`);
+  return attachIncidentals(next, actor, shiftId, input.incidentals, "open");
 }
 
-export function applyCloseShift(snap: Snapshot, actor: Actor, input: { closeCash: number; note?: string }): Snapshot {
+export function applyCloseShift(
+  snap: Snapshot,
+  actor: Actor,
+  input: {
+    closeCash: number;
+    note?: string;
+    incidentals?: Array<{ title: string; amount: number; paidFromTill?: boolean; note?: string }>;
+  },
+): Snapshot {
   assertCash(actor);
   const branchId = writeBranch(actor);
   assertBranchScope(actor, branchId);
-  const shift = openShiftFor(snap.shifts, branchId);
-  if (!shift) return snap;
-  const totals = shiftTotals(shift, snap.sales);
+  const open = openShiftFor(snap.shifts, branchId);
+  if (!open) return snap;
+  const withInc = attachIncidentals(snap, actor, open.id, input.incidentals, "close");
+  const shift = withInc.shifts.find((s) => s.id === open.id) ?? open;
+  const totals = shiftTotals(shift, withInc.sales);
   const discrepancy = Math.round(input.closeCash - totals.expected);
-  const pays = payrollForShift(shift, snap.sales, snap.users);
+  const pays = payrollForShift(shift, withInc.sales, withInc.users);
   let next: Snapshot = {
-    ...snap,
-    shifts: snap.shifts.map((sh) =>
+    ...withInc,
+    shifts: withInc.shifts.map((sh) =>
       sh.id === shift.id
         ? {
             ...sh,
@@ -313,7 +335,7 @@ export function applyCloseShift(snap: Snapshot, actor: Actor, input: { closeCash
         bonus: p.bonus,
         total: p.total,
       })),
-      ...snap.payroll,
+      ...withInc.payroll,
     ],
   };
   if (discrepancy < 0) {
@@ -446,7 +468,13 @@ export function applyBanquetStatus(snap: Snapshot, actor: Actor, id: string, sta
   return { ...snap, banquets: snap.banquets.map((b) => (b.id === id ? { ...b, status } : b)) };
 }
 
-export function applyRevision(snap: Snapshot, actor: Actor, lines: RevisionLine[], note?: string): Snapshot {
+export function applyRevision(
+  snap: Snapshot,
+  actor: Actor,
+  lines: RevisionLine[],
+  note?: string,
+  photos?: DocumentPhoto[],
+): Snapshot {
   assertWriteoff(actor);
   const branchId = writeBranch(actor);
   assertBranchScope(actor, branchId);
@@ -478,7 +506,7 @@ export function applyRevision(snap: Snapshot, actor: Actor, lines: RevisionLine[
     stock,
     movements: [...movs, ...snap.movements],
     revisions: [
-      { id: uid("r"), branchId, date: today(), status: "done", lines, userId: actor.userId, note },
+      { id: uid("r"), branchId, date: today(), status: "done", lines, userId: actor.userId, note, photos: sanitizePhotos(photos) },
       ...snap.revisions,
     ],
   };
@@ -625,6 +653,10 @@ function canSeeAllBranchesSafe(actor: Actor) {
   return canSeeAllBranches(actor.role);
 }
 
+export { applyCreateLedgerDebt, applyPayLedgerDebt, applyUpdateLedgerDebt } from "./debts.ts";
+export { applyUpsertHouseholdItem, applyHouseholdMove } from "./household.ts";
+export { applyShiftIncidental } from "./incidentals.ts";
+export { applyVoidSale, applyDiscountSale } from "./sales-adjust.ts";
 export { applyOnboard } from "./onboard.ts";
 
 export function applyBootstrap(
@@ -694,6 +726,7 @@ export function applyInviteStaff(
     branchId: string;
     shiftPay: number;
     salesPercent: number;
+    monthlyPremium?: number;
     position?: string;
     phone?: string;
   },
@@ -720,6 +753,7 @@ export function applyInviteStaff(
     branchId: isNetworkAdmin(input.role) ? null : input.branchId,
     shiftPay: input.shiftPay,
     salesPercent: input.salesPercent,
+    monthlyPremium: input.monthlyPremium ?? 0,
     phone: input.phone ?? "",
     disabled: false,
   };
@@ -752,6 +786,7 @@ export function applyUpdateStaff(
     branchId?: string | null;
     shiftPay?: number;
     salesPercent?: number;
+    monthlyPremium?: number;
     position?: string;
     phone?: string;
     disabled?: boolean;
@@ -796,6 +831,7 @@ export function applyUpdateStaff(
     branchId: nextBranch,
     shiftPay: input.shiftPay ?? target.shiftPay,
     salesPercent: input.salesPercent ?? target.salesPercent,
+    monthlyPremium: input.monthlyPremium ?? target.monthlyPremium ?? 0,
     phone: input.phone ?? target.phone,
     disabled: nextDisabled,
   };
@@ -979,6 +1015,35 @@ export function applyPayrollAdjustment(
   return appendAudit({ ...snap, payrollAdjustments: [row, ...snap.payrollAdjustments] }, actor, "payroll_adj", "payroll", `${input.kind} ${input.amount}`, branchId);
 }
 
+export function applyAccrueMonthlyPremiums(
+  snap: Snapshot,
+  actor: Actor,
+  input: { month?: string } = {},
+): Snapshot {
+  if (!canInviteStaff(actor.role)) throw new AuthzError("Начисление премий недоступно");
+  const month = (input.month ?? today()).slice(0, 7);
+  const branchId = writeBranch(actor);
+  let next = snap;
+  for (const u of snap.users) {
+    const premium = u.monthlyPremium ?? 0;
+    if (premium <= 0) continue;
+    if (isNetworkAdmin(u.role)) continue;
+    if (u.branchId && u.branchId !== branchId) continue;
+    const already = next.payrollAdjustments.some(
+      (a) => a.userId === u.id && a.kind === "premium" && a.date.startsWith(month) && a.note.includes("месячная"),
+    );
+    if (already) continue;
+    next = applyPayrollAdjustment(next, actor, {
+      userId: u.id,
+      kind: "premium",
+      amount: premium,
+      note: `месячная премия ${month}`,
+      date: `${month}-01`,
+    });
+  }
+  return next;
+}
+
 export function applyRevenuePlan(snap: Snapshot, actor: Actor, input: { branchId: string; month: string; target: number }): Snapshot {
   if (!isOpsLead(actor.role)) throw new AuthzError("План недоступен");
   const existing = snap.revenuePlans.find((p) => p.branchId === input.branchId && p.month === input.month);
@@ -995,10 +1060,24 @@ export function applyRevenuePlan(snap: Snapshot, actor: Actor, input: { branchId
 
 export function applySettings(snap: Snapshot, actor: Actor, patch: Partial<Snapshot["settings"]>): Snapshot {
   if (!isOpsLead(actor.role)) throw new AuthzError("Настройки сети недоступны");
-  const keys = Object.keys(patch).join(", ") || "без полей";
+  const nextPatch = { ...patch };
+  if (
+    nextPatch.ollamaEnabled !== undefined ||
+    nextPatch.ollamaBaseUrl !== undefined ||
+    nextPatch.ollamaModel !== undefined
+  ) {
+    if (!isNetworkAdmin(actor.role)) throw new AuthzError("Ollama настраивает владелец");
+  }
+  if (typeof nextPatch.ollamaBaseUrl === "string") {
+    nextPatch.ollamaBaseUrl = nextPatch.ollamaBaseUrl.trim().replace(/\/$/, "");
+  }
+  if (typeof nextPatch.ollamaModel === "string") {
+    nextPatch.ollamaModel = nextPatch.ollamaModel.trim();
+  }
+  const keys = Object.keys(nextPatch).join(", ") || "без полей";
   const next = {
     ...snap,
-    settings: { ...snap.settings, ...patch, notifyEvents: { ...snap.settings.notifyEvents, ...(patch.notifyEvents ?? {}) } },
+    settings: { ...snap.settings, ...nextPatch, notifyEvents: { ...snap.settings.notifyEvents, ...(nextPatch.notifyEvents ?? {}) } },
   };
   return appendOpsLog(appendAudit(next, actor, "settings", "network", keys), {
     level: "info",
