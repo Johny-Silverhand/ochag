@@ -62,12 +62,12 @@ function LoginPage() {
   }
 
   return (
-    <main className="login-scene max-h-[var(--app-height,100dvh)] min-h-dvh overflow-y-auto scroll-touch text-fg lg:max-h-none lg:grid lg:grid-cols-2">
+    <main className="login-scene max-h-[var(--app-height,100dvh)] min-h-dvh min-w-0 overflow-x-clip overflow-y-auto scroll-touch text-fg lg:max-h-none lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(22rem,32rem)]">
       <div className="login-scene-bg" aria-hidden="true" />
-      <section className="relative z-10 hidden flex-col justify-end overflow-hidden px-12 pt-[max(3rem,env(safe-area-inset-top))] pb-12 lg:flex">
-        <div className="login-card max-w-md px-7 py-7">
+      <section className="relative z-10 hidden min-w-0 flex-col justify-end overflow-hidden px-[var(--login-pad-x)] pt-[max(2.5rem,env(safe-area-inset-top))] pb-[max(2.5rem,env(safe-area-inset-bottom))] lg:flex">
+        <div className="login-card max-w-md">
           <div className="text-xs font-medium tracking-[0.28em] text-muted uppercase">{NETWORK_NAME}</div>
-          <h1 className="mt-6 max-w-md text-5xl leading-tight font-medium tracking-tight">
+          <h1 className="login-hero-title mt-6 max-w-md font-medium tracking-tight">
             Товароучёт и управление кафе на продажах r_keeper.
           </h1>
           <p className="mt-5 max-w-md text-sm leading-relaxed text-muted">
@@ -76,12 +76,12 @@ function LoginPage() {
         </div>
       </section>
 
-      <section className="relative z-10 flex min-h-dvh flex-col justify-start px-5 pt-[max(3.25rem,env(safe-area-inset-top))] pb-[max(2.5rem,env(safe-area-inset-bottom))] sm:px-10 lg:justify-center">
-        <div className="login-card mx-auto w-full max-w-md px-5 py-7 pb-10 sm:px-8">
+      <section className="relative z-10 flex min-h-dvh min-w-0 flex-col justify-start px-[var(--login-pad-x)] pt-[max(3.25rem,env(safe-area-inset-top))] pb-[max(2.5rem,env(safe-area-inset-bottom))] md:justify-center md:py-[max(2.25rem,env(safe-area-inset-top))]">
+        <div className="login-card mx-auto w-full max-w-md pb-10">
           <div className="mb-8">
             <div className="text-xs font-medium tracking-[0.28em] text-muted uppercase">{NETWORK_NAME}</div>
-            <h1 className="mt-2 text-3xl font-medium tracking-tight lg:hidden">Вход в контур</h1>
-            <h2 className="mt-2 hidden text-3xl font-medium tracking-tight lg:block">Вход</h2>
+            <h1 className="login-title mt-2 font-medium tracking-tight lg:hidden">Вход в контур</h1>
+            <h2 className="login-title mt-2 hidden font-medium tracking-tight lg:block">Вход</h2>
             <p className="mt-2 text-sm leading-relaxed text-muted">{LOGIN_INTRO}</p>
           </div>
 

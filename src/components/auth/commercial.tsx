@@ -72,7 +72,7 @@ export function CommercialGate({
       ) : null}
 
       <Dialog open={about} onOpenChange={setAbout}>
-        <DialogContent title={`Что такое ${NETWORK_NAME}`} className="max-h-[min(90dvh,44rem)] max-w-2xl overflow-y-auto">
+        <DialogContent title={`Что такое ${NETWORK_NAME}`} className="max-w-2xl">
           <img
             src="/marketing/hero.png"
             alt="Планшет с контуром Очаг на фоне кафе"
@@ -109,7 +109,10 @@ export function CommercialGate({
       </Dialog>
 
       <Dialog open={flowOpen} onOpenChange={(open) => { if (!open) setFlow(null); }}>
-        <DialogContent title={flowTitle} className="max-h-[min(92dvh,48rem)] max-w-3xl overflow-y-auto bg-elevated">
+        <DialogContent
+          title={flowTitle}
+          className={cn("bg-elevated", flow === "plans" ? "max-w-3xl" : "max-w-lg")}
+        >
           {flow === "plans" ? (
             <PlansStep
               selected={picked}
@@ -187,7 +190,7 @@ function TariffCard({
       type="button"
       onClick={onSelect}
       className={cn(
-        "rounded-2xl bg-surface p-3 text-left shadow-(--shadow-border) transition-[box-shadow,transform] duration-200 ease-[var(--ease-out-smooth)]",
+        "min-w-0 rounded-2xl bg-surface p-3 text-left shadow-(--shadow-border) transition-[box-shadow,transform] duration-200 ease-[var(--ease-out-smooth)]",
         selected ? "ring-2 ring-ring/40" : "hover:shadow-(--shadow-border-hover)",
       )}
     >
@@ -228,7 +231,7 @@ function CheckoutStep({
   const [cvc, setCvc] = useState("000");
 
   return (
-    <div>
+    <div className="form-narrow">
       <Badge tone="warning" className="mb-3 whitespace-normal text-left leading-snug">
         {PAYMENT_SIM_BADGE}
       </Badge>
@@ -266,11 +269,11 @@ function CheckoutStep({
         <p className="text-xs text-muted">
           Нажмите «Оплатить» — симуляция всегда проходит, карта никуда не отправляется.
         </p>
-        <div className="flex gap-2">
-          <Button type="button" variant="outline" className="flex-1" onClick={onBack} disabled={busy}>
+        <div className="flex min-w-0 gap-2">
+          <Button type="button" variant="outline" className="min-w-0 flex-1" onClick={onBack} disabled={busy}>
             Назад
           </Button>
-          <Button type="submit" className="flex-1" disabled={busy}>
+          <Button type="submit" className="min-w-0 flex-1" disabled={busy}>
             {busy ? "Проводим…" : "Оплатить"}
           </Button>
         </div>
@@ -299,7 +302,7 @@ function OnboardStep({
   const [address, setAddress] = useState("");
 
   return (
-    <div>
+    <div className="form-narrow">
       <p className="mb-4 text-sm text-muted">
         Владелец сети, первый филиал и вход. Пароль — от 4 знаков, PIN — 4 цифры для зала.
       </p>
@@ -348,7 +351,7 @@ function OnboardStep({
         <Field label="Первый филиал">
           <Input value={branchName} onChange={(e) => setBranchName(e.target.value)} />
         </Field>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Город">
             <Input value={city} onChange={(e) => setCity(e.target.value)} />
           </Field>
@@ -357,11 +360,11 @@ function OnboardStep({
           </Field>
         </div>
         {error ? <p className="text-sm text-danger">{error}</p> : null}
-        <div className="flex gap-2">
-          <Button type="button" variant="outline" className="flex-1" onClick={onBack} disabled={busy}>
+        <div className="flex min-w-0 gap-2">
+          <Button type="button" variant="outline" className="min-w-0 flex-1" onClick={onBack} disabled={busy}>
             Назад
           </Button>
-          <Button type="submit" className="flex-1" disabled={busy}>
+          <Button type="submit" className="min-w-0 flex-1" disabled={busy}>
             {busy ? "Создаём…" : "Создать и войти"}
           </Button>
         </div>
