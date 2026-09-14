@@ -44,6 +44,11 @@ export function createMemoryRepository(source: StoreSource = "memory"): OpsRepos
       return structuredClone(blank);
     },
     async loadSample() {
+      const { looksLikeCommercialNetwork, SAMPLE_BLOCKED_MSG } = await import("../data/sample-guard");
+      if (looksLikeCommercialNetwork(slot().snapshot)) {
+        const { AuthzError } = await import("../authz/error");
+        throw new AuthzError(SAMPLE_BLOCKED_MSG, 403);
+      }
       const seed = createSeed();
       slot().snapshot = seed;
       slot().updatedAt = new Date().toISOString();

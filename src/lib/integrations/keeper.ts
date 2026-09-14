@@ -32,7 +32,7 @@ export interface KeeperReceipt {
   number: string;
   datetime: string;
   sum: number;
-  payType: "cash" | "card" | "qr";
+  payType: PaymentType;
   items: KeeperLine[];
 }
 

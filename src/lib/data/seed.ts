@@ -41,6 +41,7 @@ export const BRANCHES: Branch[] = [
     address: "ул. Пушкина, 18",
     seats: 48,
     phone: "+7 861 200-11-18",
+    halls: ["Основной зал", "Веранда"],
   },
   {
     id: "br-south",
@@ -50,6 +51,7 @@ export const BRANCHES: Branch[] = [
     address: "ул. Зиповская, 5",
     seats: 36,
     phone: "+7 861 200-11-05",
+    halls: ["Основной зал"],
   },
   {
     id: "br-embank",
@@ -59,6 +61,7 @@ export const BRANCHES: Branch[] = [
     address: "ул. Кубанская наб., 2",
     seats: 72,
     phone: "+7 861 200-11-02",
+    halls: ["Банкетный", "Летняя терраса"],
   },
 ];
 

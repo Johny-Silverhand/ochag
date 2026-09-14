@@ -109,6 +109,13 @@ export function createPostgresRepository(
       return structuredClone(written);
     },
     async loadSample() {
+      const current = (await read()).snap;
+      const { looksLikeCommercialNetwork } = await import("../data/sample-guard");
+      if (looksLikeCommercialNetwork(current)) {
+        const { AuthzError } = await import("../authz/error");
+        const { SAMPLE_BLOCKED_MSG } = await import("../data/sample-guard");
+        throw new AuthzError(SAMPLE_BLOCKED_MSG, 403);
+      }
       const seed = createSeed();
       await write(seed);
       return structuredClone(seed);

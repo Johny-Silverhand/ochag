@@ -33,6 +33,7 @@ function payType(raw: string): KeeperReceipt["payType"] {
   const v = raw.toLowerCase();
   if (v.includes("cash") || v.includes("нал") || v.includes("наллич") || v === "1") return "cash";
   if (v.includes("qr") || v.includes("сбп") || v.includes("sbp")) return "qr";
+  if (v.includes("перевод") || v.includes("transfer") || v.includes("wire")) return "transfer";
   return "card";
 }
 

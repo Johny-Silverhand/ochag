@@ -38,8 +38,8 @@ export async function banquetPdf(snap: Snapshot, banquet: Banquet, sheet: "guest
   const spec = {
     guest: { title: "Банкетный лист", lines: [...banquet.grillItems, ...banquet.kitchenItems, ...banquet.serviceItems], notes: banquet.notes },
     waiter: { title: "Лист официанта", lines: banquet.serviceItems, notes: banquet.waiterNotes },
-    cook: { title: "Лист кухни", lines: banquet.kitchenItems, notes: banquet.notes },
-    grill: { title: "Лист шашлычника", lines: banquet.grillItems, notes: "" },
+    cook: { title: "Лист кухни", lines: banquet.kitchenItems, notes: banquet.kitchenNotes },
+    grill: { title: "Лист шашлычника", lines: banquet.grillItems, notes: banquet.grillNotes },
   }[sheet];
 
   const buf = await pdfBuffer((doc) => {
