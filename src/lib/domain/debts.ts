@@ -1,9 +1,10 @@
 import type { LedgerDebt, LedgerDebtKind, Snapshot } from "./types.ts";
 import { uid } from "../utils.ts";
-import { actorFrom, AuthzError, assertBranchScope, type Actor, writeBranch } from "../authz/actor.ts";
+import { actorFrom, AuthzError, type Actor, writeBranch } from "../authz/actor.ts";
 import { canManageDebts, canSeeDebts } from "./permissions.ts";
 import { appendAudit } from "./audit.ts";
 import { roundMoney } from "./finance.ts";
+import { assertReadableBranch } from "./tenancy.ts";
 
 export { actorFrom };
 
@@ -40,7 +41,7 @@ export function applyCreateLedgerDebt(
 ): Snapshot {
   assertDebts(actor);
   const branchId = input.branchId && input.branchId !== "all" ? input.branchId : writeBranch(actor);
-  assertBranchScope(actor, branchId);
+  assertReadableBranch(snap, actor, branchId);
   const name = input.partyName.trim();
   const amount = roundMoney(Number(input.amount) || 0);
   if (!name) throw new AuthzError("Укажите контрагента", 400);
@@ -73,7 +74,7 @@ export function applyPayLedgerDebt(
   assertDebts(actor);
   const debt = (snap.ledgerDebts ?? []).find((d) => d.id === input.debtId);
   if (!debt) throw new AuthzError("Долг не найден", 404);
-  assertBranchScope(actor, debt.branchId);
+  assertReadableBranch(snap, actor, debt.branchId);
   const amount = roundMoney(Number(input.amount) || 0);
   if (amount <= 0) throw new AuthzError("Сумма погашения должна быть больше нуля", 400);
   const left = remaining(debt);
@@ -112,7 +113,7 @@ export function applyUpdateLedgerDebt(
   assertDebts(actor);
   const debt = (snap.ledgerDebts ?? []).find((d) => d.id === input.debtId);
   if (!debt) throw new AuthzError("Долг не найден", 404);
-  assertBranchScope(actor, debt.branchId);
+  assertReadableBranch(snap, actor, debt.branchId);
   const amount = input.amount != null ? roundMoney(Number(input.amount) || 0) : debt.amount;
   if (amount < debt.paid) throw new AuthzError("Сумма не может быть меньше уже погашенного", 400);
   const next: LedgerDebt = {

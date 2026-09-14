@@ -1,11 +1,12 @@
 import type { Snapshot, ShiftIncidental, ShiftIncidentalPhase } from "./types.ts";
 import { uid } from "../utils.ts";
-import { AuthzError, assertBranchScope, type Actor, writeBranch } from "../authz/actor.ts";
+import { AuthzError, type Actor, writeBranch } from "../authz/actor.ts";
 import { canEditExpenses, canOpenShift } from "./permissions.ts";
 import { appendAudit } from "./audit.ts";
 import { openShiftFor } from "./engine.ts";
 import { roundMoney } from "./finance.ts";
 import { today } from "./types.ts";
+import { assertReadableBranch } from "./tenancy.ts";
 
 export type IncidentalDraft = {
   title: string;
@@ -32,7 +33,7 @@ export function applyShiftIncidental(
 ): Snapshot {
   assertShiftMoney(actor);
   const branchId = writeBranch(actor);
-  assertBranchScope(actor, branchId);
+  assertReadableBranch(snap, actor, branchId);
   const shift = input.shiftId
     ? snap.shifts.find((s) => s.id === input.shiftId)
     : openShiftFor(snap.shifts, branchId);

@@ -1,5 +1,6 @@
 import type { Snapshot } from "./types.ts";
-import { AuthzError, assertBranchScope, type Actor } from "../authz/actor.ts";
+import { AuthzError, type Actor } from "../authz/actor.ts";
+import { assertReadableBranch } from "./tenancy.ts";
 import { canDiscountSale, canVoidSale } from "./permissions.ts";
 import { appendAudit } from "./audit.ts";
 import { applyMovement } from "./engine.ts";
@@ -9,7 +10,7 @@ export function applyVoidSale(snap: Snapshot, actor: Actor, input: { saleId: str
   if (!canVoidSale(actor.role)) throw new AuthzError("Отмену чека делает управляющий или владелец");
   const sale = snap.sales.find((s) => s.id === input.saleId);
   if (!sale) throw new AuthzError("Чек не найден", 404);
-  assertBranchScope(actor, sale.branchId);
+  assertReadableBranch(snap, actor, sale.branchId);
   if (sale.voided) throw new AuthzError("Чек уже отменён");
   const reason = (input.reason ?? "").trim() || "отмена";
   const reversals = snap.movements
@@ -52,7 +53,7 @@ export function applyDiscountSale(
   if (!canDiscountSale(actor.role)) throw new AuthzError("Скидку ставит управляющий или владелец");
   const sale = snap.sales.find((s) => s.id === input.saleId);
   if (!sale) throw new AuthzError("Чек не найден", 404);
-  assertBranchScope(actor, sale.branchId);
+  assertReadableBranch(snap, actor, sale.branchId);
   if (sale.voided) throw new AuthzError("Нельзя скидку на отменённый чек");
   const amount = roundMoney(Number(input.amount) || 0);
   if (amount <= 0) throw new AuthzError("Сумма скидки должна быть больше нуля", 400);

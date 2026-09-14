@@ -12,6 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { Segmented } from "@/components/ui/tabs";
 import { useOps, useSessionUser } from "@/lib/data/store";
 import { formatHandoff, generatePassword, generatePin } from "@/lib/domain/credentials";
+import { OwnerContourPanel } from "@/components/admin/owner-contour";
 import {
   adminVisibleUsers,
   accountPlaceLabel,
@@ -57,6 +58,8 @@ function AccountsPage() {
   const inviteStaff = useOps((s) => s.inviteStaff);
   const updateStaff = useOps((s) => s.updateStaff);
   const deleteStaff = useOps((s) => s.deleteStaff);
+  const setOwner = useOps((s) => s.setOwner);
+  const setBranch = useOps((s) => s.setBranch);
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
   const [roleFilter, setRoleFilter] = useState<Role | "all">("all");
@@ -69,6 +72,7 @@ function AccountsPage() {
     userId: user.id,
     homeBranchId: user.branchId,
     sessionBranchId: session.branchId,
+    actingOwnerId: session.actingOwnerId ?? null,
   };
   const visible = adminVisibleUsers(actor, snap.users);
   const rows = useMemo(() => {
@@ -125,6 +129,16 @@ function AccountsPage() {
       />
 
       {issued ? <HandoffCard issued={issued} onDismiss={() => setIssued(null)} /> : null}
+
+      {hasAbsoluteAccess(user.role) ? (
+        <OwnerContourPanel
+          actingOwnerId={session.actingOwnerId}
+          onSelectOwner={setOwner}
+          branches={snap.branches}
+          sessionBranchId={session.branchId}
+          onSelectBranch={setBranch}
+        />
+      ) : null}
 
       <Card className="mb-4">
         <div className="grid gap-3">

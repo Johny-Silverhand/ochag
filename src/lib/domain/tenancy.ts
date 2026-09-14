@@ -12,7 +12,23 @@ export type TenantActor = {
 };
 
 export function ownersOf(snap: Snapshot): StaffUser[] {
-  return snap.users.filter((u) => u.role === "owner" && !u.disabled);
+  return snap.users.filter((u) => u.role === "owner");
+}
+
+export function ownerSummaries(snap: Snapshot) {
+  return ownersOf(snap)
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name, "ru"))
+    .map((o) => ({
+      id: o.id,
+      name: o.name,
+      email: o.email,
+      disabled: Boolean(o.disabled),
+      branchId: o.branchId,
+      lastLoginAt: o.lastLoginAt ?? null,
+      branches: snap.branches.filter((b) => b.ownerId === o.id).length,
+      staff: snap.users.filter((u) => u.ownerId === o.id && u.id !== o.id && u.role !== "tech_admin").length,
+    }));
 }
 
 export function effectiveOwnerId(actor: TenantActor, snap?: Snapshot): string | null {

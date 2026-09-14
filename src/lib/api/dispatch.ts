@@ -78,7 +78,7 @@ import {
   sessionsVisibleTo,
   touchSession,
 } from "../domain/sessions";
-import { assertReadableBranch, canSwitchOwner, ownersOf, snapshotForActor } from "../domain/tenancy";
+import { assertReadableBranch, canSwitchOwner, ownerSummaries, snapshotForActor } from "../domain/tenancy";
 import { assertAuthRate, assertPayloadSize, assertSameOriginOrNone, assertWriteRate, opaqueApiError, securityHeaders } from "../security/http";
 import { secretsEqual } from "../security/secrets";
 import {
@@ -470,13 +470,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
       if (!canSwitchOwner(actor.role)) throw new AuthzError("Список владельцев только для администратора-техника");
       return json(
         {
-          rows: ownersOf(snap).map((o) => ({
-            id: o.id,
-            name: o.name,
-            email: o.email,
-            branchId: o.branchId,
-            lastLoginAt: o.lastLoginAt,
-          })),
+          rows: ownerSummaries(snap),
           actingOwnerId: actor.actingOwnerId ?? null,
         },
         200,

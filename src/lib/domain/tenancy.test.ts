@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { actorFrom } from "../authz/actor.ts";
 import { AuthzError } from "../authz/error.ts";
 import { emptySnapshot } from "../data/empty.ts";
 import { publicSnapshot } from "./finance.ts";
+import { applyInviteStaff, applySessionOwner, applyWriteoff } from "./mutations.ts";
 import { applyOnboard } from "./onboard.ts";
 import { adminVisibleUsers } from "./permissions.ts";
-import { assignOwnerIds, effectiveOwnerId, canSwitchOwner, scopeSnapshot, assertReadableBranch } from "./tenancy.ts";
+import { assignOwnerIds, effectiveOwnerId, canSwitchOwner, ownerSummaries, scopeSnapshot, assertReadableBranch } from "./tenancy.ts";
 
 function techSnap() {
   const snap = emptySnapshot();
@@ -158,5 +160,92 @@ describe("owner tenancy", () => {
     assert.equal(canSwitchOwner("owner"), false);
     assert.equal(canSwitchOwner("manager"), false);
     assert.equal(canSwitchOwner("tech_admin"), true);
+  });
+
+  it("lists invited owners and switching contour changes branches, staff and stats", () => {
+    let live = assignOwnerIds(applyOnboard(applyOnboard(techSnap(), maria), ivan));
+    const techUser = live.users.find((u) => u.role === "tech_admin")!;
+    const tech = actorFrom(techUser, { userId: techUser.id, branchId: "all" });
+    live = applyInviteStaff(live, tech, {
+      name: "Ольга",
+      login: "olga",
+      password: "cafe",
+      pin: "5005",
+      role: "owner",
+      branchId: "",
+      shiftPay: 0,
+      salesPercent: 0,
+    });
+    assert.deepEqual(
+      ownerSummaries(live)
+        .map((o) => o.email)
+        .sort(),
+      ["ivan", "maria", "olga"],
+    );
+
+    const mariaId = live.users.find((u) => u.email === "maria")!.id;
+    const ivanId = live.users.find((u) => u.email === "ivan")!.id;
+    const mariaBr = live.branches.find((b) => b.ownerId === mariaId)!.id;
+    const ivanBr = live.branches.find((b) => b.ownerId === ivanId)!.id;
+    live = {
+      ...live,
+      sales: [
+        {
+          id: "s-a",
+          number: "1",
+          at: "2026-09-01T12:00:00.000Z",
+          branchId: mariaBr,
+          shiftId: "sh-a",
+          waiterId: mariaId,
+          items: [],
+          payments: [{ type: "cash", amount: 1000 }],
+          total: 1000,
+          source: "manual",
+        },
+        {
+          id: "s-b",
+          number: "2",
+          at: "2026-09-01T13:00:00.000Z",
+          branchId: ivanBr,
+          shiftId: "sh-b",
+          waiterId: ivanId,
+          items: [],
+          payments: [{ type: "cash", amount: 2000 }],
+          total: 2000,
+          source: "manual",
+        },
+      ],
+    };
+
+    const mariaActor = applySessionOwner(tech, mariaId, live);
+    const mariaView = publicSnapshot(live, mariaActor);
+    assert.equal(mariaActor.sessionBranchId, "all");
+    assert.ok(mariaView.branches.every((b) => b.ownerId === mariaId));
+    assert.equal(mariaView.sales.length, 1);
+    assert.equal(mariaView.sales[0]?.id, "s-a");
+    assert.equal(mariaView.users.filter((u) => u.role === "owner").map((u) => u.email).join(), "maria");
+
+    const ivanActor = applySessionOwner(mariaActor, ivanId, live);
+    const ivanView = publicSnapshot(live, ivanActor);
+    assert.ok(ivanView.branches.every((b) => b.ownerId === ivanId));
+    assert.equal(ivanView.sales[0]?.id, "s-b");
+    assert.notEqual(ivanView.branches[0]?.id, mariaView.branches[0]?.id);
+
+    const managerUser = live.users.find((u) => u.email === "maria")!;
+    const manager = actorFrom(
+      { ...managerUser, role: "manager", ownerId: mariaId },
+      { userId: managerUser.id, branchId: mariaBr },
+    );
+    assert.throws(() => applySessionOwner(manager, ivanId, live), AuthzError);
+
+    assert.throws(
+      () =>
+        applyWriteoff(
+          live,
+          { ...mariaActor, sessionBranchId: ivanBr },
+          { productId: "prd-x", qty: 1, reason: "spoilage" },
+        ),
+      (err: unknown) => err instanceof AuthzError && /контур/i.test((err as Error).message),
+    );
   });
 });

@@ -33,7 +33,7 @@ import { NETWORK_NAME } from "@/lib/brand";
 import { ThemeSwitcher } from "@/components/theme/switcher";
 import { useSync } from "@/lib/data/sync";
 import { PinOfferDialog } from "@/components/auth/pin-offer";
-import { api } from "@/lib/api/client";
+import { OwnerContourSelect } from "@/components/admin/owner-contour";
 
 interface NavItem {
   to: string;
@@ -347,38 +347,6 @@ export function AppShell() {
       </nav>
       <PinOfferDialog />
     </div>
-  );
-}
-
-function OwnerContourSelect({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (ownerId: string | null) => Promise<void>;
-}) {
-  const [owners, setOwners] = useState<Array<{ id: string; name: string; email: string }>>([]);
-  useEffect(() => {
-    void api<{ rows: Array<{ id: string; name: string; email: string }> }>("owners")
-      .then((res) => setOwners(res.rows ?? []))
-      .catch(() => setOwners([]));
-  }, []);
-  return (
-    <NativeSelect
-      className="h-11 w-[min(10rem,42vw)] min-w-0 shrink bg-surface sm:w-52 md:h-10"
-      value={value}
-      onChange={(e) => {
-        void onChange(e.target.value || null);
-      }}
-      aria-label="Контур владельца"
-    >
-      <option value="">Все владельцы</option>
-      {owners.map((o) => (
-        <option key={o.id} value={o.id}>
-          {o.name}
-        </option>
-      ))}
-    </NativeSelect>
   );
 }
 

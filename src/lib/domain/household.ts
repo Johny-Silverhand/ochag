@@ -1,10 +1,11 @@
 import type { DocumentPhoto, HouseholdItem, HouseholdMoveType, Snapshot, Unit } from "./types.ts";
 import { uid } from "../utils.ts";
-import { AuthzError, assertBranchScope, type Actor, writeBranch } from "../authz/actor.ts";
+import { AuthzError, type Actor, writeBranch } from "../authz/actor.ts";
 import { canManageHousehold } from "./permissions.ts";
 import { appendAudit } from "./audit.ts";
 import { roundMoney, roundQty, weightedAvgPurchasePrice } from "./finance.ts";
 import { sanitizePhotos } from "./photos.ts";
+import { assertReadableBranch } from "./tenancy.ts";
 
 function assertHousehold(actor: Actor) {
   if (!canManageHousehold(actor.role)) throw new AuthzError("Хозы недоступны");
@@ -47,7 +48,7 @@ export function applyHouseholdMove(
 ): Snapshot {
   assertHousehold(actor);
   const branchId = writeBranch(actor);
-  assertBranchScope(actor, branchId);
+  assertReadableBranch(snap, actor, branchId);
   const item = (snap.householdItems ?? []).find((i) => i.id === input.itemId);
   if (!item) throw new AuthzError("Хозтовар не найден", 404);
   const qtyAbs = Math.abs(Number(input.qty) || 0);

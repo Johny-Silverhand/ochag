@@ -34,7 +34,7 @@ import {
 } from "./engine.ts";
 import { catalogAvgFromStock, freezeSaleCosts } from "./finance.ts";
 import { uid } from "../utils.ts";
-import { actorFrom, AuthzError, assertBranchScope, assertCash, assertExpenses, assertKeeper, assertSale, assertStopList, assertTransfer, assertWriteoff, type Actor, writeBranch } from "../authz/actor.ts";
+import { actorFrom, AuthzError, assertCash, assertExpenses, assertKeeper, assertSale, assertStopList, assertTransfer, assertWriteoff, type Actor, writeBranch } from "../authz/actor.ts";
 import {
   canEditBanquet,
   canInviteStaff,
@@ -81,7 +81,7 @@ export function applyWriteoff(
 ): Snapshot {
   assertWriteoff(actor);
   const branchId = writeBranch(actor);
-  assertBranchScope(actor, branchId);
+  assertReadableBranch(snap, actor, branchId);
   assertPeriodOpen(snap, branchId, today());
   const product = snap.products.find((p) => p.id === input.productId);
   const unit =
@@ -112,7 +112,7 @@ export function applyInvoice(
   input: { supplier: string; number: string; date: string; lines: InvoiceLine[]; photos?: DocumentPhoto[] },
 ): Snapshot {
   const branchId = writeBranch(actor);
-  assertBranchScope(actor, branchId);
+  assertReadableBranch(snap, actor, branchId);
   assertPeriodOpen(snap, branchId, input.date);
   const total = input.lines.reduce((sum, l) => sum + l.qty * l.price, 0);
   const inv = {
@@ -163,7 +163,7 @@ export function applyInvoice(
 
 export function applyRequestFromNeed(snap: Snapshot, actor: Actor): Snapshot {
   const branchId = writeBranch(actor);
-  assertBranchScope(actor, branchId);
+  assertReadableBranch(snap, actor, branchId);
   const need = needToBuy(snap, branchId);
   if (need.length === 0) return snap;
   const lines: PurchaseLine[] = need.map((n) => ({
@@ -196,7 +196,7 @@ export function applyRequestStatus(
 ): Snapshot {
   const row = snap.requests.find((r) => r.id === id);
   if (!row) return snap;
-  assertBranchScope(actor, row.branchId);
+  assertReadableBranch(snap, actor, row.branchId);
   const supplier =
     snap.suppliers.find((s) => s.id === (supplierId || row.supplierId)) ??
     snap.suppliers.find((s) => s.channel === snap.settings.supplierChannel) ??
@@ -246,7 +246,7 @@ export function applyOpenShift(
 ): Snapshot {
   if (!canOpenShift(actor.role)) throw new AuthzError("Открытие смены недоступно");
   const branchId = writeBranch(actor);
-  assertBranchScope(actor, branchId);
+  assertReadableBranch(snap, actor, branchId);
   assertPeriodOpen(snap, branchId, today());
   if (openShiftFor(snap.shifts, branchId)) return snap;
   if (!input.startList?.length) throw new AuthzError("Подтвердите старт-лист перед открытием смены");
@@ -298,7 +298,7 @@ export function applyCloseShift(
 ): Snapshot {
   assertCash(actor);
   const branchId = writeBranch(actor);
-  assertBranchScope(actor, branchId);
+  assertReadableBranch(snap, actor, branchId);
   const open = openShiftFor(snap.shifts, branchId);
   if (!open) return snap;
   const withInc = attachIncidentals(snap, actor, open.id, input.incidentals, "close");
@@ -372,7 +372,7 @@ export function applyManualSale(
 ): Snapshot {
   assertSale(actor);
   const branchId = writeBranch(actor);
-  assertBranchScope(actor, branchId);
+  assertReadableBranch(snap, actor, branchId);
   assertPeriodOpen(snap, branchId, today());
   if (snap.settings.keeperCashLink) {
     throw new AuthzError("Ручной чек выключен: включена кассовая связь с кипером. Отключите её в настройках сети.");
@@ -413,7 +413,7 @@ export function applyKeeperSales(
 ): { snap: Snapshot; added: number } {
   assertKeeper(actor);
   const branchId = writeBranch(actor);
-  assertBranchScope(actor, branchId);
+  assertReadableBranch(snap, actor, branchId);
   assertPeriodOpen(snap, branchId, today());
   const shift = openShiftFor(snap.shifts, branchId);
   if (!shift) throw new AuthzError("Откройте смену, затем импортируйте отчёт кипера");
@@ -455,7 +455,7 @@ export function applyKeeperSales(
 
 export function applyBanquet(snap: Snapshot, actor: Actor, banquet: Banquet): Snapshot {
   if (!canEditBanquet(actor.role)) throw new AuthzError("Банкет недоступен");
-  assertBranchScope(actor, banquet.branchId);
+  assertReadableBranch(snap, actor, banquet.branchId);
   const i = snap.banquets.findIndex((x) => x.id === banquet.id);
   if (i < 0) return { ...snap, banquets: [banquet, ...snap.banquets] };
   const next = snap.banquets.slice();
@@ -466,7 +466,7 @@ export function applyBanquet(snap: Snapshot, actor: Actor, banquet: Banquet): Sn
 export function applyBanquetStatus(snap: Snapshot, actor: Actor, id: string, status: BanquetStatus): Snapshot {
   if (!canEditBanquet(actor.role)) throw new AuthzError("Банкет недоступен");
   const row = snap.banquets.find((b) => b.id === id);
-  if (row) assertBranchScope(actor, row.branchId);
+  if (row) assertReadableBranch(snap, actor, row.branchId);
   return { ...snap, banquets: snap.banquets.map((b) => (b.id === id ? { ...b, status } : b)) };
 }
 
@@ -479,7 +479,7 @@ export function applyRevision(
 ): Snapshot {
   assertWriteoff(actor);
   const branchId = writeBranch(actor);
-  assertBranchScope(actor, branchId);
+  assertReadableBranch(snap, actor, branchId);
   assertPeriodOpen(snap, branchId, today());
   const movs = lines
     .filter((l) => l.factQty !== l.bookQty)
@@ -522,7 +522,8 @@ export function applyTransfer(
   input: { fromBranchId: string; toBranchId: string; productId: string; qty: number; note?: string },
 ): Snapshot {
   assertTransfer(actor);
-  assertBranchScope(actor, input.fromBranchId);
+  assertReadableBranch(snap, actor, input.fromBranchId);
+  assertReadableBranch(snap, actor, input.toBranchId);
   assertPeriodOpen(snap, input.fromBranchId, today());
   if (input.fromBranchId === input.toBranchId || input.qty <= 0) return snap;
   const unit =
@@ -564,7 +565,7 @@ export function applyStopList(
 ): Snapshot {
   assertStopList(actor);
   const branchId = writeBranch(actor);
-  assertBranchScope(actor, branchId);
+  assertReadableBranch(snap, actor, branchId);
   const now = new Date().toISOString();
   if (input.clear) {
     return {
@@ -614,7 +615,7 @@ export function applyExpense(
 ): Snapshot {
   assertExpenses(actor);
   const branchId = writeBranch(actor);
-  assertBranchScope(actor, branchId);
+  assertReadableBranch(snap, actor, branchId);
   assertPeriodOpen(snap, branchId, input.date ?? today());
   return {
     ...snap,
