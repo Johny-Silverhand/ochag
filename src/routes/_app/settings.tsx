@@ -802,7 +802,7 @@ function IphonePanel() {
         </p>
         <a
           href="/downloads/Ochag-iOS-Xcode.zip"
-          download
+          download="RestoPro-iOS-Xcode.zip"
           className="mt-4 inline-flex h-11 items-center rounded-xl bg-primary px-4 text-sm text-primary-fg"
         >
           Скачать проект Xcode

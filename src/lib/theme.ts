@@ -14,7 +14,7 @@ export interface ThemeMeta {
 export const THEMES: ThemeMeta[] = [
   {
     id: "hearth",
-    label: "Очаг",
+    label: "Хвоя",
     hint: "Кремовый зал и хвойный контур",
     scheme: "light",
     group: "light",
