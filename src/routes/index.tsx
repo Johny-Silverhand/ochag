@@ -76,7 +76,7 @@ function LoginPage() {
         </div>
       </section>
 
-      <section className="relative z-10 flex min-h-dvh flex-col justify-center px-5 pt-[max(2.5rem,env(safe-area-inset-top))] pb-[max(2.5rem,env(safe-area-inset-bottom))] sm:px-10">
+      <section className="relative z-10 flex min-h-dvh flex-col justify-start px-5 pt-[max(3.25rem,env(safe-area-inset-top))] pb-[max(2.5rem,env(safe-area-inset-bottom))] sm:px-10 lg:justify-center">
         <div className="login-card mx-auto w-full max-w-md px-5 py-7 pb-10 sm:px-8">
           <div className="mb-8">
             <div className="text-xs font-medium tracking-[0.28em] text-muted uppercase">{NETWORK_NAME}</div>
