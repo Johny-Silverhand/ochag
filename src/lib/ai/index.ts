@@ -1,35 +1,91 @@
 import { createHeuristicProvider } from "./heuristic";
-import { createOllamaProvider, ollamaAvailable } from "./ollama";
-import type { AiProvider } from "./provider";
+import { createOllamaProvider, ollamaAvailable, ollamaUnreachableMessage, type FetchLike } from "./ollama";
+import type { AiProvider, ResolvedOllama } from "./provider";
+import { resolveOllamaConfig } from "./provider";
 import type { SafeMetrics } from "./safe-context";
-import type { Insight } from "../domain/types";
+import type { Insight, NetworkSettings } from "../domain/types";
 
-export type { AiProvider } from "./provider";
+export type { AiProvider, ResolvedOllama } from "./provider";
 export { safeMetrics } from "./safe-context";
-export { ollamaConfig } from "./provider";
+export { ollamaConfig, resolveOllamaConfig } from "./provider";
+export { ollamaAvailable } from "./ollama";
 
 const heuristic = createHeuristicProvider();
-const ollama = createOllamaProvider();
 
-async function withFallback<T>(run: (p: AiProvider) => Promise<T>): Promise<{ value: T; provider: AiProvider["id"] }> {
-  if (await ollamaAvailable()) {
-    try {
-      return { value: await run(ollama), provider: "ollama" };
-    } catch (err) {
-      console.warn("[ochag] Ollama failed, heuristic fallback:", err);
-    }
+export type AiRun<T> = {
+  value: T;
+  provider: AiProvider["id"];
+  fallback: boolean;
+  error?: string;
+  source: ResolvedOllama["source"];
+  model: string;
+};
+
+export async function withFallback<T>(
+  cfg: ResolvedOllama,
+  run: (p: AiProvider) => Promise<T>,
+  fetchImpl: FetchLike = fetch,
+): Promise<AiRun<T>> {
+  if (!cfg.configured) {
+    const reason =
+      cfg.source === "off"
+        ? "Ollama выключена в настройках сети"
+        : "Ollama не настроена — эвристика по цифрам контура, не языковая модель";
+    return {
+      value: await run(heuristic),
+      provider: "heuristic",
+      fallback: true,
+      error: reason,
+      source: cfg.source,
+      model: cfg.model,
+    };
   }
-  return { value: await run(heuristic), provider: "heuristic" };
+  const ping = await ollamaAvailable(cfg, fetchImpl);
+  if (!ping.ok) {
+    const error = ollamaUnreachableMessage(cfg, ping.error ?? "нет связи");
+    return {
+      value: await run(heuristic),
+      provider: "heuristic",
+      fallback: true,
+      error,
+      source: cfg.source,
+      model: cfg.model,
+    };
+  }
+  try {
+    const ollama = createOllamaProvider(cfg, fetchImpl);
+    return {
+      value: await run(ollama),
+      provider: "ollama",
+      fallback: false,
+      source: cfg.source,
+      model: cfg.model,
+    };
+  } catch (err) {
+    const raw = err instanceof Error ? err.message : String(err);
+    const error = ollamaUnreachableMessage(cfg, raw);
+    return {
+      value: await run(heuristic),
+      provider: "heuristic",
+      fallback: true,
+      error,
+      source: cfg.source,
+      model: cfg.model,
+    };
+  }
 }
 
-export async function periodNarrative(metrics: SafeMetrics) {
-  return withFallback((p) => p.narrative(metrics));
+export async function periodNarrative(metrics: SafeMetrics, settings?: NetworkSettings | null) {
+  return withFallback(resolveOllamaConfig(settings), (p) => p.narrative(metrics));
 }
 
-export async function askMetrics(question: string, metrics: SafeMetrics) {
-  return withFallback((p) => p.ask(question, metrics));
+export async function askMetrics(question: string, metrics: SafeMetrics, settings?: NetworkSettings | null) {
+  return withFallback(resolveOllamaConfig(settings), (p) => p.ask(question, metrics));
 }
 
-export async function recommendMetrics(metrics: SafeMetrics): Promise<{ value: Insight[]; provider: AiProvider["id"] }> {
-  return withFallback((p) => p.recommend(metrics));
+export async function recommendMetrics(
+  metrics: SafeMetrics,
+  settings?: NetworkSettings | null,
+): Promise<AiRun<Insight[]>> {
+  return withFallback(resolveOllamaConfig(settings), (p) => p.recommend(metrics));
 }
