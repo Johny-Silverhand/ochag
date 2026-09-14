@@ -13,6 +13,8 @@ export type OnboardInput = {
   branchName: string;
   city: string;
   address: string;
+  seats?: number;
+  halls?: string[];
 };
 
 /**
@@ -36,6 +38,8 @@ export function applyOnboard(snap: Snapshot, input: OnboardInput): Snapshot {
   const branchId = uid("br");
   const userId = uid("u");
   const branchName = input.branchName.trim() || "Филиал 1";
+  const seats = Math.max(0, Math.round(Number(input.seats) || 0)) || 40;
+  const halls = (input.halls ?? []).map((h) => h.trim()).filter(Boolean);
   return {
     ...snap,
     branches: [
@@ -46,8 +50,9 @@ export function applyOnboard(snap: Snapshot, input: OnboardInput): Snapshot {
         short: branchName.slice(0, 16),
         city: input.city.trim() || "—",
         address: input.address.trim() || "—",
-        seats: 40,
+        seats,
         phone: "",
+        halls: halls.length ? halls : ["Основной зал"],
       },
     ],
     users: [

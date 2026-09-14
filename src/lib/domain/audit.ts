@@ -1,6 +1,6 @@
-import { uid } from "../utils";
-import type { AuditEntry, Snapshot } from "./types";
-import type { Actor } from "../authz/actor";
+import { uid } from "../utils.ts";
+import type { AuditEntry, Snapshot } from "./types.ts";
+import type { Actor } from "../authz/actor.ts";
 
 export {
   AUDIT_ACTION_LABEL,
@@ -8,7 +8,7 @@ export {
   auditGroup,
   scopedAudit,
   type AuditGroup,
-} from "./audit-labels";
+} from "./audit-labels.ts";
 
 export function appendAudit(
   snap: Snapshot,

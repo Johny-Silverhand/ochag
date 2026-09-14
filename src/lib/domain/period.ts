@@ -1,5 +1,5 @@
-import { AuthzError } from "../authz/actor";
-import type { Snapshot } from "./types";
+import { AuthzError } from "../authz/actor.ts";
+import type { Snapshot } from "./types.ts";
 
 export function closedPeriodFor(snap: Snapshot, branchId: string, date: string) {
   return (

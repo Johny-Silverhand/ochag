@@ -1,6 +1,6 @@
-import type { Role, Session, StaffUser } from "../domain/types";
-import { can, canCreateSale, canImportKeeper, canManageCash, canSeeAllBranches, canWriteoff } from "../domain/permissions";
-import { canEditExpenses, canManageStopList, canTransfer, type ModuleKey } from "../domain/permissions";
+import type { Role, Session, StaffUser } from "../domain/types.ts";
+import { can, canCreateSale, canImportKeeper, canManageCash, canSeeAllBranches, canWriteoff } from "../domain/permissions.ts";
+import { canEditExpenses, canManageStopList, canTransfer, type ModuleKey } from "../domain/permissions.ts";
 
 export { AuthzError } from "./error.ts";
 import { AuthzError } from "./error.ts";

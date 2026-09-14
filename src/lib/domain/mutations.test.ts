@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { actorFrom, AuthzError } from "../authz/actor.ts";
 import { emptySnapshot } from "../data/empty.ts";
-import { applyBootstrap, applyClosePeriod, applyDeleteStaff, applyInviteStaff, applyKeeperSales, applyManualSale, applyOnboard, applyOpenShift, applyRevision, applyUpdateStaff } from "./mutations.ts";
+import { applyAddBranch, applyBootstrap, applyClosePeriod, applyDeleteBranch, applyDeleteStaff, applyInviteStaff, applyKeeperSales, applyManualSale, applyOnboard, applyOpenShift, applyRevision, applyUpdateBranch, applyUpdateStaff } from "./mutations.ts";
+import { publicSnapshot } from "./finance.ts";
+import { protectStoredUsers } from "../data/preserve-users.ts";
+import { retainSecrets } from "../data/secrets.ts";
 import { defaultSettings } from "./types.ts";
 
 const ownerActor = actorFrom(
@@ -313,5 +316,152 @@ describe("commercial onboard", () => {
     assert.equal(next.users[0]?.email, "admin");
     assert.equal(next.users[0]?.password, "secret");
     assert.equal(next.users.find((u) => u.role === "owner")?.email, "maria");
+  });
+});
+
+describe("staff CRUD", () => {
+  function network() {
+    const snap = applyOnboard(emptySnapshot(), {
+      ownerName: "Кирилл",
+      login: "owner",
+      password: "ochag",
+      pin: "1001",
+      branchName: "Центр",
+      city: "Краснодар",
+      address: "ул. Красная, 1",
+    });
+    const owner = snap.users.find((u) => u.role === "owner")!;
+    const actor = actorFrom(owner, { userId: owner.id, branchId: snap.branches[0]!.id });
+    return { snap, owner, actor, branchId: snap.branches[0]!.id };
+  }
+
+  it("lets an owner create and edit a cook, and keeps secrets through a public snapshot round-trip", () => {
+    const { snap, actor, branchId } = network();
+    const invited = applyInviteStaff(snap, actor, {
+      name: "Денис",
+      login: "denis",
+      password: "kitchen1",
+      pin: "3001",
+      role: "cook",
+      branchId,
+      shiftPay: 2800,
+      salesPercent: 0,
+    });
+    const cook = invited.users.find((u) => u.email === "denis")!;
+    assert.equal(cook.role, "cook");
+    assert.equal(cook.password, "kitchen1");
+    assert.equal(cook.pin, "3001");
+    const edited = applyUpdateStaff(invited, actor, {
+      userId: cook.id,
+      name: "Денис Жуков",
+      shiftPay: 3000,
+      password: "kitchen2",
+    });
+    const next = edited.users.find((u) => u.id === cook.id)!;
+    assert.equal(next.name, "Денис Жуков");
+    assert.equal(next.shiftPay, 3000);
+    assert.equal(next.password, "kitchen2");
+    const stored = retainSecrets(edited, protectStoredUsers(edited, publicSnapshot(edited)));
+    assert.equal(stored.users.find((u) => u.email === "denis")?.password, "kitchen2");
+    assert.equal(stored.users.find((u) => u.email === "denis")?.pin, "3001");
+  });
+
+  it("refuses a hall role without a real branch", () => {
+    const { snap, actor } = network();
+    assert.throws(
+      () =>
+        applyInviteStaff(snap, actor, {
+          name: "Алина",
+          login: "alina",
+          password: "hall1",
+          pin: "4001",
+          role: "waiter",
+          branchId: "missing",
+          shiftPay: 0,
+          salesPercent: 0,
+        }),
+      (err: unknown) => err instanceof AuthzError && /филиал/i.test(err.message),
+    );
+  });
+});
+
+describe("branch management", () => {
+  function network() {
+    const snap = applyOnboard(emptySnapshot(), {
+      ownerName: "Кирилл",
+      login: "owner",
+      password: "ochag",
+      pin: "1001",
+      branchName: "Центр",
+      city: "Краснодар",
+      address: "ул. Красная, 1",
+      seats: 32,
+      halls: ["Основной", "Веранда"],
+    });
+    const owner = snap.users.find((u) => u.role === "owner")!;
+    const actor = actorFrom(owner, { userId: owner.id, branchId: snap.branches[0]!.id });
+    return { snap, owner, actor };
+  }
+
+  it("lets the owner add, edit and delete an extra branch; manager cannot", () => {
+    const { snap, actor } = network();
+    const withSecond = applyAddBranch(snap, actor, {
+      name: "Юг",
+      city: "Сочи",
+      address: "Набережная, 2",
+      seats: 50,
+      halls: ["Зал 1"],
+    });
+    const extra = withSecond.branches.find((b) => b.name === "Юг")!;
+    assert.equal(extra.seats, 50);
+    assert.deepEqual(extra.halls, ["Зал 1"]);
+    const renamed = applyUpdateBranch(withSecond, actor, { branchId: extra.id, name: "Южный", seats: 55 });
+    assert.equal(renamed.branches.find((b) => b.id === extra.id)?.name, "Южный");
+    assert.equal(renamed.branches.find((b) => b.id === extra.id)?.seats, 55);
+    const deleted = applyDeleteBranch(renamed, actor, { branchId: extra.id });
+    assert.equal(deleted.branches.some((b) => b.id === extra.id), false);
+    const manager = {
+      ...actor,
+      userId: "u-man",
+      role: "manager" as const,
+    };
+    assert.throws(
+      () => applyAddBranch(snap, manager, { name: "Ещё", city: "—", address: "—" }),
+      (err: unknown) => err instanceof AuthzError && /владелец/i.test(err.message),
+    );
+  });
+
+  it("refuses to delete the last branch", () => {
+    const { snap, actor } = network();
+    assert.throws(
+      () => applyDeleteBranch(snap, actor, { branchId: snap.branches[0]!.id }),
+      (err: unknown) => err instanceof AuthzError && /последний/i.test(err.message),
+    );
+  });
+});
+
+describe("manual sale payment", () => {
+  it("records Перевод as a cheque payment", () => {
+    const snap = applyOnboard(emptySnapshot(), {
+      ownerName: "Кирилл",
+      login: "owner",
+      password: "ochag",
+      pin: "1001",
+      branchName: "Центр",
+      city: "Краснодар",
+      address: "ул. Красная, 1",
+    });
+    const owner = snap.users.find((u) => u.role === "owner")!;
+    const actor = actorFrom(owner, { userId: owner.id, branchId: snap.branches[0]!.id });
+    const opened = applyOpenShift(snap, actor, { openCash: 1000, staffIds: [owner.id], startList: ["none"] });
+    opened.settings = { ...opened.settings, keeperCashLink: false };
+    const sold = applyManualSale(
+      opened,
+      actor,
+      [{ recipeId: "x", name: "Чай", qty: 1, price: 150, sum: 150 }],
+      "transfer",
+    );
+    assert.equal(sold.sales[0]?.payments[0]?.type, "transfer");
+    assert.equal(sold.sales[0]?.payments[0]?.amount, 150);
   });
 });

@@ -1,4 +1,4 @@
-import type { Role } from "./types";
+import type { Role } from "./types.ts";
 
 export type ModuleKey =
   | "dashboard"
@@ -106,6 +106,22 @@ export function canSeeAllBranches(role: Role) {
   return grants(role, ["owner"]);
 }
 
+/** Повар и официант видят только свой филиал — без сводки по сети. */
+export function canSeeNetworkStats(role: Role) {
+  return isOpsLead(role);
+}
+
+export function scopedBranchId(
+  role: Role,
+  sessionBranchId: string | undefined,
+  homeBranchId: string | null | undefined,
+): string {
+  if (role === "cook" || role === "waiter") {
+    return homeBranchId || (sessionBranchId && sessionBranchId !== "all" ? sessionBranchId : "");
+  }
+  return sessionBranchId || "all";
+}
+
 export function canImportKeeper(role: Role) {
   return grants(role, ["owner", "manager"]);
 }
@@ -114,8 +130,18 @@ export function canCreateSale(role: Role) {
   return grants(role, ["owner", "manager", "waiter"]);
 }
 
+/** Учебный срез и полный сброс — только техник, никогда управляющий и ниже. */
 export function canResetDemo(role: Role) {
-  return grants(role, ["owner", "manager"]);
+  return hasAbsoluteAccess(role);
+}
+
+export function canLoadSample(role: Role) {
+  return hasAbsoluteAccess(role);
+}
+
+/** Филиалы: создать / изменить / удалить — только владелец и техник. */
+export function canManageBranches(role: Role) {
+  return isNetworkAdmin(role);
 }
 
 export function invitableRoles(actorRole: Role): Role[] {
