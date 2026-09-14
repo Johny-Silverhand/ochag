@@ -16,7 +16,8 @@ export type ModuleKey =
   | "schedule"
   | "quality"
   | "ai"
-  | "admin";
+  | "admin"
+  | "debts";
 
 const ALL: Role[] = ["tech_admin", "owner", "manager", "cook", "waiter"];
 
@@ -37,6 +38,7 @@ export const MODULE_ROLES: Record<ModuleKey, Role[]> = {
   quality: ["owner", "manager", "cook"],
   ai: ["owner", "manager"],
   admin: [],
+  debts: ["owner"],
 };
 
 /** Администратор-техник — полный доступ, выше владельца на проверках прав. */
@@ -141,6 +143,31 @@ export function canLoadSample(role: Role) {
 
 /** Филиалы: создать / изменить / удалить — только владелец и техник. */
 export function canManageBranches(role: Role) {
+  return isNetworkAdmin(role);
+}
+
+/** Учёт долгов (клиенты / зарплата / поставщики) — только владелец. Техник видит как абсолютный доступ. */
+export function canSeeDebts(role: Role) {
+  return grants(role, ["owner"]);
+}
+
+export function canManageDebts(role: Role) {
+  return canSeeDebts(role);
+}
+
+export function canVoidSale(role: Role) {
+  return grants(role, ["owner", "manager"]);
+}
+
+export function canDiscountSale(role: Role) {
+  return grants(role, ["owner", "manager"]);
+}
+
+export function canManageHousehold(role: Role) {
+  return grants(role, ["owner", "manager", "cook"]);
+}
+
+export function canEditOllama(role: Role) {
   return isNetworkAdmin(role);
 }
 

@@ -26,8 +26,12 @@ export type NotifyEvent =
   | "revision"
   | "cash_mismatch"
   | "debt";
-export type PayrollAdjKind = "fine" | "advance" | "extra";
+export type PayrollAdjKind = "fine" | "advance" | "extra" | "premium";
 export type DebtStatus = "open" | "topped";
+export type LedgerDebtKind = "client" | "staff_wage" | "supplier";
+export type LedgerDebtStatus = "open" | "partial" | "paid";
+export type HouseholdMoveType = "receive" | "consume" | "revision";
+export type ShiftIncidentalPhase = "open" | "close" | "during";
 export type OutboxStatus = "queued" | "sent" | "failed";
 export type SupplierChannel = "telegram" | "email";
 export type WriteoffReason = "spoilage" | "staff_meal" | "error" | "theft" | "revision";
@@ -60,6 +64,8 @@ export interface StaffUser {
   branchId: string | null;
   shiftPay: number;
   salesPercent: number;
+  /** Fixed monthly premium; accrued on demand, not per shift. */
+  monthlyPremium?: number;
   phone: string;
   /** Blocked flag: password and PIN login fail with «Аккаунт заблокирован». */
   disabled?: boolean;
@@ -134,6 +140,7 @@ export interface Invoice {
   lines: InvoiceLine[];
   total: number;
   userId: string;
+  photos?: DocumentPhoto[];
 }
 
 export interface SaleItem {
@@ -159,6 +166,12 @@ export interface Sale {
   source: "keeper" | "manual";
   /** Keeper cheque number + time + branch — skipped on restore. */
   externalKey?: string;
+  voided?: boolean;
+  voidedAt?: string;
+  voidedBy?: string;
+  voidReason?: string;
+  discount?: number;
+  discountReason?: string;
 }
 
 export interface Shift {
@@ -181,6 +194,8 @@ export interface Shift {
   /** Recipe ids confirmed as the start-list at open. */
   startList: string[];
   note?: string;
+  /** Free-form side costs (DJ, singer, décor) counted in shift money. */
+  incidentals?: ShiftIncidental[];
 }
 
 export interface PurchaseLine {
@@ -284,6 +299,7 @@ export interface Revision {
   lines: RevisionLine[];
   userId: string;
   note?: string;
+  photos?: DocumentPhoto[];
 }
 
 export interface Insight {
@@ -311,6 +327,76 @@ export interface ClosedPeriod {
   closedAt: string;
   closedBy: string;
   revisionId: string;
+}
+
+export interface DocumentPhoto {
+  id: string;
+  name: string;
+  mime: string;
+  dataUrl: string;
+  at: string;
+}
+
+export interface ShiftIncidental {
+  id: string;
+  phase: ShiftIncidentalPhase;
+  title: string;
+  amount: number;
+  paidFromTill: boolean;
+  note: string;
+  at: string;
+  userId: string;
+}
+
+export interface LedgerPayment {
+  id: string;
+  at: string;
+  amount: number;
+  note: string;
+  userId: string;
+}
+
+export interface LedgerDebt {
+  id: string;
+  kind: LedgerDebtKind;
+  status: LedgerDebtStatus;
+  partyName: string;
+  partyId?: string;
+  branchId: string;
+  amount: number;
+  paid: number;
+  note: string;
+  createdAt: string;
+  createdBy: string;
+  payments: LedgerPayment[];
+}
+
+export interface HouseholdItem {
+  id: string;
+  name: string;
+  category: string;
+  unit: Unit;
+  minQty: number;
+}
+
+export interface HouseholdStock {
+  branchId: string;
+  itemId: string;
+  qty: number;
+  avgCost: number;
+}
+
+export interface HouseholdMovement {
+  id: string;
+  at: string;
+  branchId: string;
+  itemId: string;
+  type: HouseholdMoveType;
+  qty: number;
+  cost: number;
+  note?: string;
+  userId: string;
+  photos?: DocumentPhoto[];
 }
 
 export interface CashDebt {
@@ -407,6 +493,10 @@ export interface NetworkSettings {
   sampleLoaded: boolean;
   tariff: "trial" | "basic" | "mid" | "pro" | null;
   paymentSimulatedAt: string | null;
+  /** When true, AI calls the configured Ollama first. Empty URL = env / unset. */
+  ollamaEnabled?: boolean;
+  ollamaBaseUrl?: string;
+  ollamaModel?: string;
 }
 
 export const DEFAULT_NOTIFY_EVENTS: Record<NotifyEvent, boolean> = {
@@ -428,6 +518,9 @@ export function defaultSettings(): NetworkSettings {
     sampleLoaded: false,
     tariff: null,
     paymentSimulatedAt: null,
+    ollamaEnabled: false,
+    ollamaBaseUrl: "",
+    ollamaModel: "llama3.2",
   };
 }
 
@@ -450,6 +543,10 @@ export interface Snapshot {
   suppliers: Supplier[];
   closedPeriods: ClosedPeriod[];
   debts: CashDebt[];
+  ledgerDebts: LedgerDebt[];
+  householdItems: HouseholdItem[];
+  householdStock: HouseholdStock[];
+  householdMovements: HouseholdMovement[];
   payrollAdjustments: PayrollAdjustment[];
   revenuePlans: RevenuePlan[];
   audit: AuditEntry[];
@@ -543,6 +640,25 @@ export const PAYROLL_ADJ_LABEL: Record<PayrollAdjKind, string> = {
   fine: "Штраф",
   advance: "Аванс",
   extra: "Доплата",
+  premium: "Премия",
+};
+
+export const LEDGER_DEBT_KIND_LABEL: Record<LedgerDebtKind, string> = {
+  client: "Клиенты",
+  staff_wage: "Зарплата сотрудникам",
+  supplier: "Поставщики",
+};
+
+export const LEDGER_DEBT_STATUS_LABEL: Record<LedgerDebtStatus, string> = {
+  open: "Открыт",
+  partial: "Частично",
+  paid: "Закрыт",
+};
+
+export const HOUSEHOLD_MOVE_LABEL: Record<HouseholdMoveType, string> = {
+  receive: "Приход",
+  consume: "Расход",
+  revision: "Ревизия",
 };
 
 export const NOTIFY_EVENT_LABEL: Record<NotifyEvent, string> = {

@@ -888,6 +888,14 @@ export function createSeed(): Snapshot {
         },
       ];
     })(),
+    ledgerDebts: [],
+    householdItems: [
+      { id: "hz-soap", name: "Жидкое мыло", category: "Гигиена", unit: "шт", minQty: 6 },
+      { id: "hz-box", name: "Ланчбоксы", category: "Расходники", unit: "шт", minQty: 40 },
+      { id: "hz-napkin", name: "Салфетки", category: "Расходники", unit: "шт", minQty: 20 },
+    ],
+    householdStock: [],
+    householdMovements: [],
     payrollAdjustments: [
       {
         id: "adj-1",
