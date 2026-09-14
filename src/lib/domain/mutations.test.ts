@@ -281,3 +281,37 @@ describe("bootstrap tech admin", () => {
     );
   });
 });
+
+describe("commercial onboard", () => {
+  it("keeps an existing technician when the owner network is created", () => {
+    const withTech = emptySnapshot();
+    withTech.users = [
+      {
+        id: "u-tech",
+        name: "Виктор",
+        email: "admin",
+        password: "secret",
+        pin: "0001",
+        role: "tech_admin",
+        position: "Администратор-техник",
+        branchId: null,
+        shiftPay: 0,
+        salesPercent: 0,
+        phone: "",
+      },
+    ];
+    const next = applyOnboard(withTech, {
+      ownerName: "Мария",
+      login: "maria",
+      password: "cafe",
+      pin: "2002",
+      branchName: "Центр",
+      city: "Краснодар",
+      address: "ул. Красная, 1",
+    });
+    assert.equal(next.users.length, 2);
+    assert.equal(next.users[0]?.email, "admin");
+    assert.equal(next.users[0]?.password, "secret");
+    assert.equal(next.users.find((u) => u.role === "owner")?.email, "maria");
+  });
+});

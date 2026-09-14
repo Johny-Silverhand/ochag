@@ -140,6 +140,46 @@ describe("billing simulation", () => {
     assert.equal(cleared.settings.sampleLoaded, false);
   });
 
+  it("keeps a technician when leftover sample is replaced by Создать сеть", () => {
+    const leftover = applySimulatePayment(blank(), "mid", "2026-09-14T13:23:57.335Z");
+    leftover.settings = { ...leftover.settings, sampleLoaded: true };
+    leftover.users = [
+      {
+        id: "u-tech",
+        name: "Виктор",
+        email: "admin",
+        password: "ochag",
+        pin: "0001",
+        role: "tech_admin",
+        position: "Администратор-техник",
+        branchId: null,
+        shiftPay: 0,
+        salesPercent: 0,
+        phone: "",
+      },
+      {
+        id: "u-owner",
+        name: "Кирилл Сорокин",
+        email: "owner",
+        password: "ochag",
+        pin: "1001",
+        role: "owner",
+        position: "Собственник",
+        branchId: null,
+        shiftPay: 0,
+        salesPercent: 0,
+        phone: "",
+      },
+    ];
+    assert.equal(showCommercialEntry(leftover), true);
+    assert.equal(canSelfOnboard(leftover), true);
+    const cleared = snapshotForCommercialOnboard(leftover);
+    assert.equal(cleared.users.length, 1);
+    assert.equal(cleared.users[0]?.role, "tech_admin");
+    assert.equal(cleared.users[0]?.password, "ochag");
+    assert.equal(cleared.settings.paymentSimulatedAt, leftover.settings.paymentSimulatedAt);
+  });
+
   it("does not wipe a commercially created network", () => {
     const live = applySimulatePayment(blank(), "pro");
     live.users = [

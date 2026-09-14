@@ -633,8 +633,13 @@ export function applyOnboard(
     address: string;
   },
 ): Snapshot {
-  if (snap.users.length > 0) throw new AuthzError("Сеть уже создана", 400);
+  const techs = snap.users.filter((u) => u.role === "tech_admin");
+  const others = snap.users.filter((u) => u.role !== "tech_admin");
+  if (others.length > 0) throw new AuthzError("Сеть уже создана", 400);
   const login = input.login.trim().toLowerCase();
+  if (techs.some((u) => u.email.trim().toLowerCase() === login)) {
+    throw new AuthzError("Этот логин уже занят", 400);
+  }
   if (!login || input.password.length < 4 || !/^\d{4}$/.test(input.pin)) {
     throw new AuthzError("Логин, пароль (от 4 знаков) и PIN из 4 цифр обязательны", 400);
   }
@@ -654,6 +659,7 @@ export function applyOnboard(
       },
     ],
     users: [
+      ...techs,
       {
         id: userId,
         name: input.ownerName.trim() || "Владелец",
