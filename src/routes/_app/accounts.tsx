@@ -9,10 +9,12 @@ import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { Field, Input, NativeSelect } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { Segmented } from "@/components/ui/tabs";
 import { useOps, useSessionUser } from "@/lib/data/store";
 import { formatHandoff, generatePassword, generatePin } from "@/lib/domain/credentials";
 import {
   adminVisibleUsers,
+  canDeleteAccount,
   canEditAccount,
   canManageAccounts,
   hasAbsoluteAccess,
@@ -20,6 +22,7 @@ import {
   isNetworkAdmin,
 } from "@/lib/domain/permissions";
 import { ROLE_LABEL, type Role, type StaffUser } from "@/lib/domain/types";
+import { ruDateTime } from "@/lib/format";
 
 export const Route = createFileRoute("/_app/accounts")({ component: AccountsPage });
 
@@ -31,6 +34,8 @@ type Issued = {
   role: Role;
 };
 
+type StatusFilter = "all" | "active" | "blocked";
+
 async function copyText(label: string, value: string) {
   try {
     await navigator.clipboard.writeText(value);
@@ -40,15 +45,25 @@ async function copyText(label: string, value: string) {
   }
 }
 
+function scopeLabel(user: StaffUser, branches: { id: string; short: string; name: string }[]) {
+  if (isNetworkAdmin(user.role)) return "вся сеть";
+  const branch = branches.find((b) => b.id === user.branchId);
+  return branch ? `${branch.short}` : "без филиала";
+}
+
 function AccountsPage() {
   const snap = useOps((s) => s);
   const session = useOps((s) => s.session)!;
   const user = useSessionUser()!;
   const inviteStaff = useOps((s) => s.inviteStaff);
   const updateStaff = useOps((s) => s.updateStaff);
+  const deleteStaff = useOps((s) => s.deleteStaff);
   const [q, setQ] = useState("");
+  const [status, setStatus] = useState<StatusFilter>("all");
+  const [roleFilter, setRoleFilter] = useState<Role | "all">("all");
   const [issued, setIssued] = useState<Issued | null>(null);
   const [editing, setEditing] = useState<StaffUser | null>(null);
+  const [deleting, setDeleting] = useState<StaffUser | null>(null);
 
   const actor = {
     role: user.role,
@@ -63,22 +78,31 @@ function AccountsPage() {
       .slice()
       .sort((a, b) => Number(Boolean(a.disabled)) - Number(Boolean(b.disabled)) || a.name.localeCompare(b.name, "ru"))
       .filter((u) => {
+        if (status === "blocked" && !u.disabled) return false;
+        if (status === "active" && u.disabled) return false;
+        if (roleFilter !== "all" && u.role !== roleFilter) return false;
         if (!needle) return true;
-        return [u.name, u.email, ROLE_LABEL[u.role], u.position].join(" ").toLowerCase().includes(needle);
+        const branch = scopeLabel(u, snap.branches);
+        return [u.name, u.email, ROLE_LABEL[u.role], u.position, branch].join(" ").toLowerCase().includes(needle);
       });
-  }, [visible, q]);
+  }, [visible, q, status, roleFilter, snap.branches]);
 
   if (!canManageAccounts(user.role)) return null;
 
   const roles = invitableRoles(user.role);
   const defaultBranch = session.branchId !== "all" ? session.branchId : snap.branches[0]?.id ?? "";
+  const blockedCount = visible.filter((u) => u.disabled).length;
 
   return (
     <div>
       <PageHeader
         eyebrow="Админка"
         title="Пользователи"
-        description="Создайте логин, пароль и PIN и передайте клиенту. Публичной регистрации нет."
+        description={
+          hasAbsoluteAccess(user.role)
+            ? "Все учётки сети: роль, статус, филиал и последний вход. Блокировка и удаление — только здесь."
+            : "Создайте логин, пароль и PIN и передайте сотруднику. Публичной регистрации нет."
+        }
         actions={
           <CreateAccount
             branches={snap.branches}
@@ -104,58 +128,110 @@ function AccountsPage() {
       {issued ? <HandoffCard issued={issued} onDismiss={() => setIssued(null)} /> : null}
 
       <Card className="mb-4">
-        <Field label="Поиск">
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Имя, логин, роль" />
-        </Field>
+        <div className="grid gap-3">
+          <Field label="Поиск">
+            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Имя, логин, роль, филиал" />
+          </Field>
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <Segmented
+              value={status}
+              onChange={(v) => setStatus(v as StatusFilter)}
+              options={[
+                { value: "all", label: "Все" },
+                { value: "active", label: "Активные" },
+                { value: "blocked", label: "Заблокированы" },
+              ]}
+            />
+            <Field label="Роль">
+              <NativeSelect value={roleFilter} onChange={(e) => setRoleFilter(e.target.value as Role | "all")}>
+                <option value="all">Все роли</option>
+                {(hasAbsoluteAccess(user.role) ? (Object.keys(ROLE_LABEL) as Role[]) : roles).map((r) => (
+                  <option key={r} value={r}>
+                    {ROLE_LABEL[r]}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+          </div>
+          <p className="text-xs text-muted">
+            {visible.length} учёток
+            {blockedCount ? ` · ${blockedCount} заблокированы` : ""}
+            {hasAbsoluteAccess(user.role) ? " · все филиалы" : ""}
+          </p>
+        </div>
       </Card>
 
       <div className="grid gap-2">
         {rows.map((row) => {
-          const branch = snap.branches.find((b) => b.id === row.branchId);
           const editable = canEditAccount({ role: user.role, userId: user.id }, row);
+          const removable = canDeleteAccount({ role: user.role, userId: user.id }, row, snap.users);
           return (
             <Card key={row.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium">{row.name}</span>
-                  <Badge tone={row.disabled ? "danger" : "muted"}>{row.disabled ? "отключена" : ROLE_LABEL[row.role]}</Badge>
+                  <Badge tone="muted">{ROLE_LABEL[row.role]}</Badge>
+                  <Badge tone={row.disabled ? "danger" : "success"}>{row.disabled ? "заблокирована" : "активна"}</Badge>
                   {row.id === user.id ? <Badge tone="primary">вы</Badge> : null}
                 </div>
                 <p className="mt-1 font-mono text-xs text-muted">
                   {row.email}
                   <span className="text-subtle"> · </span>
-                  {isNetworkAdmin(row.role) ? "вся сеть" : (branch?.short ?? "без филиала")}
+                  {scopeLabel(row, snap.branches)}
+                </p>
+                <p className="mt-0.5 text-xs text-subtle">
+                  {row.lastLoginAt ? `вход ${ruDateTime(row.lastLoginAt)}` : "ещё не входил"}
                 </p>
               </div>
-              {editable ? (
+              {editable || removable ? (
                 <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => {
-                      setIssued(null);
-                      setEditing(row);
-                    }}
-                  >
-                    Изменить
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={row.disabled ? "secondary" : "danger"}
-                    onClick={() => {
-                      void updateStaff({ userId: row.id, disabled: !row.disabled }).then((ok) => {
-                        if (ok) toast.success(row.disabled ? "Учётка включена" : "Учётка отключена");
-                      });
-                    }}
-                  >
-                    {row.disabled ? "Включить" : "Отключить"}
-                  </Button>
+                  {editable ? (
+                    <>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => {
+                          setIssued(null);
+                          setEditing(row);
+                        }}
+                      >
+                        Изменить
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={row.disabled ? "secondary" : "danger"}
+                        onClick={() => {
+                          void updateStaff({ userId: row.id, disabled: !row.disabled }).then((ok) => {
+                            if (ok) toast.success(row.disabled ? "Учётка разблокирована" : "Учётка заблокирована");
+                          });
+                        }}
+                      >
+                        {row.disabled ? "Разблокировать" : "Заблокировать"}
+                      </Button>
+                    </>
+                  ) : null}
+                  {removable ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => {
+                        setIssued(null);
+                        setDeleting(row);
+                      }}
+                    >
+                      Удалить
+                    </Button>
+                  ) : null}
                 </div>
               ) : null}
             </Card>
           );
         })}
-        {rows.length === 0 ? <p className="px-1 text-sm text-muted">Учёток нет — создайте первую и передайте логин клиенту.</p> : null}
+        {rows.length === 0 ? (
+          <p className="px-1 text-sm text-muted">
+            {visible.length === 0 ? "Учёток нет — создайте первую и передайте логин клиенту." : "Нет учёток по фильтру."}
+          </p>
+        ) : null}
       </div>
 
       {editing ? (
@@ -178,10 +254,31 @@ function AccountsPage() {
                   pin: patch.pin || "без изменения",
                   role: patch.role ?? editing.role,
                 });
+              } else if (patch.disabled && !editing.disabled) {
+                toast.success("Учётка заблокирована");
+              } else if (patch.disabled === false && editing.disabled) {
+                toast.success("Учётка разблокирована");
               } else {
                 toast.success("Учётка обновлена");
               }
               setEditing(null);
+            });
+          }}
+        />
+      ) : null}
+
+      {deleting ? (
+        <DeleteAccount
+          user={deleting}
+          open
+          onOpenChange={(open) => {
+            if (!open) setDeleting(null);
+          }}
+          onConfirm={() => {
+            void deleteStaff({ userId: deleting.id }).then((ok) => {
+              if (!ok) return;
+              toast.success("Учётка удалена");
+              setDeleting(null);
             });
           }}
         />
@@ -230,7 +327,7 @@ function HandoffRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex min-h-11 items-center justify-between gap-3 rounded-sm bg-bg px-3">
       <div>
-        <div className="text-[11px] tracking-wide text-muted uppercase">{label}</div>
+        <div className="text-xs tracking-wide text-muted uppercase">{label}</div>
         <div className="text-fg">{value}</div>
       </div>
       <button
@@ -337,7 +434,7 @@ function CreateAccount({
                 ))}
               </NativeSelect>
             </Field>
-            <Field label={network ? "Филиал" : "Филиал"}>
+            <Field label="Филиал">
               <NativeSelect value={network ? "" : branchId} onChange={(e) => setBranchId(e.target.value)} disabled={network}>
                 {network ? <option value="">Вся сеть</option> : null}
                 {branches.map((b) => (
@@ -348,6 +445,9 @@ function CreateAccount({
               </NativeSelect>
             </Field>
           </div>
+          {role === "tech_admin" ? (
+            <p className="text-xs text-muted">Администратор-техник видит всю сеть и может создавать любые роли.</p>
+          ) : null}
           <Button
             type="button"
             onClick={() => {
@@ -414,6 +514,7 @@ function EditAccount({
   const [branchId, setBranchId] = useState(user.branchId ?? "");
   const [disabled, setDisabled] = useState(Boolean(user.disabled));
   const network = isNetworkAdmin(role);
+  const roleOptions = roles.includes(user.role) ? roles : [user.role, ...roles];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -439,7 +540,7 @@ function EditAccount({
           <div className="grid grid-cols-2 gap-3">
             <Field label="Роль">
               <NativeSelect value={role} onChange={(e) => setRole(e.target.value as Role)}>
-                {roles.map((r) => (
+                {roleOptions.map((r) => (
                   <option key={r} value={r}>
                     {ROLE_LABEL[r]}
                   </option>
@@ -458,7 +559,7 @@ function EditAccount({
             </Field>
           </div>
           <div className="flex min-h-11 items-center justify-between gap-3 rounded-sm bg-bg px-3">
-            <span className="text-sm">Отключить вход</span>
+            <span className="text-sm">Заблокировать вход</span>
             <Switch checked={disabled} onCheckedChange={setDisabled} />
           </div>
           <Button
@@ -492,6 +593,36 @@ function EditAccount({
             }}
           >
             Сохранить
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DeleteAccount({
+  user,
+  open,
+  onOpenChange,
+  onConfirm,
+}: {
+  user: StaffUser;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent title="Удалить учётку?">
+        <p className="text-sm text-muted">
+          {user.name} ({user.email}) будет удалена. Войти по логину и PIN будет нельзя. Это нельзя отменить.
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button type="button" variant="danger" onClick={onConfirm}>
+            Удалить
+          </Button>
+          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+            Отмена
           </Button>
         </div>
       </DialogContent>
