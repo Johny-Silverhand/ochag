@@ -21,6 +21,8 @@ describe("API security helpers", () => {
     const headers = securityHeaders(req);
     assert.equal(headers["x-content-type-options"], "nosniff");
     assert.equal(headers["x-frame-options"], "DENY");
+    assert.match(headers["content-security-policy"] ?? "", /frame-ancestors 'none'/);
+    assert.match(headers["content-security-policy"] ?? "", /https:\/\/grok\.com/);
     assert.equal(headers["access-control-allow-origin"], undefined);
   });
 

@@ -6,7 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
-import { Field, Input, NativeSelect } from "@/components/ui/input";
+import { Field, Input, NativeSelect, Textarea } from "@/components/ui/input";
+import { Segmented } from "@/components/ui/tabs";
 import { useOps, useSessionUser } from "@/lib/data/store";
 import { recipeCost, recipeFoodCostPct } from "@/lib/domain/engine";
 import { canEditNomenclature } from "@/lib/domain/permissions";
@@ -15,6 +16,8 @@ import type { Recipe, RecipeItem, Unit } from "@/lib/domain/types";
 import { pct, qty, rub } from "@/lib/format";
 import { usePrefs } from "@/lib/prefs";
 import { uid } from "@/lib/utils";
+import { api } from "@/lib/api/client";
+import { downloadBase64 } from "@/lib/reports/download";
 
 export const Route = createFileRoute("/_app/recipes")({ component: RecipesPage });
 
@@ -26,6 +29,7 @@ function RecipesPage() {
   const user = useSessionUser()!;
   const upsertRecipe = useOps((s) => s.upsertRecipe);
   const [id, setId] = useState(recipes[0]?.id ?? "");
+  const [sheet, setSheet] = useState("items");
   const showFoodCost = usePrefs((s) => s.showFoodCost);
   const recipe = recipes.find((r) => r.id === id) ?? recipes[0];
   const branchId = isWriteScope(session.branchId) ? session.branchId : undefined;
@@ -96,6 +100,17 @@ function RecipesPage() {
                   ) : null}
                 </div>
               </div>
+              <Segmented
+                className="mt-4"
+                value={sheet}
+                onChange={setSheet}
+                options={[
+                  { value: "items", label: "Состав" },
+                  { value: "ttk", label: "ТТК" },
+                ]}
+              />
+              {sheet === "items" ? (
+                <>
               <dl className={`mt-5 grid gap-3 text-sm ${showFoodCost ? "grid-cols-3" : "grid-cols-1"}`}>
                 <div className="rounded-md bg-bg p-3">
                   <dt className="text-xs text-muted">Цена</dt>
@@ -137,6 +152,55 @@ function RecipesPage() {
                   })}
                 </tbody>
               </table>
+                </>
+              ) : (
+                <div className="mt-5 space-y-3">
+                  <dl className="grid gap-3 text-sm sm:grid-cols-3">
+                    <div className="rounded-md bg-bg p-3">
+                      <dt className="text-xs text-muted">Выход</dt>
+                      <dd className="mt-1 font-mono tabular-nums">
+                        {recipe.yieldPortions} порц.
+                        {recipe.outputGrams ? ` · ${recipe.outputGrams} г` : ""}
+                      </dd>
+                    </div>
+                    <div className="rounded-md bg-bg p-3">
+                      <dt className="text-xs text-muted">Срок реализации</dt>
+                      <dd className="mt-1 font-mono tabular-nums">
+                        {recipe.shelfLifeHours ? `${recipe.shelfLifeHours} ч` : "не задан"}
+                      </dd>
+                    </div>
+                    <div className="rounded-md bg-bg p-3">
+                      <dt className="text-xs text-muted">Печать</dt>
+                      <dd className="mt-1">
+                        <button
+                          type="button"
+                          className="text-sm underline-offset-2 hover:underline"
+                          onClick={() => {
+                            void api<{ filename: string; base64?: string; mime?: string; error?: string }>(
+                              `reports/pdf?kind=ttk&id=${recipe.id}`,
+                              { method: "GET" },
+                            )
+                              .then((r) => {
+                                if (!r.base64 || !r.mime) {
+                                  toast.error(r.error ?? "PDF не собран");
+                                  return;
+                                }
+                                downloadBase64(r.filename, r.base64, r.mime);
+                              })
+                              .catch((err) => toast.error(err instanceof Error ? err.message : "PDF недоступен"));
+                          }}
+                        >
+                          Скачать ТТК PDF
+                        </button>
+                      </dd>
+                    </div>
+                  </dl>
+                  <p className="text-sm leading-relaxed text-muted whitespace-pre-wrap">
+                    {recipe.techProcess?.trim() ||
+                      "Технология не заполнена. Откройте правку и добавьте порядок работ — это необязательное поле ТТК."}
+                  </p>
+                </div>
+              )}
             </Card>
           ) : null}
         </div>
@@ -162,6 +226,9 @@ function RecipeEditor({
   const [items, setItems] = useState<RecipeItem[]>(initial?.items ?? []);
   const [productId, setProductId] = useState(products[0]?.id ?? "");
   const [qtyV, setQty] = useState("0.3");
+  const [techProcess, setTechProcess] = useState(initial?.techProcess ?? "");
+  const [outputGrams, setOutputGrams] = useState(String(initial?.outputGrams ?? ""));
+  const [shelfLifeHours, setShelfLifeHours] = useState(String(initial?.shelfLifeHours ?? ""));
 
   return (
     <Dialog
@@ -174,6 +241,9 @@ function RecipeEditor({
           setPrice(String(initial.price));
           setYield(String(initial.yieldPortions));
           setItems(initial.items);
+          setTechProcess(initial.techProcess ?? "");
+          setOutputGrams(String(initial.outputGrams ?? ""));
+          setShelfLifeHours(String(initial.shelfLifeHours ?? ""));
         }
       }}
     >
@@ -196,6 +266,17 @@ function RecipeEditor({
               <Input value={yieldPortions} onChange={(e) => setYield(e.target.value)} inputMode="decimal" />
             </Field>
           </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Выход, г (необяз.)">
+              <Input value={outputGrams} onChange={(e) => setOutputGrams(e.target.value)} inputMode="numeric" />
+            </Field>
+            <Field label="Срок, ч (необяз.)">
+              <Input value={shelfLifeHours} onChange={(e) => setShelfLifeHours(e.target.value)} inputMode="numeric" />
+            </Field>
+          </div>
+          <Field label="Технология (необяз.)">
+            <Textarea value={techProcess} onChange={(e) => setTechProcess(e.target.value)} rows={4} />
+          </Field>
           <div className="grid grid-cols-[1fr_88px] gap-2">
             <NativeSelect value={productId} onChange={(e) => setProductId(e.target.value)}>
               {products.map((p) => (
@@ -239,6 +320,9 @@ function RecipeEditor({
                 price: Number(price) || 0,
                 yieldPortions: Number(yieldPortions) || 1,
                 items,
+                techProcess: techProcess.trim(),
+                outputGrams: Number(outputGrams) || undefined,
+                shelfLifeHours: Number(shelfLifeHours) || undefined,
               });
               setOpen(false);
             }}

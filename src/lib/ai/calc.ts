@@ -1,7 +1,7 @@
 import type { SafeMetrics } from "./safe-context.ts";
 import { roundMoney } from "../domain/finance.ts";
 
-export const CALC_TASKS = ["margin", "forecast", "shift"] as const;
+export const CALC_TASKS = ["margin", "forecast", "shift", "cover"] as const;
 export type CalcTask = (typeof CALC_TASKS)[number];
 
 export function isCalcTask(value: unknown): value is CalcTask {
@@ -46,10 +46,19 @@ export function shiftPlanOf(m: SafeMetrics) {
   };
 }
 
+export function coverOf(m: SafeMetrics) {
+  return {
+    lowCover: m.lowCover,
+    criticalCount: m.lowCover.filter((r) => r.days < 3).length,
+    abcA: m.abcA,
+  };
+}
+
 export function calcSnapshot(task: CalcTask, m: SafeMetrics) {
   if (task === "margin") return marginOf(m);
   if (task === "forecast") return forecastOf(m);
-  return shiftPlanOf(m);
+  if (task === "shift") return shiftPlanOf(m);
+  return coverOf(m);
 }
 
 /** Formula text — used when Ollama is off/down. Not a model. */
@@ -74,6 +83,21 @@ export function heuristicExplain(task: CalcTask, m: SafeMetrics) {
         : "План месяца не задан в аналитике — темп считается от факта.",
     ];
     if (f.onPace === false) bits.push("Чтобы закрыть план, нужен более плотный зал в оставшиеся дни или допродажи бара.");
+    return bits.join(" ");
+  }
+  if (task === "cover") {
+    const bits: string[] = [];
+    if (!m.lowCover.length) {
+      bits.push("По покрытию критичных позиций нет: расход и остатки в норме или мало движений.");
+    } else {
+      bits.push(
+        `Риск покрытия: ${m.lowCover.map((r) => `${r.name} (~${r.days} дн.)`).join(", ")}.`,
+      );
+      if (m.lowCover.some((r) => r.days < 3)) bits.push("Позиции меньше 3 дней — заявка до открытия.");
+    }
+    if (m.abcA.length) {
+      bits.push(`Класс A: ${m.abcA.map((r) => r.name).join(", ")} — не снимайте со стопа.`);
+    }
     return bits.join(" ");
   }
   const hours =

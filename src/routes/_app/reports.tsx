@@ -22,6 +22,7 @@ import { downloadBase64, downloadText } from "@/lib/reports/download";
 import { averageCheque, revenueByHour, waiterVoidsAndDiscounts } from "@/lib/domain/reports-extra";
 import { pct, ruDate, rub } from "@/lib/format";
 import { isWriteScope, WRITE_SCOPE_HINT } from "@/lib/ui/scope";
+import { ContourAssist } from "@/components/ai/contour-assist";
 
 export const Route = createFileRoute("/_app/reports")({ component: ReportsPage });
 
@@ -117,6 +118,12 @@ function ReportsPage() {
             </Button>
           </div>
         }
+      />
+      <ContourAssist
+        title="Средний чек и пик"
+        tasks={["shift", "margin", "forecast"]}
+        showNarrative
+        showRecommend={false}
       />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi label="Выручка" value={rub(k.revenue)} />

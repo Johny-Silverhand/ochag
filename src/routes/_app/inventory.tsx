@@ -167,6 +167,28 @@ function InventoryPage() {
                     <td className="px-3 py-2.5">
                       {MOVEMENT_LABEL[m.type]}
                       {m.reason ? <span className="block text-xs text-subtle">{WRITEOFF_LABEL[m.reason]}</span> : null}
+                      {m.type === "transfer" && m.refId && m.qty < 0 ? (
+                        <button
+                          type="button"
+                          className="mt-1 block text-xs underline-offset-2 hover:underline"
+                          onClick={() => {
+                            void api<{ filename: string; base64?: string; mime?: string; error?: string }>(
+                              `reports/pdf?kind=waybill&id=${m.refId}`,
+                              { method: "GET" },
+                            )
+                              .then((r) => {
+                                if (!r.base64 || !r.mime) {
+                                  toast.error(r.error ?? "PDF не собран");
+                                  return;
+                                }
+                                downloadBase64(r.filename, r.base64, r.mime);
+                              })
+                              .catch((err) => toast.error(err instanceof Error ? err.message : "PDF недоступен"));
+                          }}
+                        >
+                          накладная PDF
+                        </button>
+                      ) : null}
                     </td>
                     <td className="px-3 py-2.5">{p?.name}</td>
                     <td className={`px-5 py-2.5 text-right font-mono tabular-nums ${m.qty < 0 ? "text-danger" : "text-success"}`}>

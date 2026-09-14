@@ -11,7 +11,9 @@
 - **Лимит тела** ~1.5 МБ. Фото накладных — тип/размер уже ограничены.
 - **Rate limit** входа (IP + логин) и запись. После 8 неверных попыток — пауза 15 минут на учётке.
 - **Несколько сессий** на аккаунт. Отзыв инвалидирует JWT (`jti`). IP из `x-forwarded-for` (первый hop).
-- **Заголовки:** `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options: DENY`, `Permissions-Policy`, `frame-ancestors 'none'`. CORS не отражает чужой `Origin`. Same-origin без `Origin` (серверные вызовы) проходит.
+- **Заголовки:** `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options: DENY`, `Permissions-Policy`, CSP (`frame-ancestors 'none'`, `object-src 'none'`, script только self + grok.com для брендинга). CORS не отражает чужой `Origin`. Same-origin без `Origin` (серверные вызовы) проходит.
+- **Сравнение пароля и PIN** — `timingSafeEqual`, без раннего `===` по строке.
+- **PDF отчётов** отдаются из среза контура актора, не из сырого снимка всей базы.
 - **Ошибки в production:** английский стек клиенту не отдаём.
 
 ## Что включить в кабинете Vercel

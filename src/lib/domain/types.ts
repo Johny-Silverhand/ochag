@@ -117,6 +117,10 @@ export interface Recipe {
   price: number;
   yieldPortions: number;
   items: RecipeItem[];
+  /** Optional kitchen process for the TTK printout. */
+  techProcess?: string;
+  outputGrams?: number;
+  shelfLifeHours?: number;
 }
 
 export interface StockLevel {

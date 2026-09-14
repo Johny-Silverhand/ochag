@@ -3,6 +3,7 @@ import { computeKpis, filterByBranch, filterPeriod, needToBuy, periodStart, topD
 import { today } from "../domain/types.ts";
 import { activeStopList } from "../domain/stoplist.ts";
 import { averageCheque, revenueByHour } from "../domain/reports-extra.ts";
+import { abcByRevenue } from "../domain/analytics.ts";
 import { roundMoney } from "../domain/finance.ts";
 
 export interface SafeMetrics {
@@ -34,6 +35,7 @@ export interface SafeMetrics {
   voidCount: number;
   discountSum: number;
   lowCover: { name: string; days: number }[];
+  abcA: { name: string; sharePct: number }[];
   month: string;
   monthFact: number;
   planTarget: number;
@@ -124,6 +126,10 @@ export function safeMetrics(snap: Snapshot, period: Period, branchId: string | "
     voidCount: sales.filter((s) => s.voided).length,
     discountSum: roundMoney(live.reduce((s, r) => s + (r.discount ?? 0), 0)),
     lowCover: lowCoverOf(snap, branchId),
+    abcA: abcByRevenue(snap, period, branchId)
+      .filter((r) => r.cls === "A")
+      .slice(0, 6)
+      .map((r) => ({ name: r.name, sharePct: roundMoney(r.share * 100, 1) })),
     month,
     monthFact,
     planTarget,
@@ -163,6 +169,7 @@ export function sampleMetrics(partial: Partial<SafeMetrics> = {}): SafeMetrics {
     voidCount: 0,
     discountSum: 0,
     lowCover: [],
+    abcA: [{ name: "Шашлык", sharePct: 22 }],
     month: "2026-09",
     monthFact: 420000,
     planTarget: 720000,

@@ -120,7 +120,8 @@ function IntegrationsPage() {
               <div className="text-xs tracking-wide text-muted uppercase">Сигналы</div>
               <h2 className="mt-1 text-lg font-medium">Операционный советник</h2>
               <p className="mt-2 max-w-xl text-sm text-muted">
-                На обзоре считаются аномалии: фудкост, списания, касса, дефицит. Ключ внешней модели не нужен.
+                На обзоре считаются аномалии: фудкост, списания, касса, дефицит — по формулам контура. Разбор периода,
+              плана и покрытия — в Аналитике и «Очаг AI»; туда ходит ваша Ollama, если включена.
               </p>
             </div>
             <Badge tone="success">в работе</Badge>
@@ -241,6 +242,13 @@ function KeeperSection({ keeper }: { keeper: KeeperStatus | null }) {
           <li>
             <span className="font-medium text-fg">Работает:</span> загрузка XML (Receipt/Item, Check/Dish, Order), разбор
             Z-отчёта, списание по техкарте, защита от дублей.
+          </li>
+          <li>
+            <span className="font-medium text-fg">Mini-API RK7:</span> рабочая команда —{" "}
+            <span className="font-mono text-xs">GetOrderList</span> (чеки смены). Справочник меню{" "}
+            <span className="font-mono text-xs">GetRefData</span> и один заказ{" "}
+            <span className="font-mono text-xs">GetOrder</span> не подключены: блюда стыкуются по имени техкарты, не по
+            коду RK7.
           </li>
           <li>
             <span className="font-medium text-fg">HTTP с облака:</span> кнопка «Забрать с кассы» на Продажах бьёт в{" "}

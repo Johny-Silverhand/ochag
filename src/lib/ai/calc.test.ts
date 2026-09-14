@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { forecastOf, heuristicExplain, isCalcTask, marginOf, shiftPlanOf } from "./calc.ts";
+import { coverOf, forecastOf, heuristicExplain, isCalcTask, marginOf, shiftPlanOf } from "./calc.ts";
 import { sampleMetrics } from "./safe-context.ts";
 
 describe("AI calc helpers", () => {
@@ -36,9 +36,22 @@ describe("AI calc helpers", () => {
 
   it("rejects free-form chat as a calc task", () => {
     assert.equal(isCalcTask("margin"), true);
+    assert.equal(isCalcTask("cover"), true);
     assert.equal(isCalcTask("ask"), false);
     assert.equal(isCalcTask("chat"), false);
     assert.equal(isCalcTask(""), false);
+  });
+
+  it("cover heuristic names short-stock products and class A dishes", () => {
+    const m = sampleMetrics({
+      lowCover: [{ name: "Свинина шея", days: 1.2 }],
+      abcA: [{ name: "Люля", sharePct: 18 }],
+    });
+    assert.equal(coverOf(m).criticalCount, 1);
+    const text = heuristicExplain("cover", m);
+    assert.match(text, /Свинина шея/);
+    assert.match(text, /Люля/);
+    assert.match(text, /заявка/i);
   });
 
   it("margin heuristic is labelled formula text, not a pretend model", () => {

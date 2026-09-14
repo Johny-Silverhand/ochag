@@ -99,6 +99,73 @@ export async function revisionActPdf(snap: Snapshot, revisionId: string) {
   return { filename: `ochag-revision-${rev.date}.pdf`, bytes: buf };
 }
 
+export function transferLegs(snap: Snapshot, refId: string) {
+  const id = refId.trim();
+  if (!id) throw new Error("Накладная не найдена");
+  const legs = snap.movements.filter((m) => m.type === "transfer" && m.refId === id);
+  if (!legs.length) throw new Error("Накладная не найдена");
+  return legs.slice().sort((a, b) => a.qty - b.qty);
+}
+
+export async function transferWaybillPdf(snap: Snapshot, refId: string) {
+  const legs = transferLegs(snap, refId);
+  const out = legs.find((m) => m.qty < 0) ?? legs[0]!;
+  const inn = legs.find((m) => m.qty > 0);
+  const from = snap.branches.find((b) => b.id === out.branchId);
+  const to = snap.branches.find((b) => b.id === (inn?.branchId ?? out.counterpartBranchId));
+  const product = snap.products.find((p) => p.id === out.productId);
+  const user = snap.users.find((u) => u.id === out.userId);
+  const buf = await pdfBuffer((doc) => {
+    doc.fontSize(11).fillColor("#17352b").text("Очаг · внутренняя накладная");
+    doc.moveDown(0.3);
+    doc.fontSize(18).fillColor("#111").text("Перемещение между филиалами");
+    doc.fontSize(12).fillColor("#222");
+    doc.text(`№ ${out.refId}`);
+    doc.text(`Дата: ${out.at.slice(0, 16).replace("T", " ")}`);
+    doc.text(`Откуда: ${from?.name ?? out.branchId}`);
+    doc.text(`Куда: ${to?.name ?? inn?.branchId ?? out.counterpartBranchId ?? "—"}`);
+    doc.text(`Кто провёл: ${user?.name ?? out.userId}`);
+    doc.moveDown();
+    doc.fontSize(11);
+    doc.text(
+      `${product?.name ?? out.productId}  —  ${Math.abs(out.qty)} ${product?.unit ?? ""}  ·  ${Math.round(out.cost)} ₽`,
+    );
+    if (out.note) {
+      doc.moveDown();
+      doc.fontSize(10).fillColor("#444").text(out.note);
+    }
+  });
+  return { filename: `ochag-waybill-${out.refId}.pdf`, bytes: buf };
+}
+
+export async function ttkPdf(snap: Snapshot, recipeId: string) {
+  const recipe = snap.recipes.find((r) => r.id === recipeId);
+  if (!recipe) throw new Error("Техкарта не найдена");
+  const buf = await pdfBuffer((doc) => {
+    doc.fontSize(11).fillColor("#17352b").text("Очаг · технологическая карта");
+    doc.moveDown(0.3);
+    doc.fontSize(18).fillColor("#111").text(recipe.name);
+    doc.fontSize(12).fillColor("#222");
+    doc.text(`Категория: ${recipe.category}`);
+    doc.text(`Выход: ${recipe.yieldPortions} порц.${recipe.outputGrams ? ` · ${recipe.outputGrams} г` : ""}`);
+    if (recipe.shelfLifeHours) doc.text(`Срок реализации: ${recipe.shelfLifeHours} ч`);
+    doc.text(`Цена: ${recipe.price} ₽`);
+    doc.moveDown();
+    doc.fontSize(12).fillColor("#17352b").text("Норма закладки");
+    doc.fontSize(11).fillColor("#222");
+    for (const line of recipe.items) {
+      const p = snap.products.find((x) => x.id === line.productId);
+      doc.text(`${p?.name ?? line.productId}  —  ${line.qty} ${p?.unit ?? ""}`);
+    }
+    if (recipe.techProcess?.trim()) {
+      doc.moveDown();
+      doc.fontSize(12).fillColor("#17352b").text("Технология");
+      doc.fontSize(11).fillColor("#222").text(recipe.techProcess.trim());
+    }
+  });
+  return { filename: `ochag-ttk-${recipe.id}.pdf`, bytes: buf };
+}
+
 export function csvEscape(value: string | number) {
   const s = String(value);
   return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;

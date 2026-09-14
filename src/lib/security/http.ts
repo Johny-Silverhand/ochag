@@ -57,7 +57,8 @@ export function securityHeaders(request?: Request): Record<string, string> {
     "referrer-policy": "strict-origin-when-cross-origin",
     "permissions-policy": "camera=(), microphone=(), geolocation=()",
     "x-frame-options": "DENY",
-    "content-security-policy": "frame-ancestors 'none'",
+    "content-security-policy":
+      "default-src 'self'; script-src 'self' 'unsafe-inline' https://grok.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
     ...(allowOrigin
       ? {
           "access-control-allow-origin": allowOrigin,

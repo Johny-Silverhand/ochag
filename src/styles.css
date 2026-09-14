@@ -442,14 +442,23 @@ body {
 @media (max-width: 1023px) {
   .login-card,
   .glass-panel {
-    background: color-mix(in srgb, var(--palette-surface) 64%, transparent);
-    backdrop-filter: blur(20px) saturate(1.35);
-    -webkit-backdrop-filter: blur(20px) saturate(1.35);
+    background: color-mix(in srgb, var(--palette-surface) 58%, transparent);
+    backdrop-filter: blur(24px) saturate(1.45);
+    -webkit-backdrop-filter: blur(24px) saturate(1.45);
+    border: 1px solid color-mix(in srgb, white 28%, var(--palette-border));
+    box-shadow:
+      0 12px 36px color-mix(in srgb, black 12%, transparent),
+      inset 0 1px 0 color-mix(in srgb, white 42%, transparent);
   }
   header.sticky {
-    background: color-mix(in srgb, var(--palette-bg) 55%, transparent);
-    backdrop-filter: blur(22px) saturate(1.4);
-    -webkit-backdrop-filter: blur(22px) saturate(1.4);
+    background: color-mix(in srgb, var(--palette-bg) 48%, transparent);
+    backdrop-filter: blur(24px) saturate(1.45);
+    -webkit-backdrop-filter: blur(24px) saturate(1.45);
+  }
+  .ios-tabbar {
+    background: color-mix(in srgb, var(--palette-elevated) 62%, transparent);
+    backdrop-filter: blur(24px) saturate(1.4);
+    -webkit-backdrop-filter: blur(24px) saturate(1.4);
   }
 }
 

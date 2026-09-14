@@ -59,7 +59,7 @@ import { isTariffId } from "../billing/plans";
 import { explainCalc, periodNarrative, recommendMetrics, ollamaAvailable, resolveOllamaConfig, isCalcTask, calcSnapshot } from "../ai";
 import { safeMetrics } from "../ai/safe-context";
 import { flushOutbox, notifyReady } from "../notify/send";
-import { banquetPdf, periodPdf, revisionActPdf, toCsv } from "../reports/pdf";
+import { banquetPdf, periodPdf, revisionActPdf, toCsv, transferWaybillPdf, ttkPdf } from "../reports/pdf";
 import { advisor } from "../ai/advisor";
 import { abcByRevenue, compareRevisions, deviations, periodPayroll, planVsFact, priceHistory, stockCover, stopListHistory } from "../domain/analytics";
 import { averageCheque, revenueByHour, waiterVoidsAndDiscounts } from "../domain/reports-extra";
@@ -80,6 +80,7 @@ import {
 } from "../domain/sessions";
 import { assertReadableBranch, canSwitchOwner, ownersOf, snapshotForActor } from "../domain/tenancy";
 import { assertAuthRate, assertPayloadSize, assertSameOriginOrNone, assertWriteRate, opaqueApiError, securityHeaders } from "../security/http";
+import { secretsEqual } from "../security/secrets";
 import {
   DB_UNAVAILABLE_MSG,
   StoreUnavailableError,
@@ -343,8 +344,10 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
       const pin = body.pin != null ? String(body.pin) : "";
       const via = path === "auth/pin" ? "pin" : "password";
       const user = snap.users.find((u) => u.email.toLowerCase() === login);
-      const passOk = via === "password" && Boolean(password && user?.password === password);
-      const pinOk = via === "pin" && Boolean(pin && user?.pin === pin);
+      const dummy = "\0".repeat(Math.max(password.length, pin.length, 12));
+      const passOk =
+        via === "password" && Boolean(password) && secretsEqual(user?.password ?? dummy, password) && Boolean(user);
+      const pinOk = via === "pin" && Boolean(pin) && secretsEqual(user?.pin ?? dummy, pin) && Boolean(user);
       const verdict = resolveStaffAuth({ user, credentialsOk: passOk || pinOk });
       const logged = recordAuthAttempt(snap, {
         login,
@@ -665,7 +668,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
       }
       if (path === "ai/calc") {
         if (!isCalcTask(body.task)) {
-          return json({ error: "Задача: margin, forecast или shift" }, 400);
+          return json({ error: "Задача: margin, forecast, shift или cover" }, 400);
         }
         const out = await explainCalc(body.task, metrics, view.settings);
         return json({ ...out, metrics, calc: calcSnapshot(body.task, metrics), task: body.task });
@@ -794,23 +797,29 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     }
 
     if (method === "GET" && path === "reports/pdf") {
-      const actor = await requireActor(request);
-      const repo = await getRepo();
-      const snap = await repo.load();
+      const { actor, view } = await loadScoped(request);
       const kind = url.searchParams.get("kind") ?? "period";
       if (kind === "banquet") {
-        const b = snap.banquets.find((x) => x.id === url.searchParams.get("id"));
+        const b = view.banquets.find((x) => x.id === url.searchParams.get("id"));
         if (!b) throw new AuthzError("Банкет не найден", 404);
-        const file = await banquetPdf(snap, b, (url.searchParams.get("sheet") as never) ?? "guest");
+        const file = await banquetPdf(view, b, (url.searchParams.get("sheet") as never) ?? "guest");
         return json({ filename: file.filename, base64: file.bytes.toString("base64"), mime: "application/pdf" });
       }
       if (kind === "revision") {
-        const file = await revisionActPdf(snap, String(url.searchParams.get("id")));
+        const file = await revisionActPdf(view, String(url.searchParams.get("id")));
+        return json({ filename: file.filename, base64: file.bytes.toString("base64"), mime: "application/pdf" });
+      }
+      if (kind === "waybill") {
+        const file = await transferWaybillPdf(view, String(url.searchParams.get("id")));
+        return json({ filename: file.filename, base64: file.bytes.toString("base64"), mime: "application/pdf" });
+      }
+      if (kind === "ttk") {
+        const file = await ttkPdf(view, String(url.searchParams.get("id")));
         return json({ filename: file.filename, base64: file.bytes.toString("base64"), mime: "application/pdf" });
       }
       const period = (url.searchParams.get("period") ?? "7d") as Period;
-      const k = computeKpis(snap, { period, branchId: actor.sessionBranchId });
-      const file = await periodPdf(snap, period, [
+      const k = computeKpis(view, { period, branchId: actor.sessionBranchId });
+      const file = await periodPdf(view, period, [
         `Выручка ${k.revenue} ₽, чеков ${k.checks}`,
         `Фудкост ${k.foodCost.toFixed(1)}%, себест. ${k.cogs}`,
         `Списания ${k.writeoffs}, ФОТ ${k.payroll}, opex ${k.opex}`,
@@ -820,12 +829,10 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     }
 
     if (method === "GET" && path === "reports/csv") {
-      const actor = await requireActor(request);
-      const repo = await getRepo();
-      const snap = await repo.load();
+      const { actor, view } = await loadScoped(request);
       const kind = url.searchParams.get("kind") ?? "sales";
       if (kind === "payroll") {
-        const rows = periodPayroll(snap, (url.searchParams.get("period") ?? "30d") as Period, actor.sessionBranchId);
+        const rows = periodPayroll(view, (url.searchParams.get("period") ?? "30d") as Period, actor.sessionBranchId);
         return json({
           filename: "ochag-payroll.csv",
           csv: toCsv(
@@ -834,7 +841,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
           ),
         });
       }
-      const k = computeKpis(snap, { period: (url.searchParams.get("period") ?? "7d") as Period, branchId: actor.sessionBranchId });
+      const k = computeKpis(view, { period: (url.searchParams.get("period") ?? "7d") as Period, branchId: actor.sessionBranchId });
       return json({
         filename: "ochag-period.csv",
         csv: toCsv(["Показатель", "Значение"], [

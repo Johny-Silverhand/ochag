@@ -85,6 +85,27 @@ export function createHeuristicProvider(): AiProvider {
           module: "dashboard",
         });
       }
+      if (metrics.lowCover.some((r) => r.days < 3)) {
+        extra.push({
+          id: "ai-cover",
+          severity: "warning",
+          title: "Склад не дотягивает до открытия",
+          body: metrics.lowCover
+            .filter((r) => r.days < 3)
+            .map((r) => `${r.name} (~${r.days} дн.)`)
+            .join(", "),
+          module: "procurement",
+        });
+      }
+      if (metrics.abcA[0]) {
+        extra.push({
+          id: "ai-abc",
+          severity: "info",
+          title: `Класс A · ${metrics.abcA[0].name}`,
+          body: `Доля ${metrics.abcA[0].sharePct}%. Не снимайте со стопа: это ядро выручки среза.`,
+          module: "planning",
+        });
+      }
       return extra;
     },
   };

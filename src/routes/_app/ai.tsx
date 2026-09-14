@@ -36,6 +36,8 @@ type CalcPayload = {
   peakChecks?: number;
   avgCheck?: number;
   itemsPerCheck?: number;
+  lowCover?: { name: string; days: number }[];
+  abcA?: { name: string; sharePct: number }[];
 };
 
 function AiPage() {
@@ -143,6 +145,7 @@ function AiPage() {
                 ["margin", "Маржа"],
                 ["forecast", "Прогноз месяца"],
                 ["shift", "Смена / пик"],
+                ["cover", "Покрытие склада"],
               ] as const
             ).map(([id, label]) => (
               <Button
@@ -182,6 +185,12 @@ function AiPage() {
             <div className="mt-4 grid grid-cols-2 gap-3">
               <Kpi label="Пик" value={calc.peakLabel ?? "—"} hint={calc.peakChecks ? `${calc.peakChecks} чек.` : undefined} />
               <Kpi label="Средний чек" value={rub(calc.avgCheck ?? 0)} hint={`${calc.itemsPerCheck ?? 0} поз.`} />
+            </div>
+          ) : null}
+          {task === "cover" && calc ? (
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <Kpi label="Риск покрытия" value={String(calc.lowCover?.length ?? 0)} hint="позиций в разборе" />
+              <Kpi label="Класс A" value={calc.abcA?.[0]?.name ?? "—"} hint={calc.abcA?.[0] ? `${calc.abcA[0].sharePct}%` : ""} />
             </div>
           ) : null}
           {explain ? <p className="mt-3 text-sm leading-relaxed text-muted">{explain}</p> : null}

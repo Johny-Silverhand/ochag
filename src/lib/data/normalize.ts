@@ -14,7 +14,12 @@ export function normalizeSnapshot(raw: Partial<Snapshot> | null | undefined): Sn
     avgCost: row.avgCost ?? 0,
   }));
   const products = raw.products ?? [];
-  const recipes = raw.recipes ?? [];
+  const recipes = (raw.recipes ?? []).map((r) => ({
+    ...r,
+    techProcess: r.techProcess ?? "",
+    outputGrams: r.outputGrams,
+    shelfLifeHours: r.shelfLifeHours,
+  }));
 
   const normalized: Snapshot = {
     branches: (raw.branches ?? []).map((b) => ({

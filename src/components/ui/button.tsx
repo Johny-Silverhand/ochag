@@ -9,7 +9,8 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: "bg-primary text-primary-fg shadow-(--shadow-border) hover:opacity-90",
-        secondary: "bg-elevated text-fg shadow-(--shadow-border) hover:bg-surface",
+        secondary:
+          "bg-elevated text-fg shadow-(--shadow-border) hover:bg-surface max-lg:shadow-[inset_0_1px_0_color-mix(in_srgb,white_38%,transparent),0_6px_16px_color-mix(in_srgb,black_8%,transparent)]",
         outline: "bg-transparent text-fg shadow-(--shadow-border) hover:bg-surface",
         ghost: "bg-transparent text-fg hover:bg-bg",
         danger: "bg-danger text-primary-fg hover:opacity-90",
