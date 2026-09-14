@@ -94,6 +94,17 @@
   --scene-app-mobile: url("/backgrounds/app-mobile.jpg");
   --scene-app-shell: url("/backgrounds/app-shell.jpg");
   --scene-app-opacity: 0.46;
+  --page-pad-x: clamp(1rem, 3.2vw, 1.75rem);
+  --page-pad-y: clamp(1rem, 2.1vw, 1.5rem);
+  --login-pad-x: clamp(1.15rem, 4vw, 2.25rem);
+  --login-card-pad-x: clamp(1.15rem, 3.6vw, 2rem);
+  --login-card-pad-y: clamp(1.4rem, 3vw, 2rem);
+  --title-page: clamp(1.35rem, 1.15rem + 1vw, 1.65rem);
+  --title-login: clamp(1.55rem, 1.2rem + 1.6vw, 1.95rem);
+  --title-hero: clamp(2rem, 1.35rem + 2.2vw, 3.1rem);
+  --kpi-value: clamp(1.05rem, 0.92rem + 1.2vw, 1.5rem);
+  --shell-sidebar: 15rem;
+  --dialog-max-h: min(92dvh, calc(100dvh - env(safe-area-inset-top, 0px) - 0.75rem));
 
   --color-bg: var(--palette-bg);
   --color-surface: var(--palette-surface);
@@ -363,6 +374,9 @@
   --radius-2xl: 28px;
   --radius-3xl: 32px;
   --radius: 14px;
+  --page-pad-y: clamp(0.7rem, 1.5vw, 1.1rem);
+  --kpi-value: clamp(0.98rem, 0.88rem + 0.8vw, 1.25rem);
+  --shell-sidebar: 13.75rem;
 }
 
 [data-type="large"] {
@@ -389,6 +403,7 @@
 
 html {
   scrollbar-color: var(--palette-border-strong) var(--palette-bg);
+  overflow-x: clip;
 }
 
 body {
@@ -405,6 +420,10 @@ body {
   isolation: isolate;
 }
 
+.login-scene > * {
+  min-width: 0;
+}
+
 .login-scene-bg {
   position: fixed;
   inset: 0;
@@ -412,14 +431,15 @@ body {
   pointer-events: none;
   background-color: var(--palette-bg);
   background-image: var(--scene-login-mobile);
+  background-repeat: no-repeat;
   background-size: cover;
-  background-position: right center;
+  background-position: center center;
 }
 
-@media (min-width: 1024px) {
+@media (min-width: 768px) {
   .login-scene-bg {
     background-image: var(--scene-login-desktop);
-    background-position: center right;
+    background-position: center center;
   }
 }
 
@@ -429,6 +449,7 @@ body {
   box-shadow: var(--elev-border);
   backdrop-filter: blur(22px);
   -webkit-backdrop-filter: blur(22px);
+  padding: var(--login-card-pad-y) var(--login-card-pad-x);
 }
 
 .app-frame {
@@ -442,15 +463,18 @@ body {
   pointer-events: none;
   grid-column: 1 / -1;
   grid-row: 1 / -1;
+  background-color: var(--palette-bg);
   background-image: var(--scene-app-mobile);
+  background-repeat: no-repeat;
   background-size: cover;
-  background-position: center;
+  background-position: center center;
   opacity: var(--scene-app-opacity);
 }
 
 @media (min-width: 768px) {
   .app-scene {
     background-image: var(--scene-app-shell);
+    background-position: center center;
   }
 }
 
@@ -531,6 +555,53 @@ html.keyboard-open .ios-tabbar {
 .ios-tabbar {
   padding-bottom: env(safe-area-inset-bottom);
   transition: transform var(--duration-sheet) var(--ease-ios);
+}
+
+.ios-tabbar a,
+.ios-tabbar button {
+  min-width: 0;
+  padding-inline: 0.15rem;
+}
+
+.ios-tabbar a span,
+.ios-tabbar button span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.15;
+}
+
+.form-narrow {
+  width: 100%;
+  max-width: 28rem;
+  margin-inline: auto;
+}
+
+.dialog-scroll {
+  min-height: 0;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.page-title {
+  font-size: var(--title-page);
+  text-wrap: balance;
+}
+
+.login-title {
+  font-size: var(--title-login);
+  line-height: 1.2;
+  text-wrap: balance;
+}
+
+.login-hero-title {
+  font-size: var(--title-hero);
+  line-height: 1.12;
+  text-wrap: balance;
 }
 
 .sheet-backdrop {
@@ -770,6 +841,7 @@ html.keyboard-open .ios-tabbar {
 }
 
 .stagger-in > * {
+  min-width: 0;
   animation: rise 400ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 .stagger-in > *:nth-child(1) { animation-delay: 0ms; }
