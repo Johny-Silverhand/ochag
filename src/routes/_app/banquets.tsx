@@ -1,5 +1,6 @@
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
+import { BanquetEditor, draftBanquet } from "@/components/banquet/editor";
 import { PageHeader } from "@/components/layout/page";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,10 +9,9 @@ import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/input";
 import { useOps, useSessionUser } from "@/lib/data/store";
 import { canEditBanquet } from "@/lib/domain/permissions";
-import { BANQUET_LABEL, today, type Banquet, type BanquetStatus } from "@/lib/domain/types";
-import { addDays as addIso, ruDate, rub } from "@/lib/format";
+import { BANQUET_LABEL, branchHalls, today, type Banquet, type BanquetStatus, type Branch } from "@/lib/domain/types";
+import { ruDate, rub } from "@/lib/format";
 import { notify } from "@/lib/notify";
-import { uid } from "@/lib/utils";
 import { isWriteScope, WRITE_SCOPE_HINT } from "@/lib/ui/scope";
 import { toast } from "sonner";
 
@@ -63,7 +63,7 @@ function BanquetsPage() {
         description="Календарь, залог и комплект листов: официантам, шашлычнику и на кухню — из одной карточки."
         actions={
           canEditBanquet(user.role) && canWrite ? (
-            <NewBanquet onCreate={upsertBanquet} branchId={scope} />
+            <NewBanquet onCreate={upsertBanquet} branchId={scope} branches={snap.branches} />
           ) : canEditBanquet(user.role) ? (
             <Button variant="secondary" onClick={() => toast.error(WRITE_SCOPE_HINT)}>
               Новый банкет
@@ -172,83 +172,42 @@ function shiftMonth(ym: string, delta: number) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-function NewBanquet({ onCreate, branchId }: { onCreate: (b: Banquet) => void; branchId: string }) {
+function NewBanquet({
+  onCreate,
+  branchId,
+  branches,
+}: {
+  onCreate: (b: Banquet) => Promise<boolean> | boolean;
+  branchId: string;
+  branches: Branch[];
+}) {
   const [open, setOpen] = useState(false);
-  const [title, setTitle] = useState("");
-  const [client, setClient] = useState("");
-  const [phone, setPhone] = useState("");
-  const [date, setDate] = useState(addIso(today(), 7));
-  const [guests, setGuests] = useState("24");
-  const [total, setTotal] = useState("80000");
-  const [deposit, setDeposit] = useState("20000");
+  const initialId = branchId !== "all" ? branchId : branches[0]?.id ?? "";
+  const hallList = branchHalls(branches.find((b) => b.id === initialId));
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button>Новый банкет</Button>
       </DialogTrigger>
-      <DialogContent title="Карточка банкета">
-        <div className="grid gap-3">
-          <Field label="Название">
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} />
-          </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Клиент">
-              <Input value={client} onChange={(e) => setClient(e.target.value)} />
-            </Field>
-            <Field label="Телефон">
-              <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
-            </Field>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <Field label="Дата">
-              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-            </Field>
-            <Field label="Гостей">
-              <Input value={guests} onChange={(e) => setGuests(e.target.value)} />
-            </Field>
-            <Field label="Сумма">
-              <Input value={total} onChange={(e) => setTotal(e.target.value)} />
-            </Field>
-          </div>
-          <Field label="Залог">
-            <Input value={deposit} onChange={(e) => setDeposit(e.target.value)} />
-          </Field>
-          <Button
-            onClick={() => {
-              if (!title || !client) return;
-              onCreate({
-                id: uid("bn"),
-                number: `БН-${Math.floor(Math.random() * 80 + 110)}`,
-                branchId,
-                title,
-                clientName: client,
-                clientPhone: phone,
-                date,
-                startTime: "18:00",
-                endTime: "23:00",
-                guests: Number(guests) || 0,
-                hall: "Основной зал",
-                total: Number(total) || 0,
-                deposit: Number(deposit) || 0,
-                depositPaid: false,
-                status: "inquiry",
-                notes: "",
-                waiterNotes: "",
-                grillItems: [{ name: "Шашлык свинина", qty: Math.round((Number(guests) || 0) * 0.25), unit: "кг", readyBy: "18:30" }],
-                kitchenItems: [{ name: "Салат свежий", qty: Number(guests) || 0, unit: "порц", readyBy: "17:40" }],
-                serviceItems: [{ name: "Приборы", qty: Number(guests) || 0, unit: "шт" }],
-                timeline: [
-                  { time: "16:00", action: "Зал" },
-                  { time: "18:00", action: "Встреча гостей" },
-                ],
+      <DialogContent title="Карточка банкета" className="max-w-3xl">
+        {open && initialId ? (
+          <BanquetEditor
+            key={`${open}-${initialId}`}
+            value={draftBanquet(initialId, hallList)}
+            branches={branches}
+            submitLabel="Сохранить"
+            onSave={(card) => {
+              void Promise.resolve(onCreate(card)).then((ok) => {
+                if (ok === false) return;
+                setOpen(false);
+                notify("banquet", "Банкет в календаре");
               });
-              setOpen(false);
-              notify("banquet", "Банкет в календаре");
             }}
-          >
-            Сохранить
-          </Button>
-        </div>
+          />
+        ) : (
+          <p className="text-sm text-muted">Сначала заведите филиал.</p>
+        )}
       </DialogContent>
     </Dialog>
   );

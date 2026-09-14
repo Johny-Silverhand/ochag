@@ -7,6 +7,7 @@ import { Field, Input } from "@/components/ui/input";
 import { PAYMENT_SIM_BADGE, TARIFFS, tariffById, type TariffId, type TariffPlan } from "@/lib/billing/plans";
 import { NETWORK_NAME } from "@/lib/brand";
 import { cn } from "@/lib/utils";
+import { parseHalls } from "@/lib/domain/types";
 
 export type OnboardInput = {
   ownerName: string;
@@ -16,6 +17,8 @@ export type OnboardInput = {
   branchName: string;
   city: string;
   address: string;
+  seats?: number;
+  halls?: string[];
 };
 
 export function CommercialGate({
@@ -302,11 +305,13 @@ function OnboardStep({
   const [branchName, setBranchName] = useState("Филиал 1");
   const [city, setCity] = useState("");
   const [address, setAddress] = useState("");
+  const [seats, setSeats] = useState("40");
+  const [halls, setHalls] = useState("Основной зал");
 
   return (
     <div className="form-narrow">
       <p className="mb-4 text-sm text-muted">
-        Владелец сети, первый филиал и вход. Пароль — от 4 знаков, PIN — 4 цифры для зала.
+        Владелец, первый филиал, залы и места. Пароль — от 4 знаков, PIN — 4 цифры для зала.
       </p>
       <form
         className="space-y-3"
@@ -314,7 +319,17 @@ function OnboardStep({
           e.preventDefault();
           setBusy(true);
           setError("");
-          void submit({ ownerName, login, password, pin, branchName, city, address }).then((result) => {
+          void submit({
+            ownerName,
+            login,
+            password,
+            pin,
+            branchName,
+            city,
+            address,
+            seats: Number(seats) || 40,
+            halls: parseHalls(halls),
+          }).then((result) => {
             setBusy(false);
             if (!result.ok) {
               setError(result.reason);
@@ -359,6 +374,14 @@ function OnboardStep({
           </Field>
           <Field label="Адрес">
             <Input value={address} onChange={(e) => setAddress(e.target.value)} />
+          </Field>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Посадочных мест">
+            <Input value={seats} onChange={(e) => setSeats(e.target.value)} inputMode="numeric" />
+          </Field>
+          <Field label="Залы (через запятую)">
+            <Input value={halls} onChange={(e) => setHalls(e.target.value)} placeholder="Основной зал, Веранда" />
           </Field>
         </div>
         {error ? <p className="text-sm text-danger">{error}</p> : null}

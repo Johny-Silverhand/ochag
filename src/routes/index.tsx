@@ -12,6 +12,7 @@ import { LOGIN_INTRO, NETWORK_NAME } from "@/lib/brand";
 import { canSelfOnboard } from "@/lib/billing/simulate";
 import { looksLikeSeedNetwork } from "@/lib/data/bootstrap";
 import { usePrefs } from "@/lib/prefs";
+import { canEnterWithPin, queuePinOffer } from "@/lib/auth/pin-gate";
 
 export const Route = createFileRoute("/")({
   ssr: false,
@@ -58,6 +59,7 @@ function LoginPage() {
       setError(result.reason);
       return;
     }
+    if (!nextPin) queuePinOffer(nextEmail);
     setPeriod(defaultPeriod);
     void navigate({ to: "/dashboard" });
   }
@@ -102,6 +104,7 @@ function LoginPage() {
             onboardNetwork={async (input) => {
               const result = await onboardNetwork(input);
               if (result.ok) {
+                queuePinOffer(input.login);
                 setPeriod(defaultPeriod);
                 void navigate({ to: "/dashboard" });
               }
@@ -113,19 +116,24 @@ function LoginPage() {
             className="mt-8 space-y-3 border-t border-border pt-6"
             onSubmit={(e) => {
               e.preventDefault();
-              void (mode === "pin" ? enter(email, "", pin) : enter(email, password));
+              const usePin = mode === "pin" && canEnterWithPin(email);
+              void (usePin ? enter(email, "", pin) : enter(email, password));
             }}
           >
             <div className="text-xs font-medium tracking-wide text-muted uppercase">Уже есть логин</div>
-            <div className="flex gap-2 text-xs">
-              <button type="button" className={mode === "password" ? "text-fg" : "text-muted"} onClick={() => setMode("password")}>
-                Пароль
-              </button>
-              <span className="text-subtle">·</span>
-              <button type="button" className={mode === "pin" ? "text-fg" : "text-muted"} onClick={() => setMode("pin")}>
-                PIN
-              </button>
-            </div>
+            {canEnterWithPin(email) ? (
+              <div className="flex gap-2 text-xs">
+                <button type="button" className={mode === "password" ? "text-fg" : "text-muted"} onClick={() => setMode("password")}>
+                  Пароль
+                </button>
+                <span className="text-subtle">·</span>
+                <button type="button" className={mode === "pin" ? "text-fg" : "text-muted"} onClick={() => setMode("pin")}>
+                  PIN
+                </button>
+              </div>
+            ) : (
+              <p className="text-xs text-muted">Первый вход — логин и пароль. PIN появится после согласия на этом устройстве.</p>
+            )}
             <Field label="Логин">
               <Input
                 value={email}
@@ -137,17 +145,7 @@ function LoginPage() {
                 enterKeyHint="next"
               />
             </Field>
-            {mode === "password" ? (
-              <Field label="Пароль">
-                <Input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  autoComplete="current-password"
-                  enterKeyHint="go"
-                />
-              </Field>
-            ) : (
+            {mode === "pin" && canEnterWithPin(email) ? (
               <Field label="PIN">
                 <Input
                   inputMode="numeric"
@@ -155,6 +153,16 @@ function LoginPage() {
                   value={pin}
                   onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
                   autoComplete="one-time-code"
+                  enterKeyHint="go"
+                />
+              </Field>
+            ) : (
+              <Field label="Пароль">
+                <Input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
                   enterKeyHint="go"
                 />
               </Field>

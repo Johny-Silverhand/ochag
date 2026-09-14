@@ -1,10 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Printer } from "lucide-react";
+import { BanquetEditor } from "@/components/banquet/editor";
 import { PageHeader } from "@/components/layout/page";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { NativeSelect, Textarea } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/input";
 import { useOps, useSessionUser } from "@/lib/data/store";
 import { canEditBanquet } from "@/lib/domain/permissions";
 import { banquetBalance } from "@/lib/domain/engine";
@@ -20,10 +21,12 @@ export const Route = createFileRoute("/_app/banquets/$id")({ component: BanquetD
 function BanquetDetail() {
   const { id } = Route.useParams();
   const banquet = useOps((s) => s.banquets.find((b) => b.id === id));
-  const branch = useOps((s) => s.branches.find((b) => b.id === banquet?.branchId));
+  const branches = useOps((s) => s.branches);
+  const branch = branches.find((b) => b.id === banquet?.branchId);
   const setBanquetStatus = useOps((s) => s.setBanquetStatus);
   const upsertBanquet = useOps((s) => s.upsertBanquet);
   const user = useSessionUser()!;
+  const canWrite = canEditBanquet(user.role);
 
   if (!banquet) {
     return <p className="text-sm text-muted">Банкет не найден.</p>;
@@ -85,7 +88,7 @@ function BanquetDetail() {
         </Card>
         <Card>
           <div className="text-xs text-muted">Статус</div>
-          {canEditBanquet(user.role) ? (
+          {canWrite ? (
             <NativeSelect
               className="mt-2"
               value={banquet.status}
@@ -93,7 +96,7 @@ function BanquetDetail() {
                 const status = e.target.value as BanquetStatus;
                 setBanquetStatus(banquet.id, status);
                 if (status === "deposit_paid") {
-                  upsertBanquet({ ...banquet, status, depositPaid: true });
+                  void upsertBanquet({ ...banquet, status, depositPaid: true });
                 }
                 notify("banquet", "Статус банкета обновлён");
               }}
@@ -112,32 +115,43 @@ function BanquetDetail() {
         </Card>
       </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-3">
-        <SheetCard title="Официантам" items={banquet.serviceItems} extra={banquet.waiterNotes} />
-        <SheetCard title="Шашлычнику" items={banquet.grillItems} />
-        <SheetCard title="На кухню" items={banquet.kitchenItems} />
-      </div>
-
-      <Card className="mt-4">
-        <div className="text-sm font-medium">Тайминг</div>
-        <ul className="mt-3 space-y-2">
-          {banquet.timeline.map((t) => (
-            <li key={t.time} className="flex gap-3 text-sm">
-              <span className="w-14 font-mono text-muted tabular-nums">{t.time}</span>
-              <span>{t.action}</span>
-            </li>
-          ))}
-        </ul>
-        {canEditBanquet(user.role) ? (
-          <Textarea
-            className="mt-4"
-            value={banquet.notes}
-            onChange={(e) => upsertBanquet({ ...banquet, notes: e.target.value })}
+      {canWrite ? (
+        <div className="mt-4">
+          <BanquetEditor
+            key={banquet.id}
+            value={banquet}
+            branches={branches}
+            submitLabel="Сохранить карточку"
+            onSave={(next) => {
+              void upsertBanquet({ ...next, status: banquet.status, depositPaid: banquet.depositPaid }).then((ok) => {
+                if (ok === false) return;
+                notify("banquet", "Карточка банкета сохранена");
+                toast.success("Банкет записан");
+              });
+            }}
           />
-        ) : (
-          <p className="mt-3 text-sm text-muted">{banquet.notes}</p>
-        )}
-      </Card>
+        </div>
+      ) : (
+        <>
+          <div className="mt-4 grid gap-4 lg:grid-cols-3">
+            <SheetCard title="Официантам" items={banquet.serviceItems} extra={banquet.waiterNotes} />
+            <SheetCard title="Шашлычнику" items={banquet.grillItems} extra={banquet.grillNotes} />
+            <SheetCard title="На кухню" items={banquet.kitchenItems} extra={banquet.kitchenNotes} />
+          </div>
+          <Card className="mt-4">
+            <div className="text-sm font-medium">Тайминг</div>
+            <ul className="mt-3 space-y-2">
+              {banquet.timeline.map((t) => (
+                <li key={`${t.time}-${t.action}`} className="flex gap-3 text-sm">
+                  <span className="w-14 font-mono text-muted tabular-nums">{t.time}</span>
+                  <span>{t.action}</span>
+                </li>
+              ))}
+            </ul>
+            {banquet.notes ? <p className="mt-3 text-sm text-muted">{banquet.notes}</p> : null}
+          </Card>
+        </>
+      )}
     </div>
   );
 }
@@ -155,8 +169,8 @@ function SheetCard({
     <Card>
       <div className="text-sm font-medium">{title}</div>
       <ul className="mt-3 space-y-2 text-sm">
-        {items.map((it) => (
-          <li key={it.name} className="flex justify-between gap-2">
+        {items.map((it, index) => (
+          <li key={`${it.name}-${index}`} className="flex justify-between gap-2">
             <span>
               {it.name}
               {it.readyBy ? <span className="block text-xs text-muted">к {it.readyBy}</span> : null}
