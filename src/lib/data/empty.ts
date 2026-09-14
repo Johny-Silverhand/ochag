@@ -1,4 +1,4 @@
-import { defaultSettings, type Snapshot } from "../domain/types";
+import { defaultSettings, type Snapshot } from "../domain/types.ts";
 
 export function emptySnapshot(): Snapshot {
   return {

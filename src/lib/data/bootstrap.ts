@@ -6,9 +6,9 @@
  * existing users are kept. Never resets a live technician's password,
  * and never injects into a commercially onboarded network.
  */
-import type { OpsRepository } from "../repo/types";
-import type { Snapshot, StaffUser } from "../domain/types";
-import { rematerializeSeedSecrets } from "./secrets";
+import type { OpsRepository } from "../repo/types.ts";
+import type { Snapshot, StaffUser } from "../domain/types.ts";
+import { rematerializeSeedSecrets } from "./secrets.ts";
 
 export function readBootstrapEnv() {
   const env = typeof process !== "undefined" ? process.env : undefined;

@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
-import { Field, NativeSelect, Textarea } from "@/components/ui/input";
+import { Field, Input, NativeSelect, Textarea } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/tabs";
 import { useOps, useSessionUser } from "@/lib/data/store";
 import { canCreateSale, canImportKeeper } from "@/lib/domain/permissions";
