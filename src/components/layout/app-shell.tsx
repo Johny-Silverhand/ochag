@@ -198,7 +198,7 @@ export function AppShell() {
       </aside>
 
       <div className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto scroll-touch pb-[calc(5.25rem+env(safe-area-inset-bottom))] lg:col-start-2 lg:row-start-1 lg:h-full lg:overflow-hidden lg:pb-0">
-        <header className="no-print sticky top-0 z-30 flex min-w-0 items-center gap-2 border-b border-border bg-bg/75 px-[var(--page-pad-x)] pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 backdrop-blur-md">
+        <header className="glass-chrome no-print sticky top-0 z-30 flex min-w-0 items-center gap-2 border-b border-border px-[var(--page-pad-x)] pt-[max(0.75rem,env(safe-area-inset-top))] pb-3">
           <div className="flex min-w-0 items-center gap-2 lg:hidden">
             <Mark className="size-8 shrink-0 text-primary" />
             <span className="truncate text-sm font-semibold tracking-wide">{NETWORK_NAME}</span>
@@ -286,7 +286,7 @@ export function AppShell() {
         />
         <div
           className={cn(
-            "sheet-up absolute inset-x-0 bottom-0 max-h-[var(--dialog-max-h)] overflow-y-auto rounded-t-3xl bg-elevated px-[var(--page-pad-x)] pt-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] shadow-(--shadow-border)",
+            "sheet-up glass-sheet absolute inset-x-0 bottom-0 max-h-[var(--dialog-max-h)] overflow-y-auto rounded-t-3xl px-[var(--page-pad-x)] pt-3 pb-[calc(env(safe-area-inset-bottom)+1rem)]",
             moreOpen ? "translate-y-0" : "translate-y-full",
           )}
         >
@@ -314,7 +314,7 @@ export function AppShell() {
       </div>
 
       <nav
-        className="ios-tabbar no-print fixed inset-x-0 bottom-0 z-40 grid border-t border-border bg-elevated/95 backdrop-blur-md lg:hidden"
+        className="ios-tabbar glass-chrome no-print fixed inset-x-0 bottom-0 z-40 grid border-t border-border lg:hidden"
         style={{ gridTemplateColumns: `repeat(${primary.length + 1}, minmax(0, 1fr))` }}
       >
         {primary.map((item) => {

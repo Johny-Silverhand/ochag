@@ -102,6 +102,22 @@
   --shell-sidebar: 13rem;
   --dialog-max-h: min(92dvh, calc(100dvh - env(safe-area-inset-top, 0px) - 0.75rem));
 
+  --glass-fill: color-mix(in srgb, var(--palette-surface) 52%, transparent);
+  --glass-blur: 28px;
+  --glass-sat: 1.5;
+  --glass-stroke: color-mix(in srgb, white 36%, var(--palette-border));
+  --glass-shine: color-mix(in srgb, white 48%, transparent);
+  --glass-shadow:
+    0 10px 32px color-mix(in srgb, var(--palette-fg) 10%, transparent),
+    inset 0 1px 0 var(--glass-shine);
+  --neu-out:
+    5px 8px 16px color-mix(in srgb, var(--palette-fg) 10%, transparent),
+    -3px -4px 10px color-mix(in srgb, white 72%, transparent),
+    inset 0 1px 0 color-mix(in srgb, white 40%, transparent);
+  --neu-in:
+    inset 3px 4px 8px color-mix(in srgb, var(--palette-fg) 9%, transparent),
+    inset -2px -2px 6px color-mix(in srgb, white 55%, transparent);
+
   --color-bg: var(--palette-bg);
   --color-surface: var(--palette-surface);
   --color-elevated: var(--palette-elevated);
@@ -357,6 +373,36 @@
   --palette-sidebar-hover: #152028;
 }
 
+.dark {
+  --glass-fill: color-mix(in srgb, var(--palette-surface) 58%, transparent);
+  --glass-stroke: color-mix(in srgb, white 12%, var(--palette-border));
+  --glass-shine: color-mix(in srgb, white 16%, transparent);
+  --glass-shadow:
+    0 12px 36px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 var(--glass-shine);
+  --neu-out:
+    5px 8px 18px rgba(0, 0, 0, 0.45),
+    -2px -3px 8px color-mix(in srgb, white 7%, transparent),
+    inset 0 1px 0 color-mix(in srgb, white 10%, transparent);
+  --neu-in:
+    inset 3px 4px 10px rgba(0, 0, 0, 0.45),
+    inset -1px -1px 4px color-mix(in srgb, white 6%, transparent);
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --glass-fill: color-mix(in srgb, var(--palette-surface) 88%, transparent);
+    --glass-blur: 10px;
+    --glass-sat: 1.12;
+    --glass-stroke: color-mix(in srgb, var(--palette-fg) 6%, var(--palette-border));
+    --glass-shadow: var(--elev-border);
+  }
+  .dark {
+    --glass-fill: color-mix(in srgb, var(--palette-surface) 82%, transparent);
+    --glass-stroke: color-mix(in srgb, white 8%, var(--palette-border));
+  }
+}
+
 [data-density="compact"] {
   --density-card: 0.85rem;
   --nav-icon: 1.05rem;
@@ -416,73 +462,112 @@ body {
   min-width: 0;
 }
 
-.login-scene-bg {
+.login-scene-bg,
+.app-scene {
   position: fixed;
   inset: 0;
   z-index: 0;
   pointer-events: none;
   background-color: var(--palette-bg);
+  background-image:
+    radial-gradient(120% 72% at 8% -8%, color-mix(in srgb, var(--palette-primary) 14%, transparent), transparent 56%),
+    radial-gradient(90% 48% at 108% 108%, color-mix(in srgb, var(--palette-primary) 9%, transparent), transparent 52%);
 }
 
-.login-card {
-  border-radius: var(--radius-2xl);
-  background: color-mix(in srgb, var(--palette-surface) 78%, transparent);
-  backdrop-filter: blur(14px) saturate(1.15);
-  -webkit-backdrop-filter: blur(14px) saturate(1.15);
-  box-shadow: var(--elev-border);
-  padding: var(--login-card-pad-y) var(--login-card-pad-x);
-}
-
-.glass-panel {
-  background: color-mix(in srgb, var(--palette-surface) 88%, transparent);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
-
-@media (max-width: 1023px) {
-  .login-card,
-  .glass-panel {
-    background: color-mix(in srgb, var(--palette-surface) 58%, transparent);
-    backdrop-filter: blur(24px) saturate(1.45);
-    -webkit-backdrop-filter: blur(24px) saturate(1.45);
-    border: 1px solid color-mix(in srgb, white 28%, var(--palette-border));
-    box-shadow:
-      0 12px 36px color-mix(in srgb, black 12%, transparent),
-      inset 0 1px 0 color-mix(in srgb, white 42%, transparent);
-  }
-  header.sticky {
-    background: color-mix(in srgb, var(--palette-bg) 48%, transparent);
-    backdrop-filter: blur(24px) saturate(1.45);
-    -webkit-backdrop-filter: blur(24px) saturate(1.45);
-  }
-  .ios-tabbar {
-    background: color-mix(in srgb, var(--palette-elevated) 62%, transparent);
-    backdrop-filter: blur(24px) saturate(1.4);
-    -webkit-backdrop-filter: blur(24px) saturate(1.4);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .login-card,
-  .glass-panel {
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    background: var(--palette-surface);
-  }
+.app-scene {
+  position: absolute;
+  grid-column: 1 / -1;
+  grid-row: 1 / -1;
 }
 
 .app-frame {
   position: relative;
 }
 
-.app-scene {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  grid-column: 1 / -1;
-  grid-row: 1 / -1;
-  background-color: var(--palette-bg);
+.login-card,
+.glass-panel,
+.glass-chrome,
+.glass-sheet {
+  background: var(--glass-fill);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border: 1px solid var(--glass-stroke);
+  box-shadow: var(--glass-shadow);
+}
+
+.login-card {
+  border-radius: var(--radius-2xl);
+  padding: var(--login-card-pad-y) var(--login-card-pad-x);
+}
+
+.glass-chrome {
+  border-left: 0;
+  border-right: 0;
+}
+
+@media (min-width: 1024px) {
+  .glass-chrome {
+    background: color-mix(in srgb, var(--palette-bg) 82%, transparent);
+    backdrop-filter: blur(8px) saturate(1.08);
+    -webkit-backdrop-filter: blur(8px) saturate(1.08);
+  }
+}
+
+.neu-out {
+  box-shadow: var(--shadow-border);
+}
+
+.neu-in {
+  box-shadow: var(--shadow-border);
+}
+
+@media (max-width: 1023px) {
+  .neu-out {
+    box-shadow: var(--neu-out);
+  }
+  .neu-field {
+    background: color-mix(in srgb, var(--palette-elevated) 72%, transparent);
+    box-shadow: var(--neu-in);
+  }
+  .neu-well {
+    box-shadow: var(--neu-in);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-card,
+  .glass-panel,
+  .glass-chrome,
+  .glass-sheet {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: var(--palette-surface);
+  }
+  .glass-chrome {
+    background: var(--palette-bg);
+  }
+  .sheet-backdrop {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+html[data-motion="reduce"] .login-card,
+html[data-motion="reduce"] .glass-panel,
+html[data-motion="reduce"] .glass-chrome,
+html[data-motion="reduce"] .glass-sheet {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: var(--palette-surface);
+}
+
+html[data-motion="reduce"] .sheet-backdrop {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html[data-motion="reduce"] .glass-chrome {
+  background: var(--palette-bg);
 }
 
 @layer base {
@@ -830,6 +915,16 @@ html.keyboard-open .ios-tabbar {
   .login-scene-bg,
   .app-scene {
     display: none;
+  }
+  .login-card,
+  .glass-panel,
+  .glass-chrome,
+  .glass-sheet {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: white;
+    box-shadow: none;
+    border-color: #ddd;
   }
   .print-page {
     break-after: page;
