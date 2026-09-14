@@ -42,7 +42,7 @@ function LoginPage() {
     if (hydrated && session) void navigate({ to: "/dashboard" });
   }, [hydrated, session, navigate]);
 
-  if (!hydrated || session) return <BootScreen />;
+  if (hydrated && session) return <BootScreen />;
 
   async function enter(nextEmail: string, nextPassword = "", nextPin?: string) {
     setBusy(true);
