@@ -14,6 +14,7 @@ import { useOps, useSessionUser } from "@/lib/data/store";
 import { formatHandoff, generatePassword, generatePin } from "@/lib/domain/credentials";
 import {
   adminVisibleUsers,
+  accountPlaceLabel,
   canDeleteAccount,
   canEditAccount,
   canManageAccounts,
@@ -45,10 +46,8 @@ async function copyText(label: string, value: string) {
   }
 }
 
-function scopeLabel(user: StaffUser, branches: { id: string; short: string; name: string }[]) {
-  if (isNetworkAdmin(user.role)) return "вся сеть";
-  const branch = branches.find((b) => b.id === user.branchId);
-  return branch ? `${branch.short}` : "без филиала";
+function scopeLabel(user: StaffUser, branches: { id: string; short: string; name: string; city?: string }[]) {
+  return accountPlaceLabel(user, branches);
 }
 
 function AccountsPage() {
@@ -100,7 +99,7 @@ function AccountsPage() {
         title="Пользователи"
         description={
           hasAbsoluteAccess(user.role)
-            ? "Все учётки сети: роль, статус, филиал и последний вход. Блокировка и удаление — только здесь."
+            ? "Все учётки контура: роль, статус, сеть/филиал и последний вход. Саморегистрация владельца тоже здесь."
             : "Создайте логин, пароль и PIN и передайте сотруднику. Публичной регистрации нет."
         }
         actions={
@@ -130,7 +129,7 @@ function AccountsPage() {
       <Card className="mb-4">
         <div className="grid gap-3">
           <Field label="Поиск">
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Имя, логин, роль, филиал" />
+            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Имя, логин, роль, сеть, филиал" />
           </Field>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <Segmented
@@ -156,7 +155,7 @@ function AccountsPage() {
           <p className="text-xs text-muted">
             {visible.length} учёток
             {blockedCount ? ` · ${blockedCount} заблокированы` : ""}
-            {hasAbsoluteAccess(user.role) ? " · все филиалы" : ""}
+            {hasAbsoluteAccess(user.role) ? " · все сети и филиалы" : ""}
           </p>
         </div>
       </Card>

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  accountPlaceLabel,
   adminVisibleUsers,
   can,
   canDeleteAccount,
@@ -86,6 +87,24 @@ describe("tech_admin access", () => {
       owner.map((u) => u.id).sort(),
       ["u-owner", "u-wait"],
     );
+    const twoOwners = [
+      ...users,
+      { id: "u-cafe-2", role: "owner" as const, branchId: "br-2" },
+    ];
+    const techAll = adminVisibleUsers(
+      { role: "tech_admin", userId: "u-tech", homeBranchId: null, sessionBranchId: "br-1" },
+      twoOwners,
+    );
+    assert.equal(techAll.length, 4);
+    assert.ok(techAll.some((u) => u.id === "u-cafe-2"));
+    const branches = [
+      { id: "br-1", short: "Пушкина", name: "Пушкина", city: "Краснодар" },
+      { id: "br-2", short: "Центр", name: "Центр", city: "Сочи" },
+    ];
+    assert.equal(accountPlaceLabel({ role: "tech_admin", branchId: null }, branches), "вся сеть");
+    assert.equal(accountPlaceLabel({ role: "owner", branchId: null }, branches), "вся сеть");
+    assert.equal(accountPlaceLabel({ role: "owner", branchId: "br-2" }, branches), "Центр · Сочи");
+    assert.equal(accountPlaceLabel({ role: "waiter", branchId: "br-1" }, branches), "Пушкина · Краснодар");
   });
 
   it("lets tech_admin delete others but not self or the last remaining tech_admin", () => {

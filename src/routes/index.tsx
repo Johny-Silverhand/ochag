@@ -9,7 +9,8 @@ import { useHydrated, useOps } from "@/lib/data/store";
 import { BootScreen } from "@/components/layout/app-shell";
 import { IosInstallCard, useIosInstall } from "@/components/ios/runtime";
 import { LOGIN_INTRO, NETWORK_NAME } from "@/lib/brand";
-import { canSelfOnboard, showCommercialEntry } from "@/lib/billing/simulate";
+import { canSelfOnboard } from "@/lib/billing/simulate";
+import { looksLikeSeedNetwork } from "@/lib/data/bootstrap";
 import { usePrefs } from "@/lib/prefs";
 
 export const Route = createFileRoute("/")({
@@ -31,7 +32,6 @@ function LoginPage() {
   const navigate = useNavigate();
   const ready = hydrated && isOnboarded(snap);
   const paidTariff = snap.settings.tariff;
-  const commercialOpen = showCommercialEntry(snap);
   const canCreateNetwork = canSelfOnboard(snap);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -95,7 +95,7 @@ function LoginPage() {
           ) : null}
 
           <CommercialGate
-            onboarded={!commercialOpen}
+            onboarded={Boolean(snap.settings.paymentSimulatedAt) && !looksLikeSeedNetwork(snap)}
             canCreateNetwork={canCreateNetwork}
             paidTariff={paidTariff}
             simulatePayment={simulatePayment}
