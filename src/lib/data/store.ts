@@ -539,9 +539,21 @@ export const useOps = create<OpsState>()(
 
       simulatePayment: async (tariff) => {
         try {
-          const res = await api<{ state: Snapshot }>("billing/simulate", { method: "POST", body: { tariff } });
+          const res = await api<{
+            billing: { tariff: "trial" | "basic" | "mid" | "pro"; paymentSimulatedAt: string | null };
+          }>("billing/simulate", { method: "POST", body: { tariff } });
           applyingRemote = true;
-          set({ ...applyIncoming(get(), res.state), session: get().session });
+          const paidAt = res.billing?.paymentSimulatedAt ?? new Date().toISOString();
+          const paidTariff = res.billing?.tariff ?? tariff;
+          set((s) => ({
+            ...s,
+            settings: {
+              ...s.settings,
+              tariff: paidTariff,
+              paymentSimulatedAt: paidAt,
+            },
+            session: s.session,
+          }));
           applyingRemote = false;
           return true;
         } catch (err) {
