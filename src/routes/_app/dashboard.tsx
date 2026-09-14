@@ -31,7 +31,7 @@ import { today } from "@/lib/domain/types";
 import { pct, ruDate, rub } from "@/lib/format";
 import { useOps, useSessionUser } from "@/lib/data/store";
 import { usePrefs } from "@/lib/prefs";
-import { isNetworkAdmin, isOpsLead, canSeeNetworkStats, scopedBranchId } from "@/lib/domain/permissions";
+import { can, isNetworkAdmin, isOpsLead, canSeeNetworkStats, scopedBranchId } from "@/lib/domain/permissions";
 
 export const Route = createFileRoute("/_app/dashboard")({ component: DashboardPage });
 
@@ -161,9 +161,9 @@ function DashboardPage() {
         <Card>
           <CardHeader>
             <CardTitle>Сигналы</CardTitle>
-            {isNetworkAdmin(user?.role ?? "waiter") ? (
-              <Link to="/integrations" className="text-xs text-muted hover:text-fg">
-                подключения
+            {can(role, "ai") ? (
+              <Link to="/ai" className="text-xs text-muted hover:text-fg">
+                разбор в AI
               </Link>
             ) : null}
           </CardHeader>

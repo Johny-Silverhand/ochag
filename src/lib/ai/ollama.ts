@@ -1,11 +1,12 @@
 import type { Insight } from "../domain/types.ts";
 import type { AiProvider, ResolvedOllama } from "./provider.ts";
 import type { SafeMetrics } from "./safe-context.ts";
+import { calcSnapshot, type CalcTask } from "./calc.ts";
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 const SYSTEM =
-  "Ты операционный аналитик сети кафе «Очаг». Отвечай по-русски коротко. Используй только переданные агрегаты. Не выдумывай персональные данные.";
+  "Ты операционный аналитик сети кафе «Очаг». Только выводы по переданным агрегатам: продажи, смена, склад, маржа, пики, план. Не веди свободный диалог. Не выдумывай цифры и персональные данные. 4–8 коротких предложений по-русски.";
 
 async function chat(
   cfg: ResolvedOllama,
@@ -55,16 +56,33 @@ export function createOllamaProvider(
   return {
     id: "ollama",
     async narrative(metrics) {
-      return chat(cfg, SYSTEM, `Сводка периода:\n${JSON.stringify(metrics)}`, fetchImpl);
+      return chat(
+        cfg,
+        SYSTEM,
+        `Сводка периода по цифрам контура (не чат). Опирайся только на JSON:\n${JSON.stringify(metrics)}`,
+        fetchImpl,
+      );
     },
-    async ask(question, metrics) {
-      return chat(cfg, SYSTEM, `Метрики: ${JSON.stringify(metrics)}\nВопрос: ${question}`, fetchImpl);
+    async explain(task: CalcTask, metrics) {
+      const calc = calcSnapshot(task, metrics);
+      const focus =
+        task === "margin"
+          ? "маржа, фудкост, списания — что резать первым"
+          : task === "forecast"
+            ? "темп месяца против плана, риск недобора"
+            : "пиковые часы и как ставить смену зала";
+      return chat(
+        cfg,
+        SYSTEM,
+        `Задача: ${focus}. Уже посчитано формулами (не меняй цифры): ${JSON.stringify(calc)}\nКонтекст периода: ${JSON.stringify(metrics)}`,
+        fetchImpl,
+      );
     },
     async recommend(metrics) {
       const raw = await chat(
         cfg,
         SYSTEM,
-        `Дай 3 рекомендации JSON-массивом [{id,severity,title,body,module}] по метрикам: ${JSON.stringify(metrics)}`,
+        `Дай до 4 операционных рекомендаций JSON-массивом [{id,severity,title,body,module}] по метрикам (продажи, склад, пик, план, маржа). Без болтовни. Метрики: ${JSON.stringify(metrics)}`,
         fetchImpl,
       );
       const start = raw.indexOf("[");

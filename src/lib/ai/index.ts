@@ -4,11 +4,14 @@ import type { AiProvider, ResolvedOllama } from "./provider.ts";
 import { resolveOllamaConfig } from "./provider.ts";
 import type { SafeMetrics } from "./safe-context.ts";
 import type { Insight, NetworkSettings } from "../domain/types.ts";
+import type { CalcTask } from "./calc.ts";
 
 export type { AiProvider, ResolvedOllama } from "./provider.ts";
 export { safeMetrics } from "./safe-context.ts";
 export { ollamaConfig, resolveOllamaConfig } from "./provider.ts";
 export { ollamaAvailable } from "./ollama.ts";
+export { CALC_TASKS, isCalcTask, calcSnapshot, heuristicExplain } from "./calc.ts";
+export type { CalcTask } from "./calc.ts";
 
 const heuristic = createHeuristicProvider();
 
@@ -79,8 +82,8 @@ export async function periodNarrative(metrics: SafeMetrics, settings?: NetworkSe
   return withFallback(resolveOllamaConfig(settings), (p) => p.narrative(metrics));
 }
 
-export async function askMetrics(question: string, metrics: SafeMetrics, settings?: NetworkSettings | null) {
-  return withFallback(resolveOllamaConfig(settings), (p) => p.ask(question, metrics));
+export async function explainCalc(task: CalcTask, metrics: SafeMetrics, settings?: NetworkSettings | null) {
+  return withFallback(resolveOllamaConfig(settings), (p) => p.explain(task, metrics));
 }
 
 export async function recommendMetrics(

@@ -1,11 +1,13 @@
 import type { Insight, NetworkSettings } from "../domain/types.ts";
 import type { SafeMetrics } from "./safe-context.ts";
+import type { CalcTask } from "./calc.ts";
 
 export interface AiProvider {
   id: "ollama" | "heuristic";
   narrative(metrics: SafeMetrics): Promise<string>;
-  ask(question: string, metrics: SafeMetrics): Promise<string>;
   recommend(metrics: SafeMetrics): Promise<Insight[]>;
+  /** Closed calc tasks only — not free-form chat. */
+  explain(task: CalcTask, metrics: SafeMetrics): Promise<string>;
 }
 
 export type OllamaSource = "settings" | "env" | "unset" | "off";

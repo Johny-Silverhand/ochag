@@ -55,7 +55,7 @@ import { parseKeeperXml } from "../integrations/keeper-xml";
 import { fetchKeeperReceipts, publicKeeperStatus } from "../integrations/keeper-http";
 import { applySimulatePayment, billingPublic, canSelfOnboard, showCommercialEntry, snapshotForCommercialOnboard } from "../billing/simulate";
 import { isTariffId } from "../billing/plans";
-import { askMetrics, periodNarrative, recommendMetrics, ollamaAvailable, resolveOllamaConfig } from "../ai";
+import { explainCalc, periodNarrative, recommendMetrics, ollamaAvailable, resolveOllamaConfig, isCalcTask, calcSnapshot } from "../ai";
 import { safeMetrics } from "../ai/safe-context";
 import { flushOutbox, notifyReady } from "../notify/send";
 import { banquetPdf, periodPdf, revisionActPdf, toCsv } from "../reports/pdf";
@@ -557,8 +557,14 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
         return json({ ...out, metrics });
       }
       if (path === "ai/ask") {
-        const out = await askMetrics(String(body.question ?? ""), metrics, snap.settings);
-        return json({ ...out, metrics });
+        return json({ error: "Свободный чат отключён. Нужны расчёты: сводка, рекомендации, маржа, прогноз, смена." }, 400);
+      }
+      if (path === "ai/calc") {
+        if (!isCalcTask(body.task)) {
+          return json({ error: "Задача: margin, forecast или shift" }, 400);
+        }
+        const out = await explainCalc(body.task, metrics, snap.settings);
+        return json({ ...out, metrics, calc: calcSnapshot(body.task, metrics), task: body.task });
       }
       if (path === "ai/recommend") {
         const out = await recommendMetrics(metrics, snap.settings);

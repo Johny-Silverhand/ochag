@@ -3,27 +3,10 @@ import { describe, it } from "node:test";
 import { createOllamaProvider, ollamaAvailable } from "./ollama.ts";
 import { withFallback } from "./index.ts";
 import { resolveOllamaConfig } from "./provider.ts";
-import type { SafeMetrics } from "./safe-context.ts";
+import { sampleMetrics } from "./safe-context.ts";
 import { defaultSettings } from "../domain/types.ts";
 
-const metrics: SafeMetrics = {
-  period: "7d",
-  branch: "network",
-  revenue: 100000,
-  cogs: 30000,
-  foodCost: 30,
-  writeoffs: 500,
-  opex: 10000,
-  payroll: 20000,
-  net: 39500,
-  checks: 80,
-  avgCheck: 1250,
-  cash: 40000,
-  topDishes: [{ name: "Шашлык", qty: 40, sum: 28000 }],
-  writeoffReasons: [],
-  stopList: [],
-  openShifts: 1,
-};
+const metrics = sampleMetrics();
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -81,6 +64,8 @@ describe("Ollama adapter", () => {
     const provider = createOllamaProvider(cfg, fetchImpl);
     const text = await provider.narrative(metrics);
     assert.match(text, /фудкост/i);
+    const margin = await provider.explain("margin", metrics);
+    assert.match(margin, /фудкост|марж/i);
     const run = await withFallback(cfg, (p) => p.narrative(metrics), fetchImpl);
     assert.equal(run.provider, "ollama");
     assert.equal(run.fallback, false);
@@ -96,11 +81,15 @@ describe("Ollama adapter", () => {
     assert.equal(run.fallback, true);
     assert.match(run.error ?? "", /не ответила|недоступна|ECONNREFUSED/i);
     assert.match(run.value, /Выручка 100000/);
+    const calc = await withFallback(cfg, (p) => p.explain("forecast", metrics), fetchImpl);
+    assert.equal(calc.provider, "heuristic");
+    assert.equal(calc.fallback, true);
+    assert.match(calc.value, /темп|план/i);
   });
 
   it("does not pretend a model is live when Ollama is unset", async () => {
     const unset = resolveOllamaConfig({ ...defaultSettings(), ollamaEnabled: false });
-    const run = await withFallback(unset, (p) => p.ask("фудкост", metrics));
+    const run = await withFallback(unset, (p) => p.explain("margin", metrics));
     assert.equal(run.provider, "heuristic");
     assert.equal(run.fallback, true);
     assert.match(run.error ?? "", /выключена|не настроена/i);
