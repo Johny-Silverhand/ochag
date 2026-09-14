@@ -20,7 +20,7 @@ Victimok Labs.
 
 Этап 3: раздел «Аналитика» (ABC, план-факт, дни покрытия, отклонения) и «Очаг AI» (сводка, вопрос, рекомендации). Ollama, если доступна, иначе эвристика. Только цифры контура.
 
-Деплой на Vercel: `vercel.json` уже в репозитории. Для production задайте `OCHAG_JWT_SECRET`. Telegram / email / VAPID / Ollama — по таблице ниже; без ключа канал пишет ошибку в очередь, не тихий успех. `DATABASE_URL` не открывайте.
+Деплой на Vercel: `vercel.json` уже в репозитории. Задайте `OCHAG_JWT_SECRET` в Environment Variables для **Production и Preview** (у Preview тоже `NODE_ENV=production` — без секрета `POST /api/v1/auth/login` и `auth/pin` отвечают ошибкой). Учебный вход `owner` / `ochag` и PIN `1001` после «Загрузить учебную сеть» работает и без JWT: клиент не затирает локальные пароли пустым `publicSnapshot`. Telegram / email / VAPID / Ollama — по таблице ниже; без ключа канал пишет ошибку в очередь, не тихий успех. `DATABASE_URL` не открывайте.
 
 Вне контура: ОФД, 1С / ЕГАИС / Меркурий, эквайринг, магазины приложений, агрегаторы, лояльность, заполнение чужих техкарт, живой `DATABASE_URL`.
 
@@ -64,7 +64,7 @@ OCHAG_STORE=json npm run dev
 
 | Переменная | Зачем |
 | --- | --- |
-| `OCHAG_JWT_SECRET` | Обязателен в production (`OCHAG_ENV` / `NODE_ENV` / `VERCEL_ENV`). В dev — встроенный секрет. |
+| `OCHAG_JWT_SECRET` | Обязателен на Vercel **Production и Preview** (`OCHAG_ENV` / `NODE_ENV` / `VERCEL_ENV=production`). В локальном dev — встроенный секрет. |
 | `OCHAG_TELEGRAM_BOT_TOKEN` + `OCHAG_TELEGRAM_CHAT_ID` | Отправка из outbox в Telegram. Нет ключей — запись `failed` с текстом. |
 | `OCHAG_EMAIL_WEBHOOK` | POST `{ to, subject, text }`. |
 | `OCHAG_VAPID_PUBLIC` + `OCHAG_VAPID_PRIVATE` | Web Push: подписка сохраняется, отправка ждёт адаптер (ошибка в очереди, не тишина). |
