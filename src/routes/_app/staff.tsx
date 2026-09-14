@@ -1,17 +1,17 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { Kpi, PageHeader } from "@/components/layout/page";
 import { Card } from "@/components/ui/card";
 import { useOps, useSessionUser } from "@/lib/data/store";
 import { filterByBranch, filterPeriod, periodStart } from "@/lib/domain/engine";
-import { PAYROLL_ADJ_LABEL, ROLE_LABEL, today, type PayrollAdjKind, type Role } from "@/lib/domain/types";
+import { PAYROLL_ADJ_LABEL, ROLE_LABEL, today, type PayrollAdjKind } from "@/lib/domain/types";
 import { ruDate, rub } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { Field, Input, NativeSelect } from "@/components/ui/input";
 import { useState } from "react";
 import { toast } from "sonner";
-import { canInviteStaff } from "@/lib/domain/permissions";
-import { isWriteScope, WRITE_SCOPE_HINT } from "@/lib/ui/scope";
+import { canInviteStaff, isNetworkAdmin } from "@/lib/domain/permissions";
+import { isWriteScope } from "@/lib/ui/scope";
 import { periodPayroll } from "@/lib/domain/analytics";
 import { api } from "@/lib/api/client";
 import { downloadText } from "@/lib/reports/download";
@@ -26,11 +26,10 @@ function StaffPage() {
   const from = periodStart(period);
   const rows = filterPeriod(filterByBranch(snap.payroll, scope), from, today());
   const user = useSessionUser()!;
-  const inviteStaff = useOps((s) => s.inviteStaff);
   const adjustPayroll = useOps((s) => s.adjustPayroll);
   const sheet = periodPayroll(snap, period, scope);
   const total = sheet.reduce((s, r) => s + r.payable, 0);
-  const staff = snap.users.filter((u) => u.role !== "owner" && (scope === "all" || u.branchId === scope));
+  const staff = snap.users.filter((u) => !isNetworkAdmin(u.role) && (scope === "all" || u.branchId === scope));
 
   return (
     <div>
@@ -60,18 +59,9 @@ function StaffPage() {
               />
             ) : null}
             {canInviteStaff(user.role) ? (
-              <InviteStaff
-                branches={snap.branches}
-                defaultBranch={isWriteScope(scope) ? scope : snap.branches[0]?.id ?? ""}
-                onInvite={(input) => {
-                  if (!input.branchId) {
-                    toast.error(WRITE_SCOPE_HINT);
-                    return;
-                  }
-                  inviteStaff(input);
-                  toast.success("Сотрудник приглашён");
-                }}
-              />
+              <Button asChild>
+                <Link to="/accounts">Пользователи</Link>
+              </Button>
             ) : null}
           </div>
         }
@@ -96,7 +86,7 @@ function StaffPage() {
             </tr>
           </thead>
           <tbody>
-            {sheet.filter((r) => r.user.role !== "owner").map((r) => (
+            {sheet.filter((r) => !isNetworkAdmin(r.user.role)).map((r) => (
               <tr key={r.user.id} className="border-t border-border">
                 <td className="px-5 py-2.5">
                   <div className="font-medium">{r.user.name}</div>
@@ -199,108 +189,3 @@ function AdjustPayroll({
   );
 }
 
-function InviteStaff({
-  branches,
-  defaultBranch,
-  onInvite,
-}: {
-  branches: { id: string; short: string; name: string }[];
-  defaultBranch: string;
-  onInvite: (input: {
-    name: string;
-    login: string;
-    password: string;
-    pin: string;
-    role: Role;
-    branchId: string;
-    shiftPay: number;
-    salesPercent: number;
-    position?: string;
-  }) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [login, setLogin] = useState("");
-  const [password, setPassword] = useState("ochag");
-  const [pin, setPin] = useState("");
-  const [role, setRole] = useState<Role>("waiter");
-  const [branchId, setBranchId] = useState(defaultBranch);
-  const [shiftPay, setShiftPay] = useState("2500");
-  const [salesPercent, setSalesPercent] = useState("0");
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button>Пригласить</Button>
-      </DialogTrigger>
-      <DialogContent title="Новый сотрудник">
-        <div className="grid gap-3">
-          <Field label="Имя">
-            <Input value={name} onChange={(e) => setName(e.target.value)} />
-          </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Логин">
-              <Input value={login} onChange={(e) => setLogin(e.target.value)} autoCapitalize="none" />
-            </Field>
-            <Field label="PIN (4 цифры)">
-              <Input value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))} inputMode="numeric" />
-            </Field>
-          </div>
-          <Field label="Пароль">
-            <Input value={password} onChange={(e) => setPassword(e.target.value)} />
-          </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Роль">
-              <NativeSelect value={role} onChange={(e) => setRole(e.target.value as Role)}>
-                <option value="manager">Управляющий</option>
-                <option value="cook">Повар</option>
-                <option value="waiter">Официант</option>
-              </NativeSelect>
-            </Field>
-            <Field label="Филиал">
-              <NativeSelect value={branchId} onChange={(e) => setBranchId(e.target.value)}>
-                {branches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.short}
-                  </option>
-                ))}
-              </NativeSelect>
-            </Field>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Ставка за смену">
-              <Input value={shiftPay} onChange={(e) => setShiftPay(e.target.value)} inputMode="numeric" />
-            </Field>
-            <Field label="% с выручки">
-              <Input value={salesPercent} onChange={(e) => setSalesPercent(e.target.value)} inputMode="decimal" />
-            </Field>
-          </div>
-          <Button
-            onClick={() => {
-              if (!name.trim() || !login.trim() || pin.length !== 4) {
-                toast.error("Имя, логин и PIN из 4 цифр обязательны");
-                return;
-              }
-              if (!branchId) {
-                toast.error(WRITE_SCOPE_HINT);
-                return;
-              }
-              onInvite({
-                name: name.trim(),
-                login,
-                password,
-                pin,
-                role,
-                branchId,
-                shiftPay: Number(shiftPay) || 0,
-                salesPercent: Number(salesPercent) || 0,
-              });
-              setOpen(false);
-            }}
-          >
-            Пригласить
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}

@@ -33,22 +33,21 @@ import {
 } from "./engine";
 import { catalogAvgFromStock, freezeSaleCosts } from "./finance";
 import { uid } from "../utils";
+import { actorFrom, AuthzError, assertBranchScope, assertCash, assertExpenses, assertKeeper, assertSale, assertStopList, assertTransfer, assertWriteoff, type Actor, writeBranch } from "../authz/actor";
 import {
-  AuthzError,
-  assertBranchScope,
-  assertCash,
-  assertExpenses,
-  assertKeeper,
-  assertSale,
-  assertStopList,
-  assertTransfer,
-  assertWriteoff,
-  type Actor,
-  writeBranch,
-} from "../authz/actor";
-import { canInviteStaff, canOpenShift, canClosePeriod, canEditNomenclature } from "./permissions";
+  canInviteStaff,
+  canOpenShift,
+  canClosePeriod,
+  canEditNomenclature,
+  canSeeAllBranches,
+  hasAbsoluteAccess,
+  isNetworkAdmin,
+  isOpsLead,
+  invitableRoles,
+} from "./permissions";
 import { assertPeriodOpen } from "./period";
 import { appendAudit } from "./audit";
+import { appendOpsLog } from "./ops-log";
 
 function queueEvent(snap: Snapshot, event: NotifyEvent, title: string, body: string, to?: string): Snapshot {
   if (snap.settings.notifyEvents[event] === false) return snap;
@@ -545,25 +544,32 @@ export function applyStopList(
   }
   if (snap.stopList.some((e) => e.recipeId === input.recipeId && e.branchId === branchId && !e.clearedAt)) return snap;
   const recipeName = snap.recipes.find((r) => r.id === input.recipeId)?.name ?? input.recipeId;
-  return queueEvent(
-    {
-      ...snap,
-      stopList: [
-        {
-          id: uid("sl"),
-          branchId,
-          recipeId: input.recipeId,
-          reason: input.reason,
-          note: input.note,
-          createdAt: now,
-          createdBy: actor.userId,
-        },
-        ...snap.stopList,
-      ],
-    },
+  return appendAudit(
+    queueEvent(
+      {
+        ...snap,
+        stopList: [
+          {
+            id: uid("sl"),
+            branchId,
+            recipeId: input.recipeId,
+            reason: input.reason,
+            note: input.note,
+            createdAt: now,
+            createdBy: actor.userId,
+          },
+          ...snap.stopList,
+        ],
+      },
+      "stop_list",
+      "Стоп-лист",
+      `${recipeName}: ${input.reason}`,
+    ),
+    actor,
     "stop_list",
-    "Стоп-лист",
+    "recipe",
     `${recipeName}: ${input.reason}`,
+    branchId,
   );
 }
 
@@ -612,7 +618,7 @@ export function applySessionBranch(actor: Actor, branchId: string): Actor {
 }
 
 function canSeeAllBranchesSafe(actor: Actor) {
-  return actor.role === "owner";
+  return canSeeAllBranches(actor.role);
 }
 
 export function applyOnboard(
@@ -627,7 +633,7 @@ export function applyOnboard(
     address: string;
   },
 ): Snapshot {
-  if (snap.users.some((u) => u.role === "owner")) throw new AuthzError("Сеть уже создана", 400);
+  if (snap.users.length > 0) throw new AuthzError("Сеть уже создана", 400);
   const login = input.login.trim().toLowerCase();
   if (!login || input.password.length < 4 || !/^\d{4}$/.test(input.pin)) {
     throw new AuthzError("Логин, пароль (от 4 знаков) и PIN из 4 цифр обязательны", 400);
@@ -660,9 +666,65 @@ export function applyOnboard(
         shiftPay: 0,
         salesPercent: 0,
         phone: "",
+        disabled: false,
       },
     ],
   };
+}
+
+export function applyBootstrap(
+  snap: Snapshot,
+  input: {
+    name: string;
+    login: string;
+    password: string;
+    pin: string;
+    branchName: string;
+    city?: string;
+    address?: string;
+  },
+): Snapshot {
+  if (snap.users.length > 0) throw new AuthzError("Сеть уже создана", 400);
+  const login = input.login.trim().toLowerCase();
+  if (!login || input.password.length < 4 || !/^\d{4}$/.test(input.pin)) {
+    throw new AuthzError("Логин, пароль (от 4 знаков) и PIN из 4 цифр обязательны", 400);
+  }
+  const branchId = uid("br");
+  const userId = uid("u");
+  const admin = {
+    id: userId,
+    name: input.name.trim() || "Администратор-техник",
+    email: login,
+    password: input.password,
+    pin: input.pin,
+    role: "tech_admin" as const,
+    position: "Администратор-техник",
+    branchId: null,
+    shiftPay: 0,
+    salesPercent: 0,
+    phone: "",
+    disabled: false,
+  };
+  const next = {
+    ...snap,
+    branches: [
+      {
+        id: branchId,
+        name: input.branchName.trim() || "Филиал 1",
+        short: (input.branchName.trim() || "Филиал").slice(0, 16),
+        city: (input.city ?? "").trim() || "—",
+        address: (input.address ?? "").trim() || "—",
+        seats: 40,
+        phone: "",
+      },
+    ],
+    users: [admin],
+  };
+  const actor = actorFrom(admin, { userId: admin.id, branchId: "all" });
+  return appendOpsLog(
+    appendAudit(next, actor, "bootstrap", "network", `техник ${login} / ${next.branches[0]!.short}`),
+    { level: "info", event: "bootstrap", detail: `создан ${login}`, userId: admin.id, login },
+  );
 }
 
 export function applyInviteStaff(
@@ -682,9 +744,12 @@ export function applyInviteStaff(
   },
 ): Snapshot {
   if (!canInviteStaff(actor.role)) throw new AuthzError("Приглашение недоступно");
+  if (!invitableRoles(actor.role).includes(input.role)) throw new AuthzError("Роль недоступна");
   const login = input.login.trim().toLowerCase();
+  if (!login || input.password.length < 4) throw new AuthzError("Логин и пароль (от 4 знаков) обязательны", 400);
   if (snap.users.some((u) => u.email.toLowerCase() === login)) throw new AuthzError("Такой логин уже есть");
   if (!/^\d{4}$/.test(input.pin)) throw new AuthzError("PIN — 4 цифры");
+  if (!isNetworkAdmin(input.role) && !input.branchId) throw new AuthzError("Выберите филиал");
   const user = {
     id: uid("u"),
     name: input.name.trim(),
@@ -693,12 +758,140 @@ export function applyInviteStaff(
     pin: input.pin,
     role: input.role,
     position: input.position ?? input.role,
-    branchId: input.role === "owner" ? null : input.branchId,
+    branchId: isNetworkAdmin(input.role) ? null : input.branchId,
     shiftPay: input.shiftPay,
     salesPercent: input.salesPercent,
     phone: input.phone ?? "",
+    disabled: false,
   };
-  return appendAudit({ ...snap, users: [...snap.users, user] }, actor, "invite", "user", `${user.name} / ${user.role}`);
+  return appendOpsLog(
+    appendAudit({ ...snap, users: [...snap.users, user] }, actor, "invite", "user", `${user.name} / ${user.role}`),
+    {
+      level: "info",
+      event: "account_create",
+      detail: `${user.name} · ${user.email} · ${user.role}`,
+      userId: actor.userId,
+      login: user.email,
+    },
+  );
+}
+
+function enabledTechAdmins(snap: Snapshot) {
+  return snap.users.filter((u) => u.role === "tech_admin" && !u.disabled);
+}
+
+export function applyUpdateStaff(
+  snap: Snapshot,
+  actor: Actor,
+  input: {
+    userId: string;
+    name?: string;
+    login?: string;
+    password?: string;
+    pin?: string;
+    role?: Role;
+    branchId?: string | null;
+    shiftPay?: number;
+    salesPercent?: number;
+    position?: string;
+    phone?: string;
+    disabled?: boolean;
+  },
+): Snapshot {
+  if (!canInviteStaff(actor.role)) throw new AuthzError("Управление учёткой недоступно");
+  const target = snap.users.find((u) => u.id === input.userId);
+  if (!target) throw new AuthzError("Сотрудник не найден", 404);
+  if (target.id === actor.userId) throw new AuthzError("Свою учётку меняют в профиле");
+  const nextRole = input.role ?? target.role;
+  if (!invitableRoles(actor.role).includes(target.role) || !invitableRoles(actor.role).includes(nextRole)) {
+    throw new AuthzError("Роль недоступна");
+  }
+  const login = input.login != null ? input.login.trim().toLowerCase() : target.email;
+  if (!login) throw new AuthzError("Логин обязателен", 400);
+  if (snap.users.some((u) => u.id !== target.id && u.email.toLowerCase() === login)) {
+    throw new AuthzError("Такой логин уже есть");
+  }
+  if (input.password != null && input.password.length > 0 && input.password.length < 4) {
+    throw new AuthzError("Пароль от 4 знаков", 400);
+  }
+  if (input.pin != null && input.pin.length > 0 && !/^\d{4}$/.test(input.pin)) {
+    throw new AuthzError("PIN — 4 цифры");
+  }
+  const nextDisabled = input.disabled ?? Boolean(target.disabled);
+  if (target.role === "tech_admin" && (nextDisabled || nextRole !== "tech_admin") && enabledTechAdmins(snap).length <= 1) {
+    throw new AuthzError("Нельзя заблокировать последнего администратора-техника");
+  }
+  const nextBranch = isNetworkAdmin(nextRole) ? null : (input.branchId !== undefined ? input.branchId : target.branchId);
+  if (!isNetworkAdmin(nextRole) && !nextBranch) throw new AuthzError("Выберите филиал");
+  const next = {
+    ...target,
+    name: input.name?.trim() || target.name,
+    email: login,
+    password: input.password && input.password.length >= 4 ? input.password : target.password,
+    pin: input.pin && /^\d{4}$/.test(input.pin) ? input.pin : target.pin,
+    role: nextRole,
+    position: input.position ?? target.position,
+    branchId: nextBranch,
+    shiftPay: input.shiftPay ?? target.shiftPay,
+    salesPercent: input.salesPercent ?? target.salesPercent,
+    phone: input.phone ?? target.phone,
+    disabled: nextDisabled,
+  };
+  const blockedNow = nextDisabled && !target.disabled;
+  const unblockedNow = !nextDisabled && target.disabled;
+  const action = blockedNow ? "block" : unblockedNow ? "unblock" : "staff";
+  const opsEvent = blockedNow ? "account_block" : unblockedNow ? "account_unblock" : "account_edit";
+  const opsDetail = blockedNow
+    ? `${next.email} заблокирована`
+    : unblockedNow
+      ? `${next.email} разблокирована`
+      : `${next.name} · ${next.email} · ${next.role}`;
+  return appendOpsLog(
+    appendAudit(
+      { ...snap, users: snap.users.map((u) => (u.id === target.id ? next : u)) },
+      actor,
+      action,
+      "user",
+      `${next.name} / ${next.role}`,
+    ),
+    {
+      level: blockedNow ? "warn" : "info",
+      event: opsEvent,
+      detail: opsDetail,
+      userId: actor.userId,
+      login: next.email,
+    },
+  );
+}
+
+function remainingTechAdmins(snap: Snapshot) {
+  return snap.users.filter((u) => u.role === "tech_admin");
+}
+
+export function applyDeleteStaff(snap: Snapshot, actor: Actor, input: { userId: string }): Snapshot {
+  if (!hasAbsoluteAccess(actor.role)) throw new AuthzError("Удаление учётки недоступно");
+  const target = snap.users.find((u) => u.id === input.userId);
+  if (!target) throw new AuthzError("Сотрудник не найден", 404);
+  if (target.id === actor.userId) throw new AuthzError("Нельзя удалить свою учётку");
+  if (target.role === "tech_admin" && remainingTechAdmins(snap).length <= 1) {
+    throw new AuthzError("Нельзя удалить последнего администратора-техника");
+  }
+  return appendOpsLog(
+    appendAudit(
+      { ...snap, users: snap.users.filter((u) => u.id !== target.id) },
+      actor,
+      "delete",
+      "user",
+      `${target.name} / ${target.email} / ${target.role}`,
+    ),
+    {
+      level: "warn",
+      event: "account_delete",
+      detail: `${target.email} удалена`,
+      userId: actor.userId,
+      login: target.email,
+    },
+  );
 }
 
 export function applyUpsertRecipe(snap: Snapshot, actor: Actor, recipe: Recipe): Snapshot {
@@ -825,7 +1018,7 @@ export function applyPayrollAdjustment(
 }
 
 export function applyRevenuePlan(snap: Snapshot, actor: Actor, input: { branchId: string; month: string; target: number }): Snapshot {
-  if (actor.role !== "owner" && actor.role !== "manager") throw new AuthzError("План недоступен");
+  if (!isOpsLead(actor.role)) throw new AuthzError("План недоступен");
   const existing = snap.revenuePlans.find((p) => p.branchId === input.branchId && p.month === input.month);
   const row = existing
     ? { ...existing, target: input.target }
@@ -839,8 +1032,18 @@ export function applyRevenuePlan(snap: Snapshot, actor: Actor, input: { branchId
 }
 
 export function applySettings(snap: Snapshot, actor: Actor, patch: Partial<Snapshot["settings"]>): Snapshot {
-  if (actor.role !== "owner" && actor.role !== "manager") throw new AuthzError("Настройки сети недоступны");
-  return { ...snap, settings: { ...snap.settings, ...patch, notifyEvents: { ...snap.settings.notifyEvents, ...(patch.notifyEvents ?? {}) } } };
+  if (!isOpsLead(actor.role)) throw new AuthzError("Настройки сети недоступны");
+  const keys = Object.keys(patch).join(", ") || "без полей";
+  const next = {
+    ...snap,
+    settings: { ...snap.settings, ...patch, notifyEvents: { ...snap.settings.notifyEvents, ...(patch.notifyEvents ?? {}) } },
+  };
+  return appendOpsLog(appendAudit(next, actor, "settings", "network", keys), {
+    level: "info",
+    event: "settings",
+    detail: keys,
+    userId: actor.userId,
+  });
 }
 
 export function applyPushSub(
@@ -863,7 +1066,7 @@ export function applyAddBranch(
   actor: Actor,
   input: { name: string; city: string; address: string; short?: string },
 ): Snapshot {
-  if (actor.role !== "owner") throw new AuthzError("Филиал добавляет владелец");
+  if (!isNetworkAdmin(actor.role)) throw new AuthzError("Филиал добавляет владелец");
   const row = {
     id: uid("br"),
     name: input.name,
@@ -873,7 +1076,7 @@ export function applyAddBranch(
     seats: 40,
     phone: "",
   };
-  return { ...snap, branches: [...snap.branches, row] };
+  return appendAudit({ ...snap, branches: [...snap.branches, row] }, actor, "branch", "network", row.name);
 }
 
 export function applyAddSupplier(
@@ -881,13 +1084,20 @@ export function applyAddSupplier(
   actor: Actor,
   input: { name: string; email: string; telegram: string; channel: SupplierChannel },
 ): Snapshot {
-  if (actor.role !== "owner" && actor.role !== "manager") throw new AuthzError("Поставщики недоступны");
+  if (!isOpsLead(actor.role)) throw new AuthzError("Поставщики недоступны");
   return { ...snap, suppliers: [{ id: uid("sup"), ...input }, ...snap.suppliers] };
 }
 
 export function markOutbox(snap: Snapshot, id: string, status: OutboxItem["status"], error?: string): Snapshot {
-  return {
+  const item = snap.outbox.find((o) => o.id === id);
+  const next = {
     ...snap,
     outbox: snap.outbox.map((o) => (o.id === id ? { ...o, status, error } : o)),
   };
+  if (status !== "failed") return next;
+  return appendOpsLog(next, {
+    level: "error",
+    event: "outbox",
+    detail: `${item?.channel ?? "канал"}: ${error || "ошибка отправки"}`,
+  });
 }

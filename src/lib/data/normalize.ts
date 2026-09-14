@@ -21,6 +21,8 @@ export function normalizeSnapshot(raw: Partial<Snapshot> | null | undefined): Sn
       ...u,
       pin: u.pin || "",
       password: u.password || "",
+      disabled: Boolean(u.disabled),
+      lastLoginAt: u.lastLoginAt,
     })),
     products,
     recipes,
@@ -67,6 +69,7 @@ export function normalizeSnapshot(raw: Partial<Snapshot> | null | undefined): Sn
     payrollAdjustments: raw.payrollAdjustments ?? [],
     revenuePlans: raw.revenuePlans ?? [],
     audit: raw.audit ?? [],
+    opsLogs: raw.opsLogs ?? [],
     outbox: raw.outbox ?? [],
     pushSubs: raw.pushSubs ?? [],
     settings: {

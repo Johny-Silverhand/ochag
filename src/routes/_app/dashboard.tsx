@@ -31,6 +31,7 @@ import { today } from "@/lib/domain/types";
 import { pct, ruDate, rub } from "@/lib/format";
 import { useOps, useSessionUser } from "@/lib/data/store";
 import { usePrefs } from "@/lib/prefs";
+import { isNetworkAdmin, isOpsLead } from "@/lib/domain/permissions";
 
 export const Route = createFileRoute("/_app/dashboard")({ component: DashboardPage });
 
@@ -44,7 +45,7 @@ function DashboardPage() {
   const pinLowStock = usePrefs((s) => s.kitchenPinLowStock);
   const showAdvisor = usePrefs((s) => s.showAdvisor);
   const showLowStock =
-    user?.role === "owner" || user?.role === "manager" || (user?.role === "cook" && pinLowStock);
+    isOpsLead(user?.role ?? "waiter") || (user?.role === "cook" && pinLowStock);
   const [insights, setInsights] = useState<Insight[]>([]);
 
   const kpis = useMemo(() => computeKpis(snap, { period, branchId: scope }), [snap, period, scope]);
@@ -62,7 +63,7 @@ function DashboardPage() {
   }, [snap.movements.length, snap.sales.length, scope, period]);
 
   const greeting =
-    user?.role === "owner"
+    isNetworkAdmin(user?.role ?? "waiter")
       ? "Сводка по сети"
       : user?.role === "manager"
         ? "Сводка филиала"
@@ -128,7 +129,7 @@ function DashboardPage() {
         <Card>
           <CardHeader>
             <CardTitle>Сигналы</CardTitle>
-            {user?.role === "owner" ? (
+            {isNetworkAdmin(user?.role ?? "waiter") ? (
               <Link to="/integrations" className="text-xs text-muted hover:text-fg">
                 подключения
               </Link>
@@ -155,7 +156,7 @@ function DashboardPage() {
         </Card>
       </div>
 
-      {user?.role === "owner" || user?.role === "manager" ? (
+      {isOpsLead(user?.role ?? "waiter") ? (
         <Card className="mt-4">
           <CardHeader>
             <CardTitle>Филиалы рядом</CardTitle>
@@ -221,7 +222,7 @@ function DashboardPage() {
         <Card>
           <CardHeader>
             <CardTitle>Ниже минимума</CardTitle>
-            {user?.role === "owner" || user?.role === "manager" ? (
+            {isOpsLead(user?.role ?? "waiter") ? (
               <Link to="/procurement" className="text-xs text-muted hover:text-fg">
                 к закупкам
               </Link>

@@ -2,6 +2,14 @@ import { uid } from "../utils";
 import type { AuditEntry, Snapshot } from "./types";
 import type { Actor } from "../authz/actor";
 
+export {
+  AUDIT_ACTION_LABEL,
+  auditActionLabel,
+  auditGroup,
+  scopedAudit,
+  type AuditGroup,
+} from "./audit-labels";
+
 export function appendAudit(
   snap: Snapshot,
   actor: Actor,
@@ -19,5 +27,5 @@ export function appendAudit(
     branchId,
     detail,
   };
-  return { ...snap, audit: [row, ...snap.audit].slice(0, 2000) };
+  return { ...snap, audit: [row, ...(snap.audit ?? [])].slice(0, 2000) };
 }

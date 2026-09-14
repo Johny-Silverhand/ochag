@@ -64,6 +64,19 @@ export const BRANCHES: Branch[] = [
 
 export const USERS: StaffUser[] = [
   {
+    id: "u-tech",
+    name: "Виктор Мост",
+    email: "admin",
+    password: "ochag",
+    pin: "0001",
+    role: "tech_admin",
+    position: "Администратор-техник",
+    branchId: null,
+    shiftPay: 0,
+    salesPercent: 0,
+    phone: "+7 918 000-00-00",
+  },
+  {
     id: "u-owner",
     name: "Кирилл Сорокин",
     email: "owner",
@@ -891,6 +904,7 @@ export function createSeed(): Snapshot {
       target: b.id === "br-embank" ? 900000 : 720000,
     })),
     audit: [],
+    opsLogs: [],
     outbox: [],
     pushSubs: [],
     settings: { ...defaultSettings(), sampleLoaded: true, keeperCashLink: false },
@@ -930,6 +944,7 @@ export function createSeed(): Snapshot {
   };
 }
 
+/** QA logins for `createSeed()` / loadSample — not shown on the public login screen. */
 export const DEMO_ACCOUNTS = [
   { email: "owner", role: "Владелец", name: "Кирилл Сорокин", hint: "Все филиалы, финансы, интеграции", pin: "1001" },
   { email: "manager", role: "Управляющий", name: "Анна Лебедева", hint: "Пушкина: смена, закупки, банкеты", pin: "2001" },

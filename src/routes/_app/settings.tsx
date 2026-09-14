@@ -29,7 +29,7 @@ import { NOTIFY_EVENT_LABEL, ROLE_LABEL, WRITEOFF_LABEL, type NotifyEvent, type 
 import { usePrefs } from "@/lib/prefs";
 import { applyThemeChrome, THEMES, type ThemeId } from "@/lib/theme";
 import { cn } from "@/lib/utils";
-import { canResetDemo } from "@/lib/domain/permissions";
+import { canResetDemo, isNetworkAdmin, isOpsLead } from "@/lib/domain/permissions";
 
 export const Route = createFileRoute("/_app/settings")({ component: SettingsPage });
 
@@ -43,7 +43,7 @@ function sectionsFor(role: Role): { id: SectionId; label: string; icon: typeof P
   ];
   if (role === "cook") items.push({ id: "role", label: "Кухня", icon: ChefHat });
   if (role === "waiter") items.push({ id: "role", label: "Зал", icon: UtensilsCrossed });
-  if (role === "owner" || role === "manager") items.push({ id: "workspace", label: "Сеть", icon: Shield });
+  if (isOpsLead(role)) items.push({ id: "workspace", label: "Сеть", icon: Shield });
   items.push({ id: "iphone", label: "iPhone", icon: Smartphone });
   items.push({ id: "about", label: "О программе", icon: Info });
   return items;
@@ -290,7 +290,7 @@ function ProfilePanel() {
         <h2 className="text-sm font-medium tracking-tight">Учётная запись</h2>
         <p className="mt-1 text-sm text-muted">
           {ROLE_LABEL[user.role]} · {user.position}
-          {session?.branchId && session.branchId !== "all" && branch ? ` · ${branch.short}` : user.role === "owner" ? " · вся сеть" : ""}
+          {session?.branchId && session.branchId !== "all" && branch ? ` · ${branch.short}` : isNetworkAdmin(user.role) ? " · вся сеть" : ""}
         </p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <Field label="Имя">
@@ -356,11 +356,11 @@ function ProfilePanel() {
 function AlertsPanel({ role }: { role: Role }) {
   const prefs = usePrefs();
   const showStock = role !== "waiter";
-  const showPayroll = role === "owner" || role === "manager";
+  const showPayroll = isOpsLead(role);
   const showWriteoff = role !== "waiter";
   const snap = useOps((s) => s);
   const updateSettings = useOps((s) => s.updateSettings);
-  const canNet = role === "owner" || role === "manager";
+  const canNet = isOpsLead(role);
 
   return (
     <div className="space-y-4">
@@ -510,7 +510,7 @@ function WorkspacePanel({ role }: { role: Role }) {
   const setShowAdvisor = usePrefs((s) => s.setShowAdvisor);
   const [confirmReset, setConfirmReset] = useState(false);
 
-  const staffCount = users.filter((u) => u.role !== "owner").length;
+  const staffCount = users.filter((u) => !isNetworkAdmin(u.role)).length;
 
   function applyPeriod(next: Period) {
     setDefaultPeriod(next);
@@ -586,7 +586,7 @@ function WorkspacePanel({ role }: { role: Role }) {
           <PrefRow title="Комментарий к списанию обязателен" hint="Повар не проведёт порчу без короткой причины.">
             <Switch checked={requireNote} onCheckedChange={setRequireNote} />
           </PrefRow>
-          {role === "owner" ? (
+          {isNetworkAdmin(role) ? (
             <PrefRow title="Сигналы контура на обзоре" hint="Аномалии списаний, фудкост и касса на обзоре владельца.">
               <Switch checked={showAdvisor} onCheckedChange={setShowAdvisor} />
             </PrefRow>
@@ -636,7 +636,7 @@ function WorkspacePanel({ role }: { role: Role }) {
           <Button type="button" variant="secondary" onClick={exportJson}>
             Выгрузить JSON
           </Button>
-          {role === "owner" ? (
+          {isNetworkAdmin(role) ? (
             <Button
               type="button"
               variant="secondary"
@@ -740,6 +740,7 @@ function AboutPanel() {
   const year = LABS_YEAR;
   const ios = useIosInstall();
   const modules = useMemo(() => {
+    if (user.role === "tech_admin") return "все модули, вся сеть";
     if (user.role === "owner") return "10 модулей, вся сеть";
     if (user.role === "manager") return "филиал, касса, склад, банкеты";
     if (user.role === "cook") return "склад, техкарты, банкетные листы";

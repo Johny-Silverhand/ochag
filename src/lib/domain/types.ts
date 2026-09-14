@@ -10,7 +10,7 @@ export function today() {
 /** @deprecated prefer today() — kept so older imports compile; value is the day this module first loaded. */
 export const TODAY = today();
 
-export type Role = "owner" | "manager" | "cook" | "waiter";
+export type Role = "tech_admin" | "owner" | "manager" | "cook" | "waiter";
 export type Unit = "kg" | "l" | "шт" | "порц";
 export type PaymentType = "cash" | "card" | "qr";
 export type MovementType = "receipt" | "sale" | "writeoff" | "revision" | "prep" | "transfer";
@@ -59,6 +59,10 @@ export interface StaffUser {
   shiftPay: number;
   salesPercent: number;
   phone: string;
+  /** Blocked flag: password and PIN login fail with «Аккаунт заблокирован». */
+  disabled?: boolean;
+  /** ISO timestamp of the last successful password or PIN login. */
+  lastLoginAt?: string;
 }
 
 export interface Session {
@@ -345,6 +349,32 @@ export interface AuditEntry {
   detail: string;
 }
 
+export type OpsLogLevel = "info" | "warn" | "error";
+export type OpsLogEvent =
+  | "login"
+  | "login_fail"
+  | "account_create"
+  | "account_edit"
+  | "account_block"
+  | "account_unblock"
+  | "account_delete"
+  | "settings"
+  | "bootstrap"
+  | "sample"
+  | "api"
+  | "outbox";
+
+export interface OpsLogEntry {
+  id: string;
+  at: string;
+  level: OpsLogLevel;
+  event: OpsLogEvent;
+  detail: string;
+  userId?: string;
+  login?: string;
+  path?: string;
+}
+
 export interface OutboxItem {
   id: string;
   at: string;
@@ -415,12 +445,14 @@ export interface Snapshot {
   payrollAdjustments: PayrollAdjustment[];
   revenuePlans: RevenuePlan[];
   audit: AuditEntry[];
+  opsLogs: OpsLogEntry[];
   outbox: OutboxItem[];
   pushSubs: PushSubscriptionRecord[];
   settings: NetworkSettings;
 }
 
 export const ROLE_LABEL: Record<Role, string> = {
+  tech_admin: "Администратор-техник",
   owner: "Владелец",
   manager: "Управляющий",
   cook: "Повар",

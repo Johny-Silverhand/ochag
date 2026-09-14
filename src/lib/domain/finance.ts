@@ -160,6 +160,7 @@ export function publicSnapshot(snap: Snapshot): Snapshot {
     payrollAdjustments: snap.payrollAdjustments ?? [],
     revenuePlans: snap.revenuePlans ?? [],
     audit: snap.audit ?? [],
+    opsLogs: snap.opsLogs ?? [],
     outbox: snap.outbox ?? [],
     pushSubs: (snap.pushSubs ?? []).map((s) => ({ ...s, keys: { p256dh: "", auth: "" } })),
   };

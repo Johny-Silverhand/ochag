@@ -48,6 +48,7 @@ function snap(users: StaffUser[], sampleLoaded = true): Snapshot {
     payrollAdjustments: [],
     revenuePlans: [],
     audit: [],
+    opsLogs: [],
     outbox: [],
     pushSubs: [],
     settings: { ...defaultSettings(), sampleLoaded },
