@@ -30,6 +30,7 @@ import {
   applyStopList,
   applyTopUpDebt,
   applyTransfer,
+  applyUpdateStaff,
   applyUpsertRecipe,
   applyWriteoff,
 } from "../domain/mutations";
@@ -149,6 +150,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
       const pin = body.pin != null ? String(body.pin) : "";
       const user = snap.users.find((u) => u.email.toLowerCase() === login);
       if (!user) throw new AuthzError("Неверный логин или PIN", 401);
+      if (user.disabled) throw new AuthzError("Учётка отключена", 403);
       const passOk = password && user.password === password;
       const pinOk = pin && user.pin === pin;
       if (!passOk && !pinOk) throw new AuthzError("Неверный логин или PIN", 401);
@@ -312,6 +314,9 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     }
     if (method === "POST" && path === "staff/invite") {
       return mutate(request, (snap, actor) => applyInviteStaff(snap, actor, body as never));
+    }
+    if (method === "POST" && path === "staff/update") {
+      return mutate(request, (snap, actor) => applyUpdateStaff(snap, actor, body as never));
     }
     if (method === "POST" && path === "staff/adjust") {
       return mutate(request, (snap, actor) => applyPayrollAdjustment(snap, actor, body as never));

@@ -59,6 +59,8 @@ export interface StaffUser {
   shiftPay: number;
   salesPercent: number;
   phone: string;
+  /** When true, password and PIN login are rejected. */
+  disabled?: boolean;
 }
 
 export interface Session {

@@ -41,6 +41,7 @@ import {
   applyStopList,
   applyTopUpDebt,
   applyTransfer,
+  applyUpdateStaff,
   applyUpsertRecipe,
   applyWriteoff,
 } from "../domain/mutations";
@@ -133,6 +134,20 @@ interface OpsState extends Snapshot {
     position?: string;
     phone?: string;
   }) => void;
+  updateStaff: (input: {
+    userId: string;
+    name?: string;
+    login?: string;
+    password?: string;
+    pin?: string;
+    role?: Snapshot["users"][number]["role"];
+    branchId?: string | null;
+    shiftPay?: number;
+    salesPercent?: number;
+    position?: string;
+    phone?: string;
+    disabled?: boolean;
+  }) => void;
   updateSettings: (patch: Partial<Snapshot["settings"]>) => void;
   flushNotify: () => Promise<void>;
 }
@@ -221,6 +236,7 @@ const ACTION_KEYS = [
   "upsertRecipe",
   "importProducts",
   "inviteStaff",
+  "updateStaff",
   "updateSettings",
   "flushNotify",
 ] as const;
@@ -253,7 +269,7 @@ export const useOps = create<OpsState>()(
           return true;
         } catch {
           const { snap, user } = matchLocalPassword(snapshotOf(get()), email, password, USERS);
-          if (!user) return false;
+          if (!user || user.disabled) return false;
           applyingRemote = true;
           set({ ...snap, session: { userId: user.id, branchId: user.branchId ?? "all" } });
           applyingRemote = false;
@@ -276,7 +292,7 @@ export const useOps = create<OpsState>()(
           return true;
         } catch {
           const { snap, user } = matchLocalPin(snapshotOf(get()), email, pin, USERS);
-          if (!user) return false;
+          if (!user || user.disabled) return false;
           applyingRemote = true;
           set({ ...snap, session: { userId: user.id, branchId: user.branchId ?? "all" } });
           applyingRemote = false;
@@ -431,6 +447,10 @@ export const useOps = create<OpsState>()(
 
       inviteStaff: (input) => {
         void applyRemote("staff/invite", input, (snap, actor) => applyInviteStaff(snap, actor, input));
+      },
+
+      updateStaff: (input) => {
+        void applyRemote("staff/update", input, (snap, actor) => applyUpdateStaff(snap, actor, input));
       },
 
       updateSettings: (patch) => {

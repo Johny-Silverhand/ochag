@@ -669,6 +669,7 @@ export function applyOnboard(
         shiftPay: 0,
         salesPercent: 0,
         phone: "",
+        disabled: false,
       },
     ],
   };
@@ -719,6 +720,7 @@ export function applyBootstrap(
         shiftPay: 0,
         salesPercent: 0,
         phone: "",
+        disabled: false,
       },
     ],
   };
@@ -743,8 +745,10 @@ export function applyInviteStaff(
   if (!canInviteStaff(actor.role)) throw new AuthzError("Приглашение недоступно");
   if (!invitableRoles(actor.role).includes(input.role)) throw new AuthzError("Роль недоступна");
   const login = input.login.trim().toLowerCase();
+  if (!login || input.password.length < 4) throw new AuthzError("Логин и пароль (от 4 знаков) обязательны", 400);
   if (snap.users.some((u) => u.email.toLowerCase() === login)) throw new AuthzError("Такой логин уже есть");
   if (!/^\d{4}$/.test(input.pin)) throw new AuthzError("PIN — 4 цифры");
+  if (!isNetworkAdmin(input.role) && !input.branchId) throw new AuthzError("Выберите филиал");
   const user = {
     id: uid("u"),
     name: input.name.trim(),
@@ -757,8 +761,79 @@ export function applyInviteStaff(
     shiftPay: input.shiftPay,
     salesPercent: input.salesPercent,
     phone: input.phone ?? "",
+    disabled: false,
   };
   return appendAudit({ ...snap, users: [...snap.users, user] }, actor, "invite", "user", `${user.name} / ${user.role}`);
+}
+
+function enabledTechAdmins(snap: Snapshot) {
+  return snap.users.filter((u) => u.role === "tech_admin" && !u.disabled);
+}
+
+export function applyUpdateStaff(
+  snap: Snapshot,
+  actor: Actor,
+  input: {
+    userId: string;
+    name?: string;
+    login?: string;
+    password?: string;
+    pin?: string;
+    role?: Role;
+    branchId?: string | null;
+    shiftPay?: number;
+    salesPercent?: number;
+    position?: string;
+    phone?: string;
+    disabled?: boolean;
+  },
+): Snapshot {
+  if (!canInviteStaff(actor.role)) throw new AuthzError("Управление учёткой недоступно");
+  const target = snap.users.find((u) => u.id === input.userId);
+  if (!target) throw new AuthzError("Сотрудник не найден", 404);
+  if (target.id === actor.userId) throw new AuthzError("Свою учётку меняют в профиле");
+  const nextRole = input.role ?? target.role;
+  if (!invitableRoles(actor.role).includes(target.role) || !invitableRoles(actor.role).includes(nextRole)) {
+    throw new AuthzError("Роль недоступна");
+  }
+  const login = input.login != null ? input.login.trim().toLowerCase() : target.email;
+  if (!login) throw new AuthzError("Логин обязателен", 400);
+  if (snap.users.some((u) => u.id !== target.id && u.email.toLowerCase() === login)) {
+    throw new AuthzError("Такой логин уже есть");
+  }
+  if (input.password != null && input.password.length > 0 && input.password.length < 4) {
+    throw new AuthzError("Пароль от 4 знаков", 400);
+  }
+  if (input.pin != null && input.pin.length > 0 && !/^\d{4}$/.test(input.pin)) {
+    throw new AuthzError("PIN — 4 цифры");
+  }
+  const nextDisabled = input.disabled ?? Boolean(target.disabled);
+  if (target.role === "tech_admin" && (nextDisabled || nextRole !== "tech_admin") && enabledTechAdmins(snap).length <= 1) {
+    throw new AuthzError("Нельзя отключить последнего администратора-техника");
+  }
+  const nextBranch = isNetworkAdmin(nextRole) ? null : (input.branchId !== undefined ? input.branchId : target.branchId);
+  if (!isNetworkAdmin(nextRole) && !nextBranch) throw new AuthzError("Выберите филиал");
+  const next = {
+    ...target,
+    name: input.name?.trim() || target.name,
+    email: login,
+    password: input.password && input.password.length >= 4 ? input.password : target.password,
+    pin: input.pin && /^\d{4}$/.test(input.pin) ? input.pin : target.pin,
+    role: nextRole,
+    position: input.position ?? target.position,
+    branchId: nextBranch,
+    shiftPay: input.shiftPay ?? target.shiftPay,
+    salesPercent: input.salesPercent ?? target.salesPercent,
+    phone: input.phone ?? target.phone,
+    disabled: nextDisabled,
+  };
+  return appendAudit(
+    { ...snap, users: snap.users.map((u) => (u.id === target.id ? next : u)) },
+    actor,
+    nextDisabled && !target.disabled ? "disable" : "staff",
+    "user",
+    `${next.name} / ${next.role}`,
+  );
 }
 
 export function applyUpsertRecipe(snap: Snapshot, actor: Actor, recipe: Recipe): Snapshot {

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { actorFrom, AuthzError } from "../authz/actor.ts";
 import { emptySnapshot } from "../data/empty.ts";
-import { applyBootstrap, applyClosePeriod, applyInviteStaff, applyManualSale, applyOnboard, applyOpenShift, applyRevision } from "./mutations.ts";
+import { applyBootstrap, applyClosePeriod, applyInviteStaff, applyManualSale, applyOnboard, applyOpenShift, applyRevision, applyUpdateStaff } from "./mutations.ts";
 import { defaultSettings } from "./types.ts";
 
 const ownerActor = actorFrom(
@@ -169,6 +169,40 @@ describe("bootstrap tech admin", () => {
           salesPercent: 0,
         }),
       (err: unknown) => err instanceof AuthzError && /роль/i.test(err.message),
+    );
+  });
+
+  it("refuses to disable the last tech_admin and blocks login field via disabled flag", () => {
+    const snap = applyBootstrap(emptySnapshot(), {
+      name: "Техник",
+      login: "admin",
+      password: "secret",
+      pin: "9999",
+      branchName: "Центр",
+    });
+    const admin = snap.users[0]!;
+    const actor = actorFrom(admin, { userId: admin.id, branchId: snap.branches[0]!.id });
+    const withOwner = applyInviteStaff(snap, actor, {
+      name: "Кирилл",
+      login: "owner",
+      password: "ochag",
+      pin: "1001",
+      role: "owner",
+      branchId: snap.branches[0]!.id,
+      shiftPay: 0,
+      salesPercent: 0,
+    });
+    const owner = withOwner.users.find((u) => u.role === "owner")!;
+    assert.throws(
+      () => applyUpdateStaff(withOwner, actor, { userId: admin.id, disabled: true }),
+      (err: unknown) => err instanceof AuthzError && /свою учётку/i.test(err.message),
+    );
+    const disabledOwner = applyUpdateStaff(withOwner, actor, { userId: owner.id, disabled: true });
+    assert.equal(disabledOwner.users.find((u) => u.id === owner.id)?.disabled, true);
+    const ghost = { ...actor, userId: "ghost" };
+    assert.throws(
+      () => applyUpdateStaff(snap, ghost, { userId: admin.id, disabled: true }),
+      (err: unknown) => err instanceof AuthzError && /последнего/i.test(err.message),
     );
   });
 });

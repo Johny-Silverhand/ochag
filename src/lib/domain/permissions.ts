@@ -121,3 +121,31 @@ export function invitableRoles(actorRole: Role): Role[] {
   if (actorRole === "owner" || actorRole === "manager") return ["manager", "cook", "waiter"];
   return [];
 }
+
+export function canManageAccounts(role: Role) {
+  return canInviteStaff(role);
+}
+
+export function canEditAccount(
+  actor: { role: Role; userId: string },
+  target: { id: string; role: Role },
+) {
+  if (target.id === actor.userId) return false;
+  return invitableRoles(actor.role).includes(target.role);
+}
+
+export function adminVisibleUsers<T extends { id: string; role: Role; branchId: string | null }>(
+  actor: { role: Role; userId: string; homeBranchId: string | null; sessionBranchId: string },
+  users: T[],
+): T[] {
+  const roles = invitableRoles(actor.role);
+  const allBranches = canSeeAllBranches(actor.role);
+  return users.filter((u) => {
+    if (u.id === actor.userId) return true;
+    if (!roles.includes(u.role)) return false;
+    if (allBranches) return true;
+    const scope = actor.sessionBranchId;
+    if (scope && scope !== "all") return u.branchId === scope;
+    return !u.branchId || u.branchId === actor.homeBranchId;
+  });
+}

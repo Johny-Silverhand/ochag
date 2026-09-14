@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  adminVisibleUsers,
   can,
+  canEditAccount,
   canInviteStaff,
   canSeeAllBranches,
   hasAbsoluteAccess,
@@ -48,5 +50,33 @@ describe("tech_admin access", () => {
     assert.equal(can("waiter", "integrations"), false);
     assert.equal(canSeeAllBranches("waiter"), false);
     assert.equal(can("owner", "integrations"), true);
+  });
+
+  it("lets tech_admin edit owners but not themselves", () => {
+    const actor = { role: "tech_admin" as const, userId: "u-tech" };
+    assert.equal(canEditAccount(actor, { id: "u-owner", role: "owner" }), true);
+    assert.equal(canEditAccount(actor, { id: "u-tech", role: "tech_admin" }), false);
+    assert.equal(canEditAccount({ role: "owner", userId: "u-owner" }, { id: "u-tech", role: "tech_admin" }), false);
+  });
+
+  it("shows tech_admin every account and hides tech_admin from an owner", () => {
+    const users = [
+      { id: "u-tech", role: "tech_admin" as const, branchId: null },
+      { id: "u-owner", role: "owner" as const, branchId: null },
+      { id: "u-wait", role: "waiter" as const, branchId: "br-1" },
+    ];
+    const tech = adminVisibleUsers(
+      { role: "tech_admin", userId: "u-tech", homeBranchId: null, sessionBranchId: "all" },
+      users,
+    );
+    assert.equal(tech.length, 3);
+    const owner = adminVisibleUsers(
+      { role: "owner", userId: "u-owner", homeBranchId: null, sessionBranchId: "all" },
+      users,
+    );
+    assert.deepEqual(
+      owner.map((u) => u.id).sort(),
+      ["u-owner", "u-wait"],
+    );
   });
 });
