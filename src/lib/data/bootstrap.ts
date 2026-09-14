@@ -56,7 +56,8 @@ const SEED_SECRET_PEERS: StaffUser[] = [
   },
 ];
 
-function looksLikeSeedNetwork(snap: Snapshot) {
+/** Leftover учебная сеть (seed ids or sampleLoaded) — not a commercial «Создать сеть». */
+export function looksLikeSeedNetwork(snap: Snapshot) {
   return snap.settings.sampleLoaded || snap.users.some((u) => u.id === "u-owner");
 }
 
