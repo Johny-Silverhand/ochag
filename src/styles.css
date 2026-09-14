@@ -54,8 +54,8 @@
 
 :root {
   --density-card: 1.25rem;
-  --nav-icon: 1.5rem;
-  --nav-item-h: 2.75rem;
+  --nav-icon: 1.125rem;
+  --nav-item-h: 2.05rem;
   --tab-icon: 1.5rem;
   --elev-border:
     0px 0px 0px 1px rgba(26, 25, 22, 0.05),
@@ -89,11 +89,7 @@
   --palette-sidebar-hover: #1f4438;
   color-scheme: light;
 
-  --scene-login-mobile: url("/backgrounds/login-mobile.jpg");
-  --scene-login-desktop: url("/backgrounds/login-desktop.jpg");
-  --scene-app-mobile: url("/backgrounds/app-mobile.jpg");
-  --scene-app-shell: url("/backgrounds/app-shell.jpg");
-  --scene-app-opacity: 0.46;
+  --scene-app-opacity: 1;
   --page-pad-x: clamp(1rem, 3.2vw, 1.75rem);
   --page-pad-y: clamp(1rem, 2.1vw, 1.5rem);
   --login-pad-x: clamp(1.15rem, 4vw, 2.25rem);
@@ -103,7 +99,7 @@
   --title-login: clamp(1.55rem, 1.2rem + 1.6vw, 1.95rem);
   --title-hero: clamp(2rem, 1.35rem + 2.2vw, 3.1rem);
   --kpi-value: clamp(1.05rem, 0.92rem + 1.2vw, 1.5rem);
-  --shell-sidebar: 15rem;
+  --shell-sidebar: 13rem;
   --dialog-max-h: min(92dvh, calc(100dvh - env(safe-area-inset-top, 0px) - 0.75rem));
 
   --color-bg: var(--palette-bg);
@@ -363,8 +359,8 @@
 
 [data-density="compact"] {
   --density-card: 0.85rem;
-  --nav-icon: 1.35rem;
-  --nav-item-h: 2.5rem;
+  --nav-icon: 1.05rem;
+  --nav-item-h: 1.9rem;
   --tab-icon: 1.5rem;
   --radius-xs: 6px;
   --radius-sm: 10px;
@@ -376,7 +372,7 @@
   --radius: 14px;
   --page-pad-y: clamp(0.7rem, 1.5vw, 1.1rem);
   --kpi-value: clamp(0.98rem, 0.88rem + 0.8vw, 1.25rem);
-  --shell-sidebar: 13.75rem;
+  --shell-sidebar: 12.5rem;
 }
 
 [data-type="large"] {
@@ -411,10 +407,6 @@ body {
   color: var(--palette-fg);
 }
 
-.dark {
-  --scene-app-opacity: 0.16;
-}
-
 .login-scene {
   position: relative;
   isolation: isolate;
@@ -430,25 +422,12 @@ body {
   z-index: 0;
   pointer-events: none;
   background-color: var(--palette-bg);
-  background-image: var(--scene-login-mobile);
-  background-repeat: no-repeat;
-  background-size: cover;
-  background-position: center center;
-}
-
-@media (min-width: 768px) {
-  .login-scene-bg {
-    background-image: var(--scene-login-desktop);
-    background-position: center center;
-  }
 }
 
 .login-card {
   border-radius: var(--radius-2xl);
-  background: color-mix(in srgb, var(--palette-surface) 82%, transparent);
+  background: var(--palette-surface);
   box-shadow: var(--elev-border);
-  backdrop-filter: blur(22px);
-  -webkit-backdrop-filter: blur(22px);
   padding: var(--login-card-pad-y) var(--login-card-pad-x);
 }
 
@@ -464,18 +443,6 @@ body {
   grid-column: 1 / -1;
   grid-row: 1 / -1;
   background-color: var(--palette-bg);
-  background-image: var(--scene-app-mobile);
-  background-repeat: no-repeat;
-  background-size: cover;
-  background-position: center center;
-  opacity: var(--scene-app-opacity);
-}
-
-@media (min-width: 1024px) {
-  .app-scene {
-    background-image: var(--scene-app-shell);
-    background-position: center center;
-  }
 }
 
 @layer base {
