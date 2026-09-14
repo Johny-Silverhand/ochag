@@ -28,7 +28,7 @@ import { useActiveBranch, useOps, useSessionUser } from "@/lib/data/store";
 import { can, canSeeAllBranches, type ModuleKey } from "@/lib/domain/permissions";
 import { ROLE_LABEL, type Role } from "@/lib/domain/types";
 import { NativeSelect } from "@/components/ui/input";
-import { APP_NAME } from "@/lib/brand";
+import { APP_NAME, APP_VERSION } from "@/lib/brand";
 import { LabsCredit, LabsFooter } from "@/components/brand/labs-credit";
 import { ThemeSwitcher } from "@/components/theme/switcher";
 import { useSync } from "@/lib/data/sync";
@@ -148,7 +148,7 @@ export function AppShell() {
           <Mark className="size-8 text-sidebar-fg" />
           <div>
             <div className="text-sm font-semibold tracking-wide">{APP_NAME}</div>
-            <div className="text-xs text-sidebar-muted">Victimok Labs</div>
+            <div className="text-xs text-sidebar-muted">{APP_VERSION}</div>
           </div>
         </div>
         <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-3 scroll-touch">

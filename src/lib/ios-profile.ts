@@ -1,3 +1,5 @@
+import { NETWORK_NAME } from "./brand";
+
 function xml(value: string) {
   const amp = String.fromCharCode(38);
   return Array.from(value)
@@ -12,7 +14,7 @@ function xml(value: string) {
 }
 
 export function buildWebClipProfile(opts: { url: string; iconPngBase64: string; label?: string }) {
-  const label = opts.label ?? "Очаг";
+  const label = opts.label ?? NETWORK_NAME;
   const uuid1 = "A3E1C0B2-7D44-4F1A-9B11-0C8A6E2F4D70";
   const uuid2 = "B4F2D1C3-8E55-402B-8C22-1D9B7F3E5E81";
   return [
@@ -32,11 +34,11 @@ export function buildWebClipProfile(opts: { url: string; iconPngBase64: string; 
     "      <key>Label</key>",
     `      <string>${xml(label)}</string>`,
     "      <key>PayloadDescription</key>",
-    "      <string>Иконка контура Очаг на экране Домой</string>",
+    `      <string>Иконка контура ${xml(NETWORK_NAME)} на экране Домой</string>`,
     "      <key>PayloadDisplayName</key>",
     `      <string>${xml(label)}</string>`,
     "      <key>PayloadIdentifier</key>",
-    "      <string>labs.victimok.ochag.webclip</string>",
+    "      <string>app.ochag.webclip</string>",
     "      <key>PayloadType</key>",
     "      <string>com.apple.webClip.managed</string>",
     "      <key>PayloadUUID</key>",
@@ -50,13 +52,13 @@ export function buildWebClipProfile(opts: { url: string; iconPngBase64: string; 
     "    </dict>",
     "  </array>",
     "  <key>PayloadDescription</key>",
-    "  <string>Ставит Очаг на экран Домой. Victimok Labs.</string>",
+    `  <string>Ставит ${xml(NETWORK_NAME)} на экран Домой.</string>`,
     "  <key>PayloadDisplayName</key>",
-    "  <string>Очаг — Victimok Labs</string>",
+    `  <string>${xml(NETWORK_NAME)}</string>`,
     "  <key>PayloadIdentifier</key>",
-    "  <string>labs.victimok.ochag</string>",
+    "  <string>app.ochag</string>",
     "  <key>PayloadOrganization</key>",
-    "  <string>Victimok Labs</string>",
+    `  <string>${xml(NETWORK_NAME)}</string>`,
     "  <key>PayloadRemovalDisallowed</key>",
     "  <false/>",
     "  <key>PayloadType</key>",

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Share, Plus, Smartphone } from "lucide-react";
 import { isAppleDevice, isStandaloneApp } from "@/lib/ios";
-import { NETWORK_NAME, LABS_NAME } from "@/lib/brand";
+import { NETWORK_NAME } from "@/lib/brand";
 import { Card } from "@/components/ui/card";
 
 export function IosRuntime() {
@@ -112,7 +112,7 @@ export function IosInstallCard({ compact = false, forceGuide = false }: { compac
                 </ol>
               )}
               <p className="mt-3 text-[11px] leading-relaxed text-subtle">
-                Так ставится приложение на iOS без App Store. Издатель — {LABS_NAME}.
+                Так ставится приложение на iOS без App Store.
               </p>
             </div>
           </div>

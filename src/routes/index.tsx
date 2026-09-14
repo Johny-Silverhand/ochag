@@ -7,7 +7,7 @@ import { useHydrated, useOps } from "@/lib/data/store";
 import { BootScreen } from "@/components/layout/app-shell";
 import { LabsCredit } from "@/components/brand/labs-credit";
 import { IosInstallCard, useIosInstall } from "@/components/ios/runtime";
-import { APP_NAME, APP_VERSION, LABS_NAME } from "@/lib/brand";
+import { APP_NAME, APP_VERSION } from "@/lib/brand";
 import { usePrefs } from "@/lib/prefs";
 
 export const Route = createFileRoute("/")({
@@ -98,7 +98,7 @@ function LoginPage() {
             </div>
             <h2 className="mt-2 text-3xl font-medium tracking-tight">Вход</h2>
             <p className="mt-2 text-sm text-muted">
-              Логин и пароль. PIN — для зала и кухни. Издатель — {LABS_NAME}.
+              Логин и пароль. PIN — для зала и кухни.
             </p>
           </div>
 

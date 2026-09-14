@@ -710,8 +710,7 @@ function IphonePanel() {
           система его не пустит — это ограничение Apple, не контура.
         </p>
         <p className="mt-2 text-sm text-muted">
-          Нативная оболочка Xcode уже собрана: тот же контур внутри WKWebView, bundle{" "}
-          <span className="font-mono text-xs">labs.victimok.ochag</span>. Из неё архивируется настоящий .ipa, когда
+          Нативная оболочка Xcode уже собрана: тот же контур внутри WKWebView. Из неё архивируется настоящий .ipa, когда
           появится команда разработчика.
         </p>
         <a
@@ -766,7 +765,7 @@ function AboutPanel() {
         <Separator className="my-5" />
         <dl className="grid gap-3 text-sm sm:grid-cols-3">
           <div>
-            <dt className="text-xs text-muted">Студия</dt>
+            <dt className="text-xs text-muted">Продукт</dt>
             <dd className="mt-0.5 font-medium">{LABS_NAME}</dd>
           </div>
           <div>
@@ -782,8 +781,7 @@ function AboutPanel() {
       <Card className="bg-sidebar text-sidebar-fg">
         <LabsCredit tone="sidebar" align="left" />
         <p className="mt-3 text-xs leading-relaxed text-sidebar-muted">
-          Товарный знак и код контура «Очаг» принадлежат {LABS_NAME}. Копирование, разбор и перепродажа — только с
-          письменного согласия.
+          Контур «Очаг»: копирование, разбор и перепродажа — только с письменного согласия.
         </p>
       </Card>
     </div>
