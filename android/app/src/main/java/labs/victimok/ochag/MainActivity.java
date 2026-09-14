@@ -15,11 +15,11 @@ import androidx.activity.OnBackPressedCallback;
 import androidx.appcompat.app.AppCompatActivity;
 
 /**
- * Single-activity WebView shell for Очаг.
+ * Single-activity WebView shell for RestoPro.
  * Loads the live web app; mirrors the Windows / iOS wrappers.
  */
 public class MainActivity extends AppCompatActivity {
-    public static final String APP_URL = "https://ochag-theta.vercel.app";
+    public static final String APP_URL = "https://restopro.vercel.app";
 
     private WebView webView;
     private ProgressBar progress;
@@ -45,7 +45,7 @@ public class MainActivity extends AppCompatActivity {
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         // Match mobile Chrome so the PWA / responsive UI behaves correctly.
-        settings.setUserAgentString(settings.getUserAgentString() + " OchagAndroid/1.0");
+        settings.setUserAgentString(settings.getUserAgentString() + " RestoProAndroid/1.0");
 
         webView.setBackgroundColor(0xFF17352B);
         webView.setWebChromeClient(new WebChromeClient());
@@ -55,7 +55,7 @@ public class MainActivity extends AppCompatActivity {
                 if (request == null || request.getUrl() == null) return false;
                 String host = request.getUrl().getHost();
                 // Keep same-origin navigations inside the shell; open others externally.
-                if (host != null && host.endsWith("ochag-theta.vercel.app")) {
+                if (host != null && (host.equals("restopro.vercel.app") || host.endsWith(".restopro.vercel.app"))) {
                     return false;
                 }
                 try {

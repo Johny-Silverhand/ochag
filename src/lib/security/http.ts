@@ -1,3 +1,4 @@
+import { APP_ORIGIN } from "../brand.ts";
 import { AuthzError } from "../authz/error.ts";
 import { isProductionRuntime } from "../authz/jwt.ts";
 import { publicErrorMessage } from "../repo/db-errors.ts";
@@ -105,6 +106,7 @@ export function securityHeaders(request?: Request): Record<string, string> {
 function allowedOrigin(origin: string) {
   const extra = (typeof process !== "undefined" ? process.env.OCHAG_APP_ORIGIN : undefined)?.trim();
   if (extra && origin === extra.replace(/\/$/, "")) return true;
+  if (origin === APP_ORIGIN) return true;
   return false;
 }
 

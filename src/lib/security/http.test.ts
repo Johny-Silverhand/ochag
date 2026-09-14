@@ -70,6 +70,14 @@ describe("API security helpers", () => {
     assert.equal(headers["strict-transport-security"], "max-age=63072000; includeSubDomains; preload");
   });
 
+  it("allows the RestoPro production origin", () => {
+    const req = new Request("https://preview.example/api/v1/state", {
+      headers: { origin: "https://restopro.vercel.app" },
+    });
+    const headers = securityHeaders(req);
+    assert.equal(headers["access-control-allow-origin"], "https://restopro.vercel.app");
+  });
+
   it("counts a sliding window", () => {
     resetRateLimits();
     const a = rateLimit("t:1", 2, 60_000);
