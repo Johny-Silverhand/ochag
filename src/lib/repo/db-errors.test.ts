@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  ApiError,
   DB_UNAVAILABLE_MSG,
+  DB_WAIT_MSG,
   StoreUnavailableError,
   clientErrorMessage,
   isDbUnavailableError,
   isRetryableDbError,
+  isTransientClientFailure,
+  isUnauthorizedFailure,
   publicErrorMessage,
   withDbRetry,
   wrapDbError,
@@ -38,9 +42,18 @@ describe("db error mapping", () => {
   });
 
   it("maps opaque client HTTP/JSON failures", () => {
-    assert.equal(clientErrorMessage(new Error("HTTP 503")), DB_UNAVAILABLE_MSG);
-    assert.equal(clientErrorMessage(new Error("Unexpected token < in JSON")), DB_UNAVAILABLE_MSG);
+    assert.equal(clientErrorMessage(new Error("HTTP 503")), DB_WAIT_MSG);
+    assert.equal(clientErrorMessage(new Error("Unexpected token < in JSON")), DB_WAIT_MSG);
     assert.equal(clientErrorMessage(new Error("HTTP 400")), "Не удалось выполнить запрос. Попробуйте ещё раз.");
+    assert.equal(clientErrorMessage(new StoreUnavailableError()), DB_WAIT_MSG);
+  });
+
+  it("treats 5xx as wait-and-retry, 401 as auth failure", () => {
+    assert.equal(isTransientClientFailure(new ApiError(DB_WAIT_MSG, 503)), true);
+    assert.equal(isTransientClientFailure(new ApiError(DB_WAIT_MSG, 504)), true);
+    assert.equal(isUnauthorizedFailure(new ApiError("Неверный логин или PIN", 401)), true);
+    assert.equal(isUnauthorizedFailure(new ApiError(DB_WAIT_MSG, 503)), false);
+    assert.equal(isUnauthorizedFailure(new Error("Сессия истекла")), true);
   });
 
   it("retries once on a retryable error then succeeds", async () => {

@@ -1,12 +1,22 @@
 /** Map Neon/Postgres/network failures to a stable Russian message for the UI. */
 
 export const DB_UNAVAILABLE_MSG = "База временно недоступна";
+export const DB_WAIT_MSG = "База временно недоступна, подождите";
 
 export class StoreUnavailableError extends Error {
   readonly status = 503;
   constructor(message = DB_UNAVAILABLE_MSG) {
     super(message);
     this.name = "StoreUnavailableError";
+  }
+}
+
+export class ApiError extends Error {
+  readonly status: number;
+  constructor(message: string, status = 0) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
   }
 }
 
@@ -40,10 +50,30 @@ export function isRetryableDbError(err: unknown): boolean {
 export function isDbUnavailableError(err: unknown): boolean {
   if (err instanceof StoreUnavailableError) return true;
   const msg = messageOf(err);
-  if (msg === DB_UNAVAILABLE_MSG) return true;
+  if (msg === DB_UNAVAILABLE_MSG || msg === DB_WAIT_MSG) return true;
   if (isRetryableDbError(err)) return true;
   if (DB_MISCONFIG.test(msg)) return true;
   return OPAQUE_INFRA.test(msg);
+}
+
+export function isTransientHttpStatus(status: number) {
+  return status === 0 || status === 408 || status === 429 || status === 502 || status === 503 || status === 504;
+}
+
+export function isTransientClientFailure(err: unknown): boolean {
+  if (err instanceof ApiError && isTransientHttpStatus(err.status)) return true;
+  if (err instanceof StoreUnavailableError) return true;
+  return isDbUnavailableError(err);
+}
+
+export function isUnauthorizedFailure(err: unknown): boolean {
+  if (err instanceof ApiError) return err.status === 401;
+  const msg = messageOf(err);
+  return /сессия истекла|нужен вход/i.test(msg);
+}
+
+export function sleep(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
 export function wrapDbError(err: unknown): Error {
@@ -67,19 +97,19 @@ export function publicErrorMessage(err: unknown, fallback = "Ошибка кон
 export function clientErrorMessage(err: unknown, fallback = "Не удалось выполнить запрос. Попробуйте ещё раз."): string {
   const msg = messageOf(err).trim();
   if (!msg) return fallback;
-  if (msg === DB_UNAVAILABLE_MSG || isDbUnavailableError(err)) return DB_UNAVAILABLE_MSG;
+  if (msg === DB_WAIT_MSG || msg === DB_UNAVAILABLE_MSG || isDbUnavailableError(err)) return DB_WAIT_MSG;
   if (OPAQUE_INFRA.test(msg) || /^HTTP\s*[45]\d\d/i.test(msg) || /unexpected end of json/i.test(msg)) {
     if (/^HTTP\s*401/i.test(msg) || /^HTTP\s*403/i.test(msg)) return fallback;
-    if (/^HTTP\s*5\d\d/i.test(msg) || OPAQUE_INFRA.test(msg)) return DB_UNAVAILABLE_MSG;
+    if (/^HTTP\s*5\d\d/i.test(msg) || OPAQUE_INFRA.test(msg)) return DB_WAIT_MSG;
     return fallback;
   }
   if (!/[А-Яа-яЁё]/.test(msg) && /error|timeout|connect|postgres|neon|sql|pool|fetch/i.test(msg)) {
-    return DB_UNAVAILABLE_MSG;
+    return DB_WAIT_MSG;
   }
   return msg;
 }
 
-export async function withDbRetry<T>(fn: () => Promise<T>, pauseMs = 400): Promise<T> {
+export async function withDbRetry<T>(fn: () => Promise<T>, pauseMs = 1000): Promise<T> {
   try {
     return await fn();
   } catch (err) {
