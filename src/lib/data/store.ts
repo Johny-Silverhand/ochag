@@ -271,7 +271,9 @@ export const useOps = create<OpsState>()(
           });
           applyingRemote = false;
           return true;
-        } catch {
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "";
+          if (/неверн|отключена/i.test(msg)) return false;
           const { snap, user } = matchLocalPassword(snapshotOf(get()), email, password, USERS);
           const logged = recordAuthAttempt(snap, {
             login: email,
@@ -306,7 +308,9 @@ export const useOps = create<OpsState>()(
           });
           applyingRemote = false;
           return true;
-        } catch {
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "";
+          if (/неверн|отключена/i.test(msg)) return false;
           const { snap, user } = matchLocalPin(snapshotOf(get()), email, pin, USERS);
           const logged = recordAuthAttempt(snap, {
             login: email,
