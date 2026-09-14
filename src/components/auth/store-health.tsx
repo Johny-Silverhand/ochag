@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { fetchStoreHealth, type StoreHealth } from "@/lib/api/client";
 import { useSync } from "@/lib/data/sync";
-import { DB_UNAVAILABLE_MSG } from "@/lib/repo/db-errors";
+import { DB_WAIT_MSG } from "@/lib/repo/db-errors";
 
 export function StoreHealthBanner() {
   const sync = useSync();
@@ -15,7 +15,7 @@ export function StoreHealthBanner() {
       if (cancelled) return;
       setHealth(next);
       if (next.ok && next.store?.ready !== false) return;
-      const message = next.error || DB_UNAVAILABLE_MSG;
+      const message = next.error || DB_WAIT_MSG;
       useSync.getState().setError(message);
       if (!toasted.current) {
         toasted.current = true;
@@ -32,7 +32,7 @@ export function StoreHealthBanner() {
 
   return (
     <p role="status" className="mb-4 rounded-2xl bg-danger-soft px-3 py-2.5 text-sm leading-relaxed text-danger">
-      {sync.error || health?.error || DB_UNAVAILABLE_MSG}. Вход и «Создать сеть» подождут, пока база оживёт.
+      {sync.error || health?.error || DB_WAIT_MSG}. Вход и «Создать сеть» подождут, пока база оживёт.
     </p>
   );
 }
