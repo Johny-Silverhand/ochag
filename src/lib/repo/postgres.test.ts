@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { emptySnapshot } from "../data/empty.ts";
+import { applyOnboard } from "../domain/onboard.ts";
 import { createPostgresRepository, OPS_STATE_ID } from "./postgres.ts";
 
 type Sql = {
@@ -88,6 +89,64 @@ describe("postgres repository", () => {
     const again = await c.load();
     assert.equal(again.users.length, 2);
     assert.equal(again.users.find((u) => u.email === "owner")?.password, "ochag");
+  });
+
+  it("persists two commercial onboards without dropping the technician", async () => {
+    const shared = fakeSql();
+    const repo = createPostgresRepository("neon", async () => shared);
+    const start = emptySnapshot();
+    start.users = [
+      {
+        id: "u-tech",
+        name: "Техник",
+        email: "admin",
+        password: "secret",
+        pin: "9999",
+        role: "tech_admin",
+        position: "Администратор-техник",
+        branchId: null,
+        shiftPay: 0,
+        salesPercent: 0,
+        phone: "",
+      },
+    ];
+    await repo.save(start);
+    const first = applyOnboard(await repo.load(), {
+      ownerName: "Мария",
+      login: "maria",
+      password: "cafe",
+      pin: "2002",
+      branchName: "Центр",
+      city: "Краснодар",
+      address: "ул. Красная, 1",
+    });
+    await repo.save(first);
+    const second = applyOnboard(await repo.load(), {
+      ownerName: "Иван",
+      login: "ivan",
+      password: "bistro",
+      pin: "4004",
+      branchName: "Юг",
+      city: "Сочи",
+      address: "Набережная, 2",
+    });
+    await repo.save(second);
+
+    const other = createPostgresRepository("neon", async () => shared);
+    const loaded = await other.load();
+    assert.equal(loaded.users.filter((u) => u.role === "tech_admin").length, 1);
+    assert.equal(loaded.users.find((u) => u.email === "admin")?.password, "secret");
+    assert.ok(loaded.users.some((u) => u.email === "maria"));
+    assert.ok(loaded.users.some((u) => u.email === "ivan"));
+
+    await repo.save({
+      ...loaded,
+      users: loaded.users.slice(0, 1).map((u) => ({ ...u, password: "", pin: "" })),
+    });
+    const afterPut = await other.load();
+    assert.ok(afterPut.users.some((u) => u.email === "admin" && u.role === "tech_admin"));
+    assert.ok(afterPut.users.some((u) => u.email === "maria"));
+    assert.ok(afterPut.users.some((u) => u.email === "ivan"));
   });
 
   it("reports ready:false when the database probe fails", async () => {

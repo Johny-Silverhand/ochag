@@ -6,6 +6,7 @@
 import { emptySnapshot } from "../data/empty";
 import { normalizeSnapshot } from "../data/normalize";
 import { rematerializeLoginSecrets } from "../data/bootstrap";
+import { protectStoredUsers } from "../data/preserve-users";
 import { retainSecrets } from "../data/secrets";
 import { createSeed } from "../data/seed";
 import type { Snapshot } from "../domain/types";
@@ -81,7 +82,8 @@ export function createPostgresRepository(
   async function write(snapshot: Snapshot): Promise<Snapshot> {
     const client = await sql();
     const prev = (await read()).snap;
-    const next = rematerializeLoginSecrets(retainSecrets(prev, normalizeSnapshot(snapshot)));
+    const guarded = protectStoredUsers(prev, normalizeSnapshot(snapshot));
+    const next = rematerializeLoginSecrets(retainSecrets(prev, guarded));
     const now = new Date().toISOString();
     await withDbRetry(() =>
       client.query(
@@ -103,9 +105,8 @@ export function createPostgresRepository(
       await write(snapshot);
     },
     async reset() {
-      const blank = emptySnapshot();
-      await write(blank);
-      return structuredClone(blank);
+      const written = await write(emptySnapshot());
+      return structuredClone(written);
     },
     async loadSample() {
       const seed = createSeed();
