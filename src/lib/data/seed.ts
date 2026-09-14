@@ -64,6 +64,19 @@ export const BRANCHES: Branch[] = [
 
 export const USERS: StaffUser[] = [
   {
+    id: "u-tech",
+    name: "Виктор Мост",
+    email: "admin",
+    password: "ochag",
+    pin: "0001",
+    role: "tech_admin",
+    position: "Администратор-техник",
+    branchId: null,
+    shiftPay: 0,
+    salesPercent: 0,
+    phone: "+7 918 000-00-00",
+  },
+  {
     id: "u-owner",
     name: "Кирилл Сорокин",
     email: "owner",

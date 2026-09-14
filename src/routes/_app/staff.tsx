@@ -60,7 +60,7 @@ function StaffPage() {
             ) : null}
             {canInviteStaff(user.role) ? (
               <Button asChild>
-                <Link to="/accounts">Учётки</Link>
+                <Link to="/accounts">Пользователи</Link>
               </Button>
             ) : null}
           </div>

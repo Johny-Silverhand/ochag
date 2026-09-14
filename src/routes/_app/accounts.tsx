@@ -77,7 +77,7 @@ function AccountsPage() {
     <div>
       <PageHeader
         eyebrow="Админка"
-        title="Учётки"
+        title="Пользователи"
         description="Создайте логин, пароль и PIN и передайте клиенту. Публичной регистрации нет."
         actions={
           <CreateAccount

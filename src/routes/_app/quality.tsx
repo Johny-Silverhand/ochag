@@ -1,11 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
+import { AuditJournal } from "@/components/admin/audit-journal";
 import { PageHeader } from "@/components/layout/page";
-import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Field, Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/tabs";
-import { useOps } from "@/lib/data/store";
+import { useOps, useSessionUser } from "@/lib/data/store";
+import { scopedAudit } from "@/lib/domain/audit-labels";
 import { stopListHistory } from "@/lib/domain/analytics";
 import { STOP_REASON_LABEL, today } from "@/lib/domain/types";
 import { addDays, ruDateTime } from "@/lib/format";
@@ -15,22 +16,17 @@ export const Route = createFileRoute("/_app/quality")({ component: JournalsPage 
 function JournalsPage() {
   const snap = useOps((s) => s);
   const session = useOps((s) => s.session)!;
+  const user = useSessionUser()!;
   const [tab, setTab] = useState("audit");
   const monthStart = today().slice(0, 7) + "-01";
   const [from, setFrom] = useState(monthStart);
   const [to, setTo] = useState(today());
   const branchId = session.branchId;
 
-  const audit = useMemo(
-    () =>
-      snap.audit.filter(
-        (e) =>
-          (branchId === "all" || e.branchId === branchId || !e.branchId) &&
-          e.at.slice(0, 10) >= addDays(from, -1) &&
-          e.at.slice(0, 10) <= addDays(to, 1),
-      ),
-    [snap.audit, branchId, from, to],
-  );
+  const audit = useMemo(() => {
+    const scoped = scopedAudit(snap.audit, { role: user.role, sessionBranchId: branchId });
+    return scoped.filter((e) => e.at.slice(0, 10) >= addDays(from, -1) && e.at.slice(0, 10) <= addDays(to, 1));
+  }, [snap.audit, branchId, from, to, user.role]);
   const stops = useMemo(() => stopListHistory(snap, branchId, from, to), [snap, branchId, from, to]);
 
   return (
@@ -60,36 +56,13 @@ function JournalsPage() {
       </div>
 
       {tab === "audit" ? (
-        <Card className="overflow-hidden p-0">
-          {audit.length === 0 ? (
-            <p className="px-5 py-8 text-sm text-muted">Записей нет. Они появляются после смен, закупок, ревизий и закрытия периода.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-bg text-xs text-muted">
-                  <tr>
-                    <th className="px-5 py-2 font-medium">Когда</th>
-                    <th className="px-3 py-2 font-medium">Кто</th>
-                    <th className="px-3 py-2 font-medium">Действие</th>
-                    <th className="px-5 py-2 font-medium">Деталь</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {audit.slice(0, 80).map((e) => (
-                    <tr key={e.id} className="border-t border-border">
-                      <td className="px-5 py-2.5 text-muted">{ruDateTime(e.at)}</td>
-                      <td className="px-3 py-2.5">{snap.users.find((u) => u.id === e.userId)?.name ?? e.userId}</td>
-                      <td className="px-3 py-2.5">
-                        <Badge>{e.action}</Badge>
-                      </td>
-                      <td className="px-5 py-2.5">{e.detail}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
+        <AuditJournal
+          entries={audit}
+          users={snap.users}
+          branches={snap.branches}
+          limit={80}
+          empty="Записей нет. Они появляются после смен, закупок, ревизий, списаний, перемещений и учёток."
+        />
       ) : (
         <Card className="overflow-hidden p-0">
           {stops.length === 0 ? (

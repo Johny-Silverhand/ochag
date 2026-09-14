@@ -15,9 +15,11 @@ import { Route as SetupRouteImport } from './routes/setup'
 import { Route as AppAccountsRouteImport } from './routes/_app/accounts'
 import { Route as AppAiRouteImport } from './routes/_app/ai'
 import { Route as AppBanquetsRouteImport } from './routes/_app/banquets'
+import { Route as AppConsoleRouteImport } from './routes/_app/console'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
 import { Route as AppIntegrationsRouteImport } from './routes/_app/integrations'
 import { Route as AppInventoryRouteImport } from './routes/_app/inventory'
+import { Route as AppJournalRouteImport } from './routes/_app/journal'
 import { Route as AppPlanningRouteImport } from './routes/_app/planning'
 import { Route as AppProcurementRouteImport } from './routes/_app/procurement'
 import { Route as AppQualityRouteImport } from './routes/_app/quality'
@@ -61,6 +63,11 @@ const AppBanquetsRoute = AppBanquetsRouteImport.update({
   path: '/banquets',
   getParentRoute: () => AppRoute,
 } as any)
+const AppConsoleRoute = AppConsoleRouteImport.update({
+  id: '/console',
+  path: '/console',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppDashboardRoute = AppDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -74,6 +81,11 @@ const AppIntegrationsRoute = AppIntegrationsRouteImport.update({
 const AppInventoryRoute = AppInventoryRouteImport.update({
   id: '/inventory',
   path: '/inventory',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppJournalRoute = AppJournalRouteImport.update({
+  id: '/journal',
+  path: '/journal',
   getParentRoute: () => AppRoute,
 } as any)
 const AppPlanningRoute = AppPlanningRouteImport.update({
@@ -148,9 +160,11 @@ export interface FileRoutesByFullPath {
   '/accounts': typeof AppAccountsRoute
   '/ai': typeof AppAiRoute
   '/banquets': typeof AppBanquetsRouteWithChildren
+  '/console': typeof AppConsoleRoute
   '/dashboard': typeof AppDashboardRoute
   '/integrations': typeof AppIntegrationsRoute
   '/inventory': typeof AppInventoryRoute
+  '/journal': typeof AppJournalRoute
   '/planning': typeof AppPlanningRoute
   '/procurement': typeof AppProcurementRoute
   '/quality': typeof AppQualityRoute
@@ -171,9 +185,11 @@ export interface FileRoutesByTo {
   '/accounts': typeof AppAccountsRoute
   '/ai': typeof AppAiRoute
   '/banquets': typeof AppBanquetsRouteWithChildren
+  '/console': typeof AppConsoleRoute
   '/dashboard': typeof AppDashboardRoute
   '/integrations': typeof AppIntegrationsRoute
   '/inventory': typeof AppInventoryRoute
+  '/journal': typeof AppJournalRoute
   '/planning': typeof AppPlanningRoute
   '/procurement': typeof AppProcurementRoute
   '/quality': typeof AppQualityRoute
@@ -196,9 +212,11 @@ export interface FileRoutesById {
   '/_app/accounts': typeof AppAccountsRoute
   '/_app/ai': typeof AppAiRoute
   '/_app/banquets': typeof AppBanquetsRouteWithChildren
+  '/_app/console': typeof AppConsoleRoute
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/integrations': typeof AppIntegrationsRoute
   '/_app/inventory': typeof AppInventoryRoute
+  '/_app/journal': typeof AppJournalRoute
   '/_app/planning': typeof AppPlanningRoute
   '/_app/procurement': typeof AppProcurementRoute
   '/_app/quality': typeof AppQualityRoute
@@ -221,9 +239,11 @@ export interface FileRouteTypes {
     | '/accounts'
     | '/ai'
     | '/banquets'
+    | '/console'
     | '/dashboard'
     | '/integrations'
     | '/inventory'
+    | '/journal'
     | '/planning'
     | '/procurement'
     | '/quality'
@@ -244,9 +264,11 @@ export interface FileRouteTypes {
     | '/accounts'
     | '/ai'
     | '/banquets'
+    | '/console'
     | '/dashboard'
     | '/integrations'
     | '/inventory'
+    | '/journal'
     | '/planning'
     | '/procurement'
     | '/quality'
@@ -268,9 +290,11 @@ export interface FileRouteTypes {
     | '/_app/accounts'
     | '/_app/ai'
     | '/_app/banquets'
+    | '/_app/console'
     | '/_app/dashboard'
     | '/_app/integrations'
     | '/_app/inventory'
+    | '/_app/journal'
     | '/_app/planning'
     | '/_app/procurement'
     | '/_app/quality'
@@ -338,6 +362,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppBanquetsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/console': {
+      id: '/_app/console'
+      path: '/console'
+      fullPath: '/console'
+      preLoaderRoute: typeof AppConsoleRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/dashboard': {
       id: '/_app/dashboard'
       path: '/dashboard'
@@ -357,6 +388,13 @@ declare module '@tanstack/react-router' {
       path: '/inventory'
       fullPath: '/inventory'
       preLoaderRoute: typeof AppInventoryRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/journal': {
+      id: '/_app/journal'
+      path: '/journal'
+      fullPath: '/journal'
+      preLoaderRoute: typeof AppJournalRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/planning': {
@@ -469,9 +507,11 @@ interface AppRouteChildren {
   AppAccountsRoute: typeof AppAccountsRoute
   AppAiRoute: typeof AppAiRoute
   AppBanquetsRoute: typeof AppBanquetsRouteWithChildren
+  AppConsoleRoute: typeof AppConsoleRoute
   AppDashboardRoute: typeof AppDashboardRoute
   AppIntegrationsRoute: typeof AppIntegrationsRoute
   AppInventoryRoute: typeof AppInventoryRoute
+  AppJournalRoute: typeof AppJournalRoute
   AppPlanningRoute: typeof AppPlanningRoute
   AppProcurementRoute: typeof AppProcurementRoute
   AppQualityRoute: typeof AppQualityRoute
@@ -488,9 +528,11 @@ const AppRouteChildren: AppRouteChildren = {
   AppAccountsRoute: AppAccountsRoute,
   AppAiRoute: AppAiRoute,
   AppBanquetsRoute: AppBanquetsRouteWithChildren,
+  AppConsoleRoute: AppConsoleRoute,
   AppDashboardRoute: AppDashboardRoute,
   AppIntegrationsRoute: AppIntegrationsRoute,
   AppInventoryRoute: AppInventoryRoute,
+  AppJournalRoute: AppJournalRoute,
   AppPlanningRoute: AppPlanningRoute,
   AppProcurementRoute: AppProcurementRoute,
   AppQualityRoute: AppQualityRoute,
