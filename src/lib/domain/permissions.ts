@@ -15,7 +15,8 @@ export type ModuleKey =
   | "planning"
   | "schedule"
   | "quality"
-  | "ai";
+  | "ai"
+  | "admin";
 
 const ALL: Role[] = ["tech_admin", "owner", "manager", "cook", "waiter"];
 
@@ -35,6 +36,7 @@ export const MODULE_ROLES: Record<ModuleKey, Role[]> = {
   schedule: ["owner", "manager"],
   quality: ["owner", "manager", "cook"],
   ai: ["owner", "manager"],
+  admin: [],
 };
 
 /** Администратор-техник — полный доступ, выше владельца на проверках прав. */

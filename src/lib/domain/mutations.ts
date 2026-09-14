@@ -33,19 +33,7 @@ import {
 } from "./engine";
 import { catalogAvgFromStock, freezeSaleCosts } from "./finance";
 import { uid } from "../utils";
-import {
-  AuthzError,
-  assertBranchScope,
-  assertCash,
-  assertExpenses,
-  assertKeeper,
-  assertSale,
-  assertStopList,
-  assertTransfer,
-  assertWriteoff,
-  type Actor,
-  writeBranch,
-} from "../authz/actor";
+import { actorFrom, AuthzError, assertBranchScope, assertCash, assertExpenses, assertKeeper, assertSale, assertStopList, assertTransfer, assertWriteoff, type Actor, writeBranch } from "../authz/actor";
 import {
   canInviteStaff,
   canOpenShift,
@@ -58,6 +46,7 @@ import {
 } from "./permissions";
 import { assertPeriodOpen } from "./period";
 import { appendAudit } from "./audit";
+import { appendOpsLog } from "./ops-log";
 
 function queueEvent(snap: Snapshot, event: NotifyEvent, title: string, body: string, to?: string): Snapshot {
   if (snap.settings.notifyEvents[event] === false) return snap;
@@ -554,25 +543,32 @@ export function applyStopList(
   }
   if (snap.stopList.some((e) => e.recipeId === input.recipeId && e.branchId === branchId && !e.clearedAt)) return snap;
   const recipeName = snap.recipes.find((r) => r.id === input.recipeId)?.name ?? input.recipeId;
-  return queueEvent(
-    {
-      ...snap,
-      stopList: [
-        {
-          id: uid("sl"),
-          branchId,
-          recipeId: input.recipeId,
-          reason: input.reason,
-          note: input.note,
-          createdAt: now,
-          createdBy: actor.userId,
-        },
-        ...snap.stopList,
-      ],
-    },
+  return appendAudit(
+    queueEvent(
+      {
+        ...snap,
+        stopList: [
+          {
+            id: uid("sl"),
+            branchId,
+            recipeId: input.recipeId,
+            reason: input.reason,
+            note: input.note,
+            createdAt: now,
+            createdBy: actor.userId,
+          },
+          ...snap.stopList,
+        ],
+      },
+      "stop_list",
+      "Стоп-лист",
+      `${recipeName}: ${input.reason}`,
+    ),
+    actor,
     "stop_list",
-    "Стоп-лист",
+    "recipe",
     `${recipeName}: ${input.reason}`,
+    branchId,
   );
 }
 
@@ -694,7 +690,21 @@ export function applyBootstrap(
   }
   const branchId = uid("br");
   const userId = uid("u");
-  return {
+  const admin = {
+    id: userId,
+    name: input.name.trim() || "Администратор-техник",
+    email: login,
+    password: input.password,
+    pin: input.pin,
+    role: "tech_admin" as const,
+    position: "Администратор-техник",
+    branchId: null,
+    shiftPay: 0,
+    salesPercent: 0,
+    phone: "",
+    disabled: false,
+  };
+  const next = {
     ...snap,
     branches: [
       {
@@ -707,23 +717,13 @@ export function applyBootstrap(
         phone: "",
       },
     ],
-    users: [
-      {
-        id: userId,
-        name: input.name.trim() || "Администратор-техник",
-        email: login,
-        password: input.password,
-        pin: input.pin,
-        role: "tech_admin",
-        position: "Администратор-техник",
-        branchId: null,
-        shiftPay: 0,
-        salesPercent: 0,
-        phone: "",
-        disabled: false,
-      },
-    ],
+    users: [admin],
   };
+  const actor = actorFrom(admin, { userId: admin.id, branchId: "all" });
+  return appendOpsLog(
+    appendAudit(next, actor, "bootstrap", "network", `техник ${login} / ${next.branches[0]!.short}`),
+    { level: "info", event: "bootstrap", detail: `создан ${login}`, userId: admin.id, login },
+  );
 }
 
 export function applyInviteStaff(
@@ -763,7 +763,16 @@ export function applyInviteStaff(
     phone: input.phone ?? "",
     disabled: false,
   };
-  return appendAudit({ ...snap, users: [...snap.users, user] }, actor, "invite", "user", `${user.name} / ${user.role}`);
+  return appendOpsLog(
+    appendAudit({ ...snap, users: [...snap.users, user] }, actor, "invite", "user", `${user.name} / ${user.role}`),
+    {
+      level: "info",
+      event: "account_create",
+      detail: `${user.name} · ${user.email} · ${user.role}`,
+      userId: actor.userId,
+      login: user.email,
+    },
+  );
 }
 
 function enabledTechAdmins(snap: Snapshot) {
@@ -827,12 +836,22 @@ export function applyUpdateStaff(
     phone: input.phone ?? target.phone,
     disabled: nextDisabled,
   };
-  return appendAudit(
-    { ...snap, users: snap.users.map((u) => (u.id === target.id ? next : u)) },
-    actor,
-    nextDisabled && !target.disabled ? "disable" : "staff",
-    "user",
-    `${next.name} / ${next.role}`,
+  const action = nextDisabled && !target.disabled ? "disable" : "staff";
+  return appendOpsLog(
+    appendAudit(
+      { ...snap, users: snap.users.map((u) => (u.id === target.id ? next : u)) },
+      actor,
+      action,
+      "user",
+      `${next.name} / ${next.role}`,
+    ),
+    {
+      level: "info",
+      event: "account_edit",
+      detail: nextDisabled && !target.disabled ? `${next.email} отключена` : `${next.name} · ${next.email} · ${next.role}`,
+      userId: actor.userId,
+      login: next.email,
+    },
   );
 }
 
@@ -975,7 +994,17 @@ export function applyRevenuePlan(snap: Snapshot, actor: Actor, input: { branchId
 
 export function applySettings(snap: Snapshot, actor: Actor, patch: Partial<Snapshot["settings"]>): Snapshot {
   if (!isOpsLead(actor.role)) throw new AuthzError("Настройки сети недоступны");
-  return { ...snap, settings: { ...snap.settings, ...patch, notifyEvents: { ...snap.settings.notifyEvents, ...(patch.notifyEvents ?? {}) } } };
+  const keys = Object.keys(patch).join(", ") || "без полей";
+  const next = {
+    ...snap,
+    settings: { ...snap.settings, ...patch, notifyEvents: { ...snap.settings.notifyEvents, ...(patch.notifyEvents ?? {}) } },
+  };
+  return appendOpsLog(appendAudit(next, actor, "settings", "network", keys), {
+    level: "info",
+    event: "settings",
+    detail: keys,
+    userId: actor.userId,
+  });
 }
 
 export function applyPushSub(
@@ -1008,7 +1037,7 @@ export function applyAddBranch(
     seats: 40,
     phone: "",
   };
-  return { ...snap, branches: [...snap.branches, row] };
+  return appendAudit({ ...snap, branches: [...snap.branches, row] }, actor, "branch", "network", row.name);
 }
 
 export function applyAddSupplier(
@@ -1021,8 +1050,15 @@ export function applyAddSupplier(
 }
 
 export function markOutbox(snap: Snapshot, id: string, status: OutboxItem["status"], error?: string): Snapshot {
-  return {
+  const item = snap.outbox.find((o) => o.id === id);
+  const next = {
     ...snap,
     outbox: snap.outbox.map((o) => (o.id === id ? { ...o, status, error } : o)),
   };
+  if (status !== "failed") return next;
+  return appendOpsLog(next, {
+    level: "error",
+    event: "outbox",
+    detail: `${item?.channel ?? "канал"}: ${error || "ошибка отправки"}`,
+  });
 }

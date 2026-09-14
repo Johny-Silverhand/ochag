@@ -49,6 +49,7 @@ import { isOnboarded } from "../data/empty";
 import { createSeed } from "../data/seed";
 import { can, isNetworkAdmin, isOpsLead } from "../domain/permissions";
 import { ensureEnvBootstrap, readBootstrapEnv } from "../data/bootstrap";
+import { appendOpsLog, recordAuthAttempt } from "../domain/ops-log";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -84,7 +85,18 @@ async function requireActor(request: Request) {
   }
 }
 
+async function persistOpsLog(entry: Parameters<typeof appendOpsLog>[1]) {
+  try {
+    const repo = await getRepo();
+    const snap = await repo.load();
+    await repo.save(appendOpsLog(snap, entry));
+  } catch {
+    /* ops console must never break the API */
+  }
+}
+
 async function mutate(request: Request, fn: (snap: Snapshot, actor: ReturnType<typeof actorFrom>) => Snapshot | Promise<Snapshot>) {
+  const path = pathOf(request);
   try {
     const actor = await requireActor(request);
     const repo = await getRepo();
@@ -94,7 +106,10 @@ async function mutate(request: Request, fn: (snap: Snapshot, actor: ReturnType<t
     await repo.save(next);
     return json({ ok: true, state: publicSnapshot(next) });
   } catch (err) {
-    if (err instanceof AuthzError) return json({ error: err.message }, err.status);
+    if (err instanceof AuthzError) {
+      await persistOpsLog({ level: "warn", event: "api", detail: err.message, path });
+      return json({ error: err.message }, err.status);
+    }
     throw err;
   }
 }
@@ -153,18 +168,23 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
       const login = String(body.login ?? body.email ?? "").trim().toLowerCase();
       const password = body.password != null ? String(body.password) : "";
       const pin = body.pin != null ? String(body.pin) : "";
+      const via = path === "auth/pin" ? "pin" : "password";
       const user = snap.users.find((u) => u.email.toLowerCase() === login);
-      if (!user) throw new AuthzError("Неверный логин или PIN", 401);
-      if (user.disabled) throw new AuthzError("Учётка отключена", 403);
-      const passOk = password && user.password === password;
-      const pinOk = pin && user.pin === pin;
-      if (!passOk && !pinOk) throw new AuthzError("Неверный логин или PIN", 401);
-      const actor = actorFrom(user, { userId: user.id, branchId: user.branchId ?? "all" });
+      const passOk = Boolean(password && user?.password === password);
+      const pinOk = Boolean(pin && user?.pin === pin);
+      const ok = Boolean(user && !user.disabled && (passOk || pinOk));
+      const reason = !user || !(passOk || pinOk) ? "Неверный логин или PIN" : user.disabled ? "Учётка отключена" : undefined;
+      const logged = recordAuthAttempt(snap, { login, via, user, ok, reason });
+      await repo.save(logged.snap);
+      if (!logged.ok) {
+        return json({ error: logged.reason ?? "Неверный логин или PIN" }, reason === "Учётка отключена" ? 403 : 401);
+      }
+      const actor = actorFrom(user!, { userId: user!.id, branchId: user!.branchId ?? "all" });
       const token = await signActor(actor);
       return json({
         token,
         user: publicActor(actor),
-        state: publicSnapshot(snap),
+        state: publicSnapshot(logged.snap),
       });
     }
 
@@ -180,18 +200,34 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     if (method === "POST" && path === "state/reset") {
       const actor = await requireActor(request);
       if (!isNetworkAdmin(actor.role)) throw new AuthzError("Сброс недоступен");
-      const state = await repo.reset();
+      const state = appendOpsLog(await repo.reset(), {
+        level: "warn",
+        event: "api",
+        detail: "сброс сети",
+        userId: actor.userId,
+        path,
+      });
+      await repo.save(state);
       return json({ ok: true, state: publicSnapshot(state) });
     }
 
     if (method === "POST" && path === "state/sample") {
       const current = await repo.load();
+      let actorId: string | undefined;
       if (isOnboarded(current)) {
         const actor = await requireActor(request);
         if (!isNetworkAdmin(actor.role)) throw new AuthzError("Выгрузка примера недоступна");
+        actorId = actor.userId;
       }
-      const state = repo.loadSample ? await repo.loadSample() : createSeed();
-      if (!repo.loadSample) await repo.save(state);
+      let state = repo.loadSample ? await repo.loadSample() : createSeed();
+      state = appendOpsLog(state, {
+        level: "info",
+        event: "sample",
+        detail: "загружена учебная сеть",
+        userId: actorId,
+        path,
+      });
+      await repo.save(state);
       return json({ ok: true, state: publicSnapshot(state) });
     }
 
@@ -489,8 +525,15 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
 
     return json({ error: "not_found", path }, 404);
   } catch (err) {
-    if (err instanceof AuthzError) return json({ error: err.message }, err.status);
+    const path = pathOf(request, splat);
+    if (err instanceof AuthzError) {
+      if (path !== "auth/login" && path !== "auth/pin") {
+        await persistOpsLog({ level: "warn", event: "api", detail: err.message, path });
+      }
+      return json({ error: err.message }, err.status);
+    }
     const message = err instanceof Error ? err.message : "Ошибка контура";
+    await persistOpsLog({ level: "error", event: "api", detail: message, path });
     return json({ error: message }, 400);
   }
 }

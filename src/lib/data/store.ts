@@ -61,6 +61,7 @@ import {
   matchLocalPassword,
   matchLocalPin,
 } from "./secrets";
+import { recordAuthAttempt } from "../domain/ops-log";
 
 export type BranchFilter = string | "all";
 
@@ -272,9 +273,21 @@ export const useOps = create<OpsState>()(
           return true;
         } catch {
           const { snap, user } = matchLocalPassword(snapshotOf(get()), email, password, USERS);
-          if (!user || user.disabled) return false;
+          const logged = recordAuthAttempt(snap, {
+            login: email,
+            via: "password",
+            user,
+            ok: Boolean(user && !user.disabled),
+            reason: !user ? "Неверный логин или PIN" : user.disabled ? "Учётка отключена" : undefined,
+          });
+          if (!logged.ok) {
+            applyingRemote = true;
+            set({ ...logged.snap });
+            applyingRemote = false;
+            return false;
+          }
           applyingRemote = true;
-          set({ ...snap, session: { userId: user.id, branchId: user.branchId ?? "all" } });
+          set({ ...logged.snap, session: { userId: user!.id, branchId: user!.branchId ?? "all" } });
           applyingRemote = false;
           return true;
         }
@@ -295,9 +308,21 @@ export const useOps = create<OpsState>()(
           return true;
         } catch {
           const { snap, user } = matchLocalPin(snapshotOf(get()), email, pin, USERS);
-          if (!user || user.disabled) return false;
+          const logged = recordAuthAttempt(snap, {
+            login: email,
+            via: "pin",
+            user,
+            ok: Boolean(user && !user.disabled),
+            reason: !user ? "Неверный логин или PIN" : user.disabled ? "Учётка отключена" : undefined,
+          });
+          if (!logged.ok) {
+            applyingRemote = true;
+            set({ ...logged.snap });
+            applyingRemote = false;
+            return false;
+          }
           applyingRemote = true;
-          set({ ...snap, session: { userId: user.id, branchId: user.branchId ?? "all" } });
+          set({ ...logged.snap, session: { userId: user!.id, branchId: user!.branchId ?? "all" } });
           applyingRemote = false;
           return true;
         }

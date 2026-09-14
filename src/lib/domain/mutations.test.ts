@@ -120,6 +120,8 @@ describe("bootstrap tech admin", () => {
     assert.equal(snap.users[0]?.email, "admin");
     assert.equal(snap.users[0]?.branchId, null);
     assert.equal(snap.branches.length, 1);
+    assert.equal(snap.audit[0]?.action, "bootstrap");
+    assert.equal(snap.opsLogs[0]?.event, "bootstrap");
     assert.throws(
       () =>
         applyBootstrap(snap, {
@@ -155,6 +157,8 @@ describe("bootstrap tech admin", () => {
     });
     const owner = withOwner.users.find((u) => u.role === "owner")!;
     assert.equal(owner.branchId, null);
+    assert.equal(withOwner.audit[0]?.action, "invite");
+    assert.equal(withOwner.opsLogs[0]?.event, "account_create");
     const ownerActor = actorFrom(owner, { userId: owner.id, branchId: snap.branches[0]!.id });
     assert.throws(
       () =>

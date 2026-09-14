@@ -29,6 +29,8 @@ describe("tech_admin access", () => {
       "schedule",
       "quality",
       "ai",
+      "admin",
+      "admin",
     ] as const;
     for (const module of modules) {
       assert.equal(can("tech_admin", module), true);
