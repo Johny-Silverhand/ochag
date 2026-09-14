@@ -140,7 +140,7 @@ function DashboardPage() {
           ) : (
           <ul className="space-y-3">
             {insights.slice(0, 4).map((i) => (
-              <li key={i.id} className="rounded-md bg-bg p-3">
+              <li key={i.id} className="rounded-xl bg-bg p-3">
                 <div className="flex items-center gap-2">
                   <Badge tone={i.severity === "critical" ? "danger" : i.severity === "warning" ? "warning" : "primary"}>
                     {i.severity === "critical" ? "важно" : i.severity === "warning" ? "внимание" : "сигнал"}

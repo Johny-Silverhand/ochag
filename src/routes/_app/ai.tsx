@@ -98,7 +98,7 @@ function AiPage() {
         </div>
         <ul className="mt-3 space-y-2">
           {recs.map((r) => (
-            <li key={r.id} className="rounded-md bg-bg p-3">
+            <li key={r.id} className="rounded-xl bg-bg p-3">
               <div className="text-sm font-medium">{r.title}</div>
               <p className="mt-1 text-xs text-muted">{r.body}</p>
             </li>

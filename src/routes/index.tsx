@@ -74,7 +74,7 @@ function LoginPage() {
         <img
           src="/marketing/hero.png"
           alt="Очаг на планшете в зале кафе"
-          className="mt-8 aspect-video w-full max-w-lg rounded-xl object-cover"
+          className="mt-8 aspect-video w-full max-w-lg rounded-3xl object-cover"
         />
       </section>
 

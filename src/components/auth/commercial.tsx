@@ -72,7 +72,7 @@ export function CommercialGate({
           <img
             src="/marketing/hero.png"
             alt="Планшет с контуром Очаг на фоне кафе"
-            className="mb-4 aspect-video w-full rounded-lg object-cover"
+            className="mb-4 aspect-video w-full rounded-2xl object-cover"
           />
           <p className="text-sm leading-relaxed text-muted">
             {NETWORK_NAME} — товароучёт и управление кафе поверх продаж r_keeper: склад и техкарты, роли
@@ -182,11 +182,11 @@ function TariffCard({
       type="button"
       onClick={onSelect}
       className={cn(
-        "rounded-xl bg-surface p-3 text-left shadow-(--shadow-border) transition-[box-shadow,transform] duration-150",
+        "rounded-2xl bg-surface p-3 text-left shadow-(--shadow-border) transition-[box-shadow,transform] duration-200 ease-[var(--ease-out-smooth)]",
         selected ? "ring-2 ring-ring/40" : "hover:shadow-(--shadow-border-hover)",
       )}
     >
-      <img src={plan.image} alt="" className="mb-3 aspect-video w-full rounded-md object-cover" />
+      <img src={plan.image} alt="" className="mb-3 aspect-video w-full rounded-xl object-cover" />
       <div className="flex items-start justify-between gap-2">
         <div>
           <div className="text-sm font-medium tracking-tight">{plan.name}</div>
@@ -227,8 +227,8 @@ function CheckoutStep({
       <Badge tone="warning" className="mb-3 whitespace-normal text-left leading-snug">
         {PAYMENT_SIM_BADGE}
       </Badge>
-      <div className="mb-4 flex gap-3 rounded-lg bg-bg p-3">
-        <img src={plan.image} alt="" className="size-16 shrink-0 rounded-md object-cover" />
+      <div className="mb-4 flex gap-3 rounded-2xl bg-bg p-3">
+        <img src={plan.image} alt="" className="size-16 shrink-0 rounded-xl object-cover" />
         <div>
           <div className="text-sm font-medium">{plan.name}</div>
           <div className="mt-0.5 font-mono text-sm tabular-nums">
