@@ -149,6 +149,22 @@ export function canDeleteAccount(
   return true;
 }
 
+/** Place label for Админка → Пользователи. Technicians are network-wide; others show their branch. */
+export function accountPlaceLabel(
+  user: { role: Role; branchId: string | null },
+  branches: Array<{ id: string; short: string; name: string; city?: string }>,
+) {
+  if (user.role === "tech_admin") return "вся сеть";
+  const branch = user.branchId ? branches.find((b) => b.id === user.branchId) : undefined;
+  if (branch) {
+    const title = branch.name || branch.short;
+    const city = branch.city && branch.city !== "—" ? branch.city : "";
+    return city ? `${title} · ${city}` : title;
+  }
+  if (user.role === "owner") return "вся сеть";
+  return "без филиала";
+}
+
 export function adminVisibleUsers<T extends { id: string; role: Role; branchId: string | null }>(
   actor: { role: Role; userId: string; homeBranchId: string | null; sessionBranchId: string },
   users: T[],

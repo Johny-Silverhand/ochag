@@ -231,9 +231,10 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
           showCommercialEntry(snap) ? 403 : 400,
         );
       }
+      const login = String(body.login ?? body.email ?? "");
       const next = applyOnboard(snapshotForCommercialOnboard(snap), {
         ownerName: String(body.ownerName ?? body.name ?? ""),
-        login: String(body.login ?? body.email ?? ""),
+        login,
         password: String(body.password ?? ""),
         pin: String(body.pin ?? ""),
         branchName: String(body.branchName ?? "Филиал 1"),
@@ -241,8 +242,15 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
         address: String(body.address ?? ""),
       });
       await repo.save(next);
-      const owner = next.users.find((u) => u.role === "owner") ?? next.users.at(-1)!;
-      const actor = actorFrom(owner, { userId: owner.id, branchId: next.branches[0]?.id ?? "all" });
+      const loginKey = login.trim().toLowerCase();
+      const owner =
+        next.users.find((u) => u.email.trim().toLowerCase() === loginKey) ??
+        next.users.filter((u) => u.role === "owner").at(-1) ??
+        next.users.at(-1)!;
+      const homeBranch = owner.branchId
+        ? next.branches.find((b) => b.id === owner.branchId)?.id
+        : next.branches.at(-1)?.id;
+      const actor = actorFrom(owner, { userId: owner.id, branchId: homeBranch ?? "all" });
       const token = await signActor(actor);
       return json({ token, user: publicActor(actor), state: publicSnapshot(next) });
     }
