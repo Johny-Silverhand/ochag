@@ -1,9 +1,8 @@
-import { filterByBranch, filterPeriod, inRange, saleCogs, salePayments } from "./engine";
-import { today } from "./types";
-import type { Period, Snapshot } from "./types";
-import { periodStart } from "./engine";
-import { addDays } from "../format";
-import { foodcostPct, netProfit } from "./finance";
+import { filterByBranch, filterPeriod, inRange, saleCogs, salePayments, periodStart } from "./engine.ts";
+import { today } from "./types.ts";
+import type { Period, Snapshot } from "./types.ts";
+import { addDays } from "../format.ts";
+import { foodcostPct, netProfit } from "./finance.ts";
 
 export function abcByRevenue(snap: Snapshot, period: Period, branchId: string) {
   const from = periodStart(period);
