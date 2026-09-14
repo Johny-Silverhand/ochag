@@ -38,7 +38,7 @@ export function Kpi({
   tone?: "default" | "good" | "bad";
 }) {
   return (
-    <div className="rounded-xl bg-surface p-card shadow-(--shadow-border)">
+    <div className="rounded-2xl bg-surface p-card shadow-(--shadow-border)">
       <div className="text-xs font-medium tracking-wide text-muted uppercase">{label}</div>
       <div
         className={cn(
@@ -56,7 +56,7 @@ export function Kpi({
 
 export function EmptyState({ title, body }: { title: string; body: string }) {
   return (
-    <div className="rounded-xl border border-dashed border-border-strong px-5 py-10 text-center">
+    <div className="rounded-2xl border border-dashed border-border-strong px-5 py-10 text-center">
       <div className="text-sm font-medium">{title}</div>
       <p className="mx-auto mt-1 max-w-sm text-sm text-muted">{body}</p>
     </div>

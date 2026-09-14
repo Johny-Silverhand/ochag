@@ -18,12 +18,12 @@ export function DialogContent({
 }) {
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-fg/60 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0" />
+      <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-fg/50 backdrop-blur-[2px] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0" />
       <DialogPrimitive.Content
         className={cn(
-          "fixed z-50 bg-surface text-fg shadow-(--shadow-border) focus:outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0",
-          "top-1/2 left-1/2 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl p-5 data-[state=open]:zoom-in-95",
-          "max-md:top-auto max-md:bottom-0 max-md:left-0 max-md:right-0 max-md:w-full max-md:max-w-none max-md:translate-x-0 max-md:translate-y-0 max-md:rounded-t-2xl max-md:rounded-b-none max-md:p-5 max-md:pt-4 max-md:pb-[calc(env(safe-area-inset-bottom)+1.25rem)] max-md:data-[state=open]:slide-in-from-bottom-4",
+          "fixed z-50 bg-elevated text-fg shadow-(--shadow-border) focus:outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0",
+          "top-1/2 left-1/2 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-2xl p-5 data-[state=open]:zoom-in-95",
+          "max-md:top-auto max-md:bottom-0 max-md:left-0 max-md:right-0 max-md:w-full max-md:max-w-none max-md:translate-x-0 max-md:translate-y-0 max-md:rounded-t-3xl max-md:rounded-b-none max-md:p-5 max-md:pt-4 max-md:pb-[calc(env(safe-area-inset-bottom)+1.25rem)] max-md:data-[state=open]:slide-in-from-bottom-4",
           className,
         )}
       >
@@ -31,8 +31,8 @@ export function DialogContent({
           <DialogPrimitive.Title className="text-base font-medium tracking-tight">
             {title}
           </DialogPrimitive.Title>
-          <DialogPrimitive.Close className="rounded-sm p-1 text-muted hover:bg-bg hover:text-fg">
-            <X className="size-4" />
+          <DialogPrimitive.Close className="flex size-11 items-center justify-center rounded-full text-muted transition-colors duration-200 hover:bg-bg hover:text-fg md:size-9">
+            <X className="size-5" />
           </DialogPrimitive.Close>
         </div>
         {children}
