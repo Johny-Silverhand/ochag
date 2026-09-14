@@ -23,6 +23,7 @@ import {
   applyBanquet,
   applyBanquetStatus,
   applyCloseShift,
+  applyDeleteStaff,
   applyExpense,
   applyImportProducts,
   applyInviteStaff,
@@ -61,15 +62,17 @@ import {
   matchLocalPassword,
   matchLocalPin,
 } from "./secrets";
-import { recordAuthAttempt } from "../domain/ops-log";
+import { AUTH_BAD_CREDENTIALS_MSG, recordAuthAttempt, resolveStaffAuth } from "../domain/ops-log";
 
-export type BranchFilter = string | "all";
+export type LoginResult = { ok: true } | { ok: false; reason: string };
+
+const AUTH_KNOWN_FAIL = /неверн|отключена|заблок/i;
 
 interface OpsState extends Snapshot {
   session: Session | null;
   period: Period;
-  login: (email: string, password: string) => Promise<boolean>;
-  loginPin: (email: string, pin: string) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<LoginResult>;
+  loginPin: (email: string, pin: string) => Promise<LoginResult>;
   loginAs: (email: string) => Promise<boolean>;
   loadSample: () => Promise<void>;
   logout: () => void;
@@ -149,6 +152,7 @@ interface OpsState extends Snapshot {
     phone?: string;
     disabled?: boolean;
   }) => Promise<boolean>;
+  deleteStaff: (input: { userId: string }) => Promise<boolean>;
   updateSettings: (patch: Partial<Snapshot["settings"]>) => void;
   flushNotify: () => Promise<void>;
 }
@@ -241,6 +245,7 @@ const ACTION_KEYS = [
   "importProducts",
   "inviteStaff",
   "updateStaff",
+  "deleteStaff",
   "updateSettings",
   "flushNotify",
 ] as const;
@@ -270,28 +275,29 @@ export const useOps = create<OpsState>()(
             session: { userId: res.user.userId, branchId: res.user.branchId },
           });
           applyingRemote = false;
-          return true;
+          return { ok: true };
         } catch (err) {
           const msg = err instanceof Error ? err.message : "";
-          if (/неверн|отключена/i.test(msg)) return false;
+          if (AUTH_KNOWN_FAIL.test(msg)) return { ok: false, reason: msg || AUTH_BAD_CREDENTIALS_MSG };
           const { snap, user } = matchLocalPassword(snapshotOf(get()), email, password, USERS);
+          const verdict = resolveStaffAuth({ user, credentialsOk: Boolean(user) });
           const logged = recordAuthAttempt(snap, {
             login: email,
             via: "password",
             user,
-            ok: Boolean(user && !user.disabled),
-            reason: !user ? "Неверный логин или PIN" : user.disabled ? "Учётка отключена" : undefined,
+            ok: verdict.ok,
+            reason: verdict.reason,
           });
           if (!logged.ok) {
             applyingRemote = true;
             set({ ...logged.snap });
             applyingRemote = false;
-            return false;
+            return { ok: false, reason: logged.reason ?? AUTH_BAD_CREDENTIALS_MSG };
           }
           applyingRemote = true;
           set({ ...logged.snap, session: { userId: user!.id, branchId: user!.branchId ?? "all" } });
           applyingRemote = false;
-          return true;
+          return { ok: true };
         }
       },
 
@@ -307,32 +313,36 @@ export const useOps = create<OpsState>()(
             session: { userId: res.user.userId, branchId: res.user.branchId },
           });
           applyingRemote = false;
-          return true;
+          return { ok: true };
         } catch (err) {
           const msg = err instanceof Error ? err.message : "";
-          if (/неверн|отключена/i.test(msg)) return false;
+          if (AUTH_KNOWN_FAIL.test(msg)) return { ok: false, reason: msg || AUTH_BAD_CREDENTIALS_MSG };
           const { snap, user } = matchLocalPin(snapshotOf(get()), email, pin, USERS);
+          const verdict = resolveStaffAuth({ user, credentialsOk: Boolean(user) });
           const logged = recordAuthAttempt(snap, {
             login: email,
             via: "pin",
             user,
-            ok: Boolean(user && !user.disabled),
-            reason: !user ? "Неверный логин или PIN" : user.disabled ? "Учётка отключена" : undefined,
+            ok: verdict.ok,
+            reason: verdict.reason,
           });
           if (!logged.ok) {
             applyingRemote = true;
             set({ ...logged.snap });
             applyingRemote = false;
-            return false;
+            return { ok: false, reason: logged.reason ?? AUTH_BAD_CREDENTIALS_MSG };
           }
           applyingRemote = true;
           set({ ...logged.snap, session: { userId: user!.id, branchId: user!.branchId ?? "all" } });
           applyingRemote = false;
-          return true;
+          return { ok: true };
         }
       },
 
-      loginAs: async (email) => get().login(email, "ochag"),
+      loginAs: async (email) => {
+        const result = await get().login(email, "ochag");
+        return result.ok;
+      },
 
       loadSample: async () => {
         const commit = (snap: Snapshot) => {
@@ -480,6 +490,8 @@ export const useOps = create<OpsState>()(
       inviteStaff: (input) => applyRemote("staff/invite", input, (snap, actor) => applyInviteStaff(snap, actor, input)),
 
       updateStaff: (input) => applyRemote("staff/update", input, (snap, actor) => applyUpdateStaff(snap, actor, input)),
+
+      deleteStaff: (input) => applyRemote("staff/delete", input, (snap, actor) => applyDeleteStaff(snap, actor, input)),
 
       updateSettings: (patch) => {
         void applyRemote("settings/network", patch, (snap, actor) => applySettings(snap, actor, patch));

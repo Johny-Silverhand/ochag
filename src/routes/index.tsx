@@ -53,12 +53,12 @@ function LoginPage() {
   async function enter(nextEmail: string, nextPassword = "", nextPin?: string) {
     setBusy(true);
     setError("");
-    const ok = nextPin
+    const result = nextPin
       ? await loginPin(nextEmail, nextPin)
       : await login(nextEmail, nextPassword);
     setBusy(false);
-    if (!ok) {
-      setError("Неверный логин, пароль или PIN");
+    if (!result.ok) {
+      setError(result.reason);
       return;
     }
     setPeriod(defaultPeriod);

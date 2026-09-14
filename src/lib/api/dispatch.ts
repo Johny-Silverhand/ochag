@@ -10,6 +10,7 @@ import {
   applyClosePeriod,
   applyCloseShift,
   applyDeleteRecipe,
+  applyDeleteStaff,
   applyExpense,
   applyImportProducts,
   applyInviteStaff,
@@ -49,7 +50,7 @@ import { isOnboarded } from "../data/empty";
 import { createSeed } from "../data/seed";
 import { can, isNetworkAdmin, isOpsLead } from "../domain/permissions";
 import { ensureEnvBootstrap, readBootstrapEnv } from "../data/bootstrap";
-import { appendOpsLog, recordAuthAttempt } from "../domain/ops-log";
+import { appendOpsLog, recordAuthAttempt, resolveStaffAuth, ACCOUNT_BLOCKED_MSG } from "../domain/ops-log";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -172,12 +173,20 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
       const user = snap.users.find((u) => u.email.toLowerCase() === login);
       const passOk = Boolean(password && user?.password === password);
       const pinOk = Boolean(pin && user?.pin === pin);
-      const ok = Boolean(user && !user.disabled && (passOk || pinOk));
-      const reason = !user || !(passOk || pinOk) ? "Неверный логин или PIN" : user.disabled ? "Учётка отключена" : undefined;
-      const logged = recordAuthAttempt(snap, { login, via, user, ok, reason });
+      const verdict = resolveStaffAuth({ user, credentialsOk: passOk || pinOk });
+      const logged = recordAuthAttempt(snap, {
+        login,
+        via,
+        user,
+        ok: verdict.ok,
+        reason: verdict.reason,
+      });
       await repo.save(logged.snap);
       if (!logged.ok) {
-        return json({ error: logged.reason ?? "Неверный логин или PIN" }, reason === "Учётка отключена" ? 403 : 401);
+        return json(
+          { error: logged.reason ?? "Неверный логин или PIN" },
+          logged.reason === ACCOUNT_BLOCKED_MSG ? 403 : 401,
+        );
       }
       const actor = actorFrom(user!, { userId: user!.id, branchId: user!.branchId ?? "all" });
       const token = await signActor(actor);
@@ -358,6 +367,9 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     }
     if (method === "POST" && path === "staff/update") {
       return mutate(request, (snap, actor) => applyUpdateStaff(snap, actor, body as never));
+    }
+    if (method === "POST" && path === "staff/delete") {
+      return mutate(request, (snap, actor) => applyDeleteStaff(snap, actor, body as never));
     }
     if (method === "POST" && path === "staff/adjust") {
       return mutate(request, (snap, actor) => applyPayrollAdjustment(snap, actor, body as never));
