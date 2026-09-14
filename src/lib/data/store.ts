@@ -18,33 +18,6 @@ import type {
   WriteoffReason,
 } from "../domain/types";
 import { type Session } from "../domain/types";
-import { actorFrom, type Actor } from "../authz/actor";
-import {
-  applyBanquet,
-  applyBanquetStatus,
-  applyCloseShift,
-  applyDeleteStaff,
-  applyExpense,
-  applyImportProducts,
-  applyInviteStaff,
-  applyInvoice,
-  applyManualSale,
-  applyOpenShift,
-  applyProfile,
-  applyRequestFromNeed,
-  applyClosePeriod,
-  applyPayrollAdjustment,
-  applyRequestStatus,
-  applyRevenuePlan,
-  applyRevision,
-  applySettings,
-  applyStopList,
-  applyTopUpDebt,
-  applyTransfer,
-  applyUpdateStaff,
-  applyUpsertRecipe,
-  applyWriteoff,
-} from "../domain/mutations";
 import { emptySnapshot, isOnboarded } from "./empty";
 import { normalizeSnapshot } from "./normalize";
 import { dbAdapter } from "./adapter";
@@ -55,7 +28,6 @@ import { createSeed, USERS } from "./seed";
 import {
   applyPublicState,
   ensureSampleCredentials,
-  hasBlankSecrets,
   matchLocalPassword,
   matchLocalPin,
 } from "./secrets";
@@ -77,7 +49,7 @@ interface OpsState extends Snapshot {
   login: (email: string, password: string) => Promise<LoginResult>;
   loginPin: (email: string, pin: string) => Promise<LoginResult>;
   loginAs: (email: string) => Promise<boolean>;
-  loadSample: () => Promise<void>;
+  loadSample: () => Promise<{ ok: true } | { ok: false; reason: string }>;
   logout: () => void;
   setBranch: (branchId: string) => void;
   setPeriod: (period: Period) => void;
@@ -104,7 +76,7 @@ interface OpsState extends Snapshot {
   closePeriod: (input: { from: string; to: string; revisionId: string }) => void;
   adjustPayroll: (input: { userId: string; kind: PayrollAdjKind; amount: number; note: string; date?: string }) => void;
   setPlan: (input: { branchId: string; month: string; target: number }) => void;
-  addManualSale: (items: Omit<SaleItem, "costAtSale">[], payment: "cash" | "card" | "qr") => void;
+  addManualSale: (items: Omit<SaleItem, "costAtSale">[], payment: "cash" | "card" | "qr" | "transfer") => void;
   importKeeperSales: (
     sales: Array<
       Omit<Snapshot["sales"][number], "shiftId" | "id" | "number" | "branchId" | "items"> & {
@@ -114,7 +86,7 @@ interface OpsState extends Snapshot {
   ) => Promise<number>;
   importKeeperXml: (xml: string) => Promise<number>;
   pullKeeperSales: () => Promise<number>;
-  upsertBanquet: (b: Banquet) => void;
+  upsertBanquet: (b: Banquet) => Promise<boolean>;
   setBanquetStatus: (id: string, status: BanquetStatus) => void;
   completeRevision: (lines: RevisionLine[], note?: string) => void;
   transferStock: (input: {
@@ -157,6 +129,26 @@ interface OpsState extends Snapshot {
     disabled?: boolean;
   }) => Promise<boolean>;
   deleteStaff: (input: { userId: string }) => Promise<boolean>;
+  addBranch: (input: {
+    name: string;
+    city: string;
+    address: string;
+    short?: string;
+    seats?: number;
+    phone?: string;
+    halls?: string[];
+  }) => Promise<boolean>;
+  updateBranch: (input: {
+    branchId: string;
+    name?: string;
+    city?: string;
+    address?: string;
+    short?: string;
+    seats?: number;
+    phone?: string;
+    halls?: string[];
+  }) => Promise<boolean>;
+  deleteBranch: (input: { branchId: string }) => Promise<boolean>;
   updateSettings: (patch: Partial<Snapshot["settings"]>) => void;
   flushNotify: () => Promise<void>;
   simulatePayment: (tariff: "trial" | "basic" | "mid" | "pro") => Promise<boolean>;
@@ -168,17 +160,12 @@ interface OpsState extends Snapshot {
     branchName: string;
     city: string;
     address: string;
+    seats?: number;
+    halls?: string[];
   }) => Promise<{ ok: true } | { ok: false; reason: string }>;
 }
 
-function actorOf(s: { session: Session | null; users: Snapshot["users"] }): Actor | null {
-  if (!s.session) return null;
-  const user = s.users.find((u) => u.id === s.session?.userId);
-  if (!user) return null;
-  return actorFrom(user, s.session);
-}
-
-async function applyRemote(path: string, body: unknown, local: (snap: Snapshot, actor: Actor) => Snapshot) {
+async function applyRemote(path: string, body: unknown) {
   const session = useOps.getState().session;
   try {
     const res = await api<{ state: Snapshot }>(path, { method: "POST", body });
@@ -197,23 +184,10 @@ async function applyRemote(path: string, body: unknown, local: (snap: Snapshot, 
       toast.error("Сессия истекла");
       return false;
     }
-    const s = useOps.getState();
-    const actor = actorOf(s);
-    if (!actor) {
-      toast.error(isTransientClientFailure(err) ? DB_WAIT_MSG : clientErrorMessage(err, "Нужен вход"));
-      return false;
-    }
-    if (isTransientClientFailure(err)) {
-      toast.error(DB_WAIT_MSG);
-    }
-    try {
-      const next = local(snapshotOf(s), actor);
-      useOps.setState({ ...next });
-      return true;
-    } catch (localErr) {
-      toast.error(localErr instanceof Error ? localErr.message : clientErrorMessage(err, "Операция отклонена"));
-      return false;
-    }
+    // Never pretend a local-only write succeeded: that was the production
+    // «сотрудник создан, после обновления исчез» failure.
+    toast.error(clientErrorMessage(err, "Операция не записана в базу"));
+    return false;
   }
 }
 
@@ -223,16 +197,6 @@ function snapshotOf(s: OpsState | Snapshot): Snapshot {
 
 function applyIncoming(s: OpsState | Snapshot, incoming: Snapshot): Snapshot {
   return applyPublicState(snapshotOf(s), incoming, USERS);
-}
-
-async function localSampleSnapshot(): Promise<Snapshot> {
-  try {
-    const snap = ensureSampleCredentials(await dbAdapter.loadSample(), USERS, createSeed);
-    if (snap.settings.sampleLoaded && !hasBlankSecrets(snap)) return snap;
-  } catch {
-    /* server fn may fail or return a stripped public snapshot */
-  }
-  return createSeed();
 }
 
 const ACTION_KEYS = [
@@ -270,6 +234,9 @@ const ACTION_KEYS = [
   "inviteStaff",
   "updateStaff",
   "deleteStaff",
+  "addBranch",
+  "updateBranch",
+  "deleteBranch",
   "updateSettings",
   "flushNotify",
   "simulatePayment",
@@ -386,23 +353,18 @@ export const useOps = create<OpsState>()(
       },
 
       loadSample: async () => {
-        const commit = (snap: Snapshot) => {
-          setToken(null);
-          applyingRemote = true;
-          set({ ...snap, session: null });
-          applyingRemote = false;
-        };
-
         try {
           const res = await api<{ state: Snapshot }>("state/sample", { method: "POST" });
           const next = ensureSampleCredentials(applyIncoming(get(), res.state), USERS, createSeed);
-          if (!next.settings.sampleLoaded || hasBlankSecrets(next)) {
-            commit(await localSampleSnapshot());
-            return;
-          }
-          commit(next);
-        } catch {
-          commit(await localSampleSnapshot());
+          setToken(null);
+          applyingRemote = true;
+          set({ ...next, session: null });
+          applyingRemote = false;
+          return { ok: true as const };
+        } catch (err) {
+          const reason = clientErrorMessage(err, "Учебные данные не загружены");
+          toast.error(reason);
+          return { ok: false as const, reason };
         }
       },
 
@@ -421,67 +383,70 @@ export const useOps = create<OpsState>()(
       setPeriod: (period) => set({ period }),
 
       resetDemo: async () => {
-        useSync.getState().setStatus("saving");
-        const snap = await dbAdapter.reset();
-        setToken(null);
-        applyingRemote = true;
-        set({ ...snap, session: null });
-        applyingRemote = false;
-        useSync.getState().setMeta({
-          source: useSync.getState().source ?? "memory",
-          updatedAt: new Date().toISOString(),
-          sales: snap.sales.length,
-        });
+        try {
+          useSync.getState().setStatus("saving");
+          const res = await api<{ state: Snapshot }>("state/reset", { method: "POST" });
+          setToken(null);
+          applyingRemote = true;
+          set({ ...applyIncoming(get(), res.state), session: null });
+          applyingRemote = false;
+          useSync.getState().setMeta({
+            source: useSync.getState().source ?? "memory",
+            updatedAt: new Date().toISOString(),
+            sales: 0,
+          });
+        } catch (err) {
+          useSync.getState().setStatus("error");
+          toast.error(clientErrorMessage(err, "Сброс недоступен"));
+        }
       },
 
       updateProfile: (patch) => {
-        void applyRemote("profile", patch, (snap, actor) => applyProfile(snap, actor, patch));
+        void applyRemote("profile", patch);
       },
 
       addWriteoff: (input) => {
-        void applyRemote("stock/writeoff", input, (snap, actor) => applyWriteoff(snap, actor, input));
+        void applyRemote("stock/writeoff", input);
       },
 
       addInvoice: (input) => {
-        void applyRemote("stock/receipt", input, (snap, actor) => applyInvoice(snap, actor, input));
+        void applyRemote("stock/receipt", input);
       },
 
       createRequestFromNeed: () => {
-        void applyRemote("procurement/request", {}, (snap, actor) => applyRequestFromNeed(snap, actor));
+        void applyRemote("procurement/request", {});
       },
 
       setRequestStatus: (id, status, supplierId) => {
-        void applyRemote("procurement/status", { id, status, supplierId }, (snap, actor) =>
-          applyRequestStatus(snap, actor, id, status, supplierId),
-        );
+        void applyRemote("procurement/status", { id, status, supplierId });
       },
 
       openShift: (input) => {
-        void applyRemote("shifts/open", input, (snap, actor) => applyOpenShift(snap, actor, input));
+        void applyRemote("shifts/open", input);
       },
 
       closeShift: (input) => {
-        void applyRemote("shifts/close", input, (snap, actor) => applyCloseShift(snap, actor, input));
+        void applyRemote("shifts/close", input);
       },
 
       topUpDebt: (debtId) => {
-        void applyRemote("debts/topup", { debtId }, (snap, actor) => applyTopUpDebt(snap, actor, { debtId }));
+        void applyRemote("debts/topup", { debtId });
       },
 
       closePeriod: (input) => {
-        void applyRemote("period/close", input, (snap, actor) => applyClosePeriod(snap, actor, input));
+        void applyRemote("period/close", input);
       },
 
       adjustPayroll: (input) => {
-        void applyRemote("staff/adjust", input, (snap, actor) => applyPayrollAdjustment(snap, actor, input));
+        void applyRemote("staff/adjust", input);
       },
 
       setPlan: (input) => {
-        void applyRemote("plan", input, (snap, actor) => applyRevenuePlan(snap, actor, input));
+        void applyRemote("plan", input);
       },
 
       addManualSale: (items, payment) => {
-        void applyRemote("sales/manual", { items, payment }, (snap, actor) => applyManualSale(snap, actor, items, payment));
+        void applyRemote("sales/manual", { items, payment });
       },
 
       importKeeperSales: async (incoming) => {
@@ -514,46 +479,50 @@ export const useOps = create<OpsState>()(
         return res.added ?? 0;
       },
 
-      upsertBanquet: (b) => {
-        void applyRemote("banquets", b, (snap, actor) => applyBanquet(snap, actor, b));
-      },
+      upsertBanquet: (b) => applyRemote("banquets", b),
 
       setBanquetStatus: (id, status) => {
-        void applyRemote("banquets/status", { id, status }, (snap, actor) => applyBanquetStatus(snap, actor, id, status));
+        void applyRemote("banquets/status", { id, status });
       },
 
       completeRevision: (lines, note) => {
-        void applyRemote("stock/revision", { lines, note }, (snap, actor) => applyRevision(snap, actor, lines, note));
+        void applyRemote("stock/revision", { lines, note });
       },
 
       transferStock: (input) => {
-        void applyRemote("stock/transfer", input, (snap, actor) => applyTransfer(snap, actor, input));
+        void applyRemote("stock/transfer", input);
       },
 
       setStopList: (input) => {
-        void applyRemote("shifts/stop-list", input, (snap, actor) => applyStopList(snap, actor, input));
+        void applyRemote("shifts/stop-list", input);
       },
 
       addExpense: (input) => {
-        void applyRemote("expenses", input, (snap, actor) => applyExpense(snap, actor, input));
+        void applyRemote("expenses", input);
       },
 
       upsertRecipe: (recipe) => {
-        void applyRemote("recipes", recipe, (snap, actor) => applyUpsertRecipe(snap, actor, recipe));
+        void applyRemote("recipes", recipe);
       },
 
       importProducts: (rows) => {
-        void applyRemote("nomenclature/import", { rows }, (snap, actor) => applyImportProducts(snap, actor, rows));
+        void applyRemote("nomenclature/import", { rows });
       },
 
-      inviteStaff: (input) => applyRemote("staff/invite", input, (snap, actor) => applyInviteStaff(snap, actor, input)),
+      inviteStaff: (input) => applyRemote("staff/invite", input),
 
-      updateStaff: (input) => applyRemote("staff/update", input, (snap, actor) => applyUpdateStaff(snap, actor, input)),
+      updateStaff: (input) => applyRemote("staff/update", input),
 
-      deleteStaff: (input) => applyRemote("staff/delete", input, (snap, actor) => applyDeleteStaff(snap, actor, input)),
+      deleteStaff: (input) => applyRemote("staff/delete", input),
+
+      addBranch: (input) => applyRemote("branches", input),
+
+      updateBranch: (input) => applyRemote("branches/update", input),
+
+      deleteBranch: (input) => applyRemote("branches/delete", input),
 
       updateSettings: (patch) => {
-        void applyRemote("settings/network", patch, (snap, actor) => applySettings(snap, actor, patch));
+        void applyRemote("settings/network", patch);
       },
 
       flushNotify: async () => {

@@ -9,6 +9,7 @@ import {
   applyBanquetStatus,
   applyClosePeriod,
   applyCloseShift,
+  applyDeleteBranch,
   applyDeleteRecipe,
   applyDeleteStaff,
   applyExpense,
@@ -32,6 +33,7 @@ import {
   applyStopList,
   applyTopUpDebt,
   applyTransfer,
+  applyUpdateBranch,
   applyUpdateStaff,
   applyUpsertRecipe,
   applyWriteoff,
@@ -52,8 +54,9 @@ import { advisor } from "../ai/advisor";
 import { abcByRevenue, compareRevisions, deviations, periodPayroll, planVsFact, priceHistory, stockCover, stopListHistory } from "../domain/analytics";
 import { isOnboarded } from "../data/empty";
 import { createSeed, USERS } from "../data/seed";
-import { can, isNetworkAdmin, isOpsLead } from "../domain/permissions";
+import { can, canLoadSample, canResetDemo, isNetworkAdmin, isOpsLead } from "../domain/permissions";
 import { ensureEnvBootstrap, readBootstrapEnv, rematerializeLoginSecrets } from "../data/bootstrap";
+import { assertResetAllowed, assertSampleLoadAllowed } from "../data/sample-guard";
 import { appendOpsLog, recordAuthAttempt, resolveStaffAuth, ACCOUNT_BLOCKED_MSG } from "../domain/ops-log";
 import {
   DB_UNAVAILABLE_MSG,
@@ -240,6 +243,8 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
         branchName: String(body.branchName ?? "Филиал 1"),
         city: String(body.city ?? ""),
         address: String(body.address ?? ""),
+        seats: body.seats != null ? Number(body.seats) : undefined,
+        halls: Array.isArray(body.halls) ? (body.halls as string[]) : typeof body.halls === "string" ? [body.halls] : undefined,
       });
       await repo.save(next);
       const loginKey = login.trim().toLowerCase();
@@ -285,8 +290,8 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
       const pin = body.pin != null ? String(body.pin) : "";
       const via = path === "auth/pin" ? "pin" : "password";
       const user = snap.users.find((u) => u.email.toLowerCase() === login);
-      const passOk = Boolean(password && user?.password === password);
-      const pinOk = Boolean(pin && user?.pin === pin);
+      const passOk = via === "password" && Boolean(password && user?.password === password);
+      const pinOk = via === "pin" && Boolean(pin && user?.pin === pin);
       const verdict = resolveStaffAuth({ user, credentialsOk: passOk || pinOk });
       const logged = recordAuthAttempt(snap, {
         login,
@@ -322,7 +327,9 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
 
     if (method === "POST" && path === "state/reset") {
       const actor = await requireActor(request);
-      if (!isNetworkAdmin(actor.role)) throw new AuthzError("Сброс недоступен");
+      const current = await repo.load();
+      assertResetAllowed(current, actor.role);
+      if (!canResetDemo(actor.role)) throw new AuthzError("Сброс недоступен");
       const state = appendOpsLog(await repo.reset(), {
         level: "warn",
         event: "api",
@@ -336,18 +343,15 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
 
     if (method === "POST" && path === "state/sample") {
       const current = await repo.load();
-      let actorId: string | undefined;
-      if (isOnboarded(current)) {
-        const actor = await requireActor(request);
-        if (!isNetworkAdmin(actor.role)) throw new AuthzError("Выгрузка примера недоступна");
-        actorId = actor.userId;
-      }
+      const actor = await requireActor(request);
+      if (!canLoadSample(actor.role)) throw new AuthzError("Учебный срез доступен только администратору-технику");
+      assertSampleLoadAllowed(current, actor.role);
       let state = repo.loadSample ? await repo.loadSample() : createSeed();
       state = appendOpsLog(state, {
         level: "info",
         event: "sample",
-        detail: "загружена учебная сеть",
-        userId: actorId,
+        detail: "загружена учебная сеть (демо-контур)",
+        userId: actor.userId,
         path,
       });
       await repo.save(state);
@@ -372,7 +376,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
 
     if (method === "POST" && path === "sales/manual") {
       return mutate(request, (snap, actor) =>
-        applyManualSale(snap, actor, (body.items as never) ?? [], (body.payment as "cash" | "card" | "qr") ?? "cash"),
+        applyManualSale(snap, actor, (body.items as never) ?? [], (body.payment as "cash" | "card" | "qr" | "transfer") ?? "cash"),
       );
     }
 
@@ -520,6 +524,12 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     if (method === "POST" && path === "branches") {
       return mutate(request, (snap, actor) => applyAddBranch(snap, actor, body as never));
     }
+    if (method === "POST" && path === "branches/update") {
+      return mutate(request, (snap, actor) => applyUpdateBranch(snap, actor, body as never));
+    }
+    if (method === "POST" && path === "branches/delete") {
+      return mutate(request, (snap, actor) => applyDeleteBranch(snap, actor, body as never));
+    }
     if (method === "POST" && path === "suppliers") {
       return mutate(request, (snap, actor) => applyAddSupplier(snap, actor, body as never));
     }
@@ -648,6 +658,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
           ["Наличные", k.cash],
           ["Карта", k.card],
           ["QR", k.qr],
+          ["Перевод", k.transfer],
           ["Себестоимость", k.cogs],
           ["Фудкост %", k.foodCost],
           ["Списания", k.writeoffs],

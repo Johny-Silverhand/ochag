@@ -12,8 +12,8 @@ import type {
   Snapshot,
   StopListReason,
   WriteoffReason,
-} from "./types";
-import { today } from "./types";
+} from "./types.ts";
+import { today } from "./types.ts";
 import type {
   NotifyEvent,
   OutboxItem,
@@ -22,7 +22,7 @@ import type {
   Product,
   Role,
   SupplierChannel,
-} from "./types";
+} from "./types.ts";
 import {
   applyMovement,
   deductSaleFromStock,
@@ -30,12 +30,14 @@ import {
   openShiftFor,
   payrollForShift,
   shiftTotals,
-} from "./engine";
-import { catalogAvgFromStock, freezeSaleCosts } from "./finance";
-import { uid } from "../utils";
-import { actorFrom, AuthzError, assertBranchScope, assertCash, assertExpenses, assertKeeper, assertSale, assertStopList, assertTransfer, assertWriteoff, type Actor, writeBranch } from "../authz/actor";
+} from "./engine.ts";
+import { catalogAvgFromStock, freezeSaleCosts } from "./finance.ts";
+import { uid } from "../utils.ts";
+import { actorFrom, AuthzError, assertBranchScope, assertCash, assertExpenses, assertKeeper, assertSale, assertStopList, assertTransfer, assertWriteoff, type Actor, writeBranch } from "../authz/actor.ts";
 import {
+  canEditBanquet,
   canInviteStaff,
+  canManageBranches,
   canOpenShift,
   canClosePeriod,
   canEditNomenclature,
@@ -44,10 +46,10 @@ import {
   isNetworkAdmin,
   isOpsLead,
   invitableRoles,
-} from "./permissions";
-import { assertPeriodOpen } from "./period";
-import { appendAudit } from "./audit";
-import { appendOpsLog } from "./ops-log";
+} from "./permissions.ts";
+import { assertPeriodOpen } from "./period.ts";
+import { appendAudit } from "./audit.ts";
+import { appendOpsLog } from "./ops-log.ts";
 
 function queueEvent(snap: Snapshot, event: NotifyEvent, title: string, body: string, to?: string): Snapshot {
   if (snap.settings.notifyEvents[event] === false) return snap;
@@ -428,6 +430,7 @@ export function applyKeeperSales(
 }
 
 export function applyBanquet(snap: Snapshot, actor: Actor, banquet: Banquet): Snapshot {
+  if (!canEditBanquet(actor.role)) throw new AuthzError("Банкет недоступен");
   assertBranchScope(actor, banquet.branchId);
   const i = snap.banquets.findIndex((x) => x.id === banquet.id);
   if (i < 0) return { ...snap, banquets: [banquet, ...snap.banquets] };
@@ -437,6 +440,7 @@ export function applyBanquet(snap: Snapshot, actor: Actor, banquet: Banquet): Sn
 }
 
 export function applyBanquetStatus(snap: Snapshot, actor: Actor, id: string, status: BanquetStatus): Snapshot {
+  if (!canEditBanquet(actor.role)) throw new AuthzError("Банкет недоступен");
   const row = snap.banquets.find((b) => b.id === id);
   if (row) assertBranchScope(actor, row.branchId);
   return { ...snap, banquets: snap.banquets.map((b) => (b.id === id ? { ...b, status } : b)) };
@@ -696,11 +700,15 @@ export function applyInviteStaff(
 ): Snapshot {
   if (!canInviteStaff(actor.role)) throw new AuthzError("Приглашение недоступно");
   if (!invitableRoles(actor.role).includes(input.role)) throw new AuthzError("Роль недоступна");
+  if (!input.name.trim()) throw new AuthzError("Имя обязательно", 400);
   const login = input.login.trim().toLowerCase();
   if (!login || input.password.length < 4) throw new AuthzError("Логин и пароль (от 4 знаков) обязательны", 400);
   if (snap.users.some((u) => u.email.toLowerCase() === login)) throw new AuthzError("Такой логин уже есть");
   if (!/^\d{4}$/.test(input.pin)) throw new AuthzError("PIN — 4 цифры");
   if (!isNetworkAdmin(input.role) && !input.branchId) throw new AuthzError("Выберите филиал");
+  if (!isNetworkAdmin(input.role) && !snap.branches.some((b) => b.id === input.branchId)) {
+    throw new AuthzError("Выберите филиал", 400);
+  }
   const user = {
     id: uid("u"),
     name: input.name.trim(),
@@ -774,6 +782,9 @@ export function applyUpdateStaff(
   }
   const nextBranch = isNetworkAdmin(nextRole) ? null : (input.branchId !== undefined ? input.branchId : target.branchId);
   if (!isNetworkAdmin(nextRole) && !nextBranch) throw new AuthzError("Выберите филиал");
+  if (!isNetworkAdmin(nextRole) && nextBranch && !snap.branches.some((b) => b.id === nextBranch)) {
+    throw new AuthzError("Выберите филиал", 400);
+  }
   const next = {
     ...target,
     name: input.name?.trim() || target.name,
@@ -1012,22 +1023,102 @@ export function applyPushSub(
   };
 }
 
+function normalizeBranchInput(input: {
+  name: string;
+  city?: string;
+  address?: string;
+  short?: string;
+  seats?: number;
+  phone?: string;
+  halls?: string[];
+}) {
+  const name = input.name.trim();
+  if (!name) throw new AuthzError("Название филиала обязательно", 400);
+  const seats = Math.max(0, Math.round(Number(input.seats) || 0)) || 40;
+  const halls = (input.halls ?? []).map((h) => h.trim()).filter(Boolean);
+  return {
+    name,
+    short: (input.short || name).trim().slice(0, 16) || name.slice(0, 16),
+    city: (input.city ?? "").trim() || "—",
+    address: (input.address ?? "").trim() || "—",
+    seats,
+    phone: (input.phone ?? "").trim(),
+    halls: halls.length ? halls : ["Основной зал"],
+  };
+}
+
 export function applyAddBranch(
   snap: Snapshot,
   actor: Actor,
-  input: { name: string; city: string; address: string; short?: string },
+  input: {
+    name: string;
+    city: string;
+    address: string;
+    short?: string;
+    seats?: number;
+    phone?: string;
+    halls?: string[];
+  },
 ): Snapshot {
-  if (!isNetworkAdmin(actor.role)) throw new AuthzError("Филиал добавляет владелец");
-  const row = {
-    id: uid("br"),
-    name: input.name,
-    short: input.short || input.name.slice(0, 16),
-    city: input.city,
-    address: input.address,
-    seats: 40,
-    phone: "",
-  };
+  if (!canManageBranches(actor.role)) throw new AuthzError("Филиал добавляет владелец или администратор-техник");
+  const fields = normalizeBranchInput(input);
+  const row = { id: uid("br"), ...fields };
   return appendAudit({ ...snap, branches: [...snap.branches, row] }, actor, "branch", "network", row.name);
+}
+
+export function applyUpdateBranch(
+  snap: Snapshot,
+  actor: Actor,
+  input: {
+    branchId: string;
+    name?: string;
+    city?: string;
+    address?: string;
+    short?: string;
+    seats?: number;
+    phone?: string;
+    halls?: string[];
+  },
+): Snapshot {
+  if (!canManageBranches(actor.role)) throw new AuthzError("Филиал меняет владелец или администратор-техник");
+  const current = snap.branches.find((b) => b.id === input.branchId);
+  if (!current) throw new AuthzError("Филиал не найден", 404);
+  const fields = normalizeBranchInput({
+    name: input.name ?? current.name,
+    city: input.city ?? current.city,
+    address: input.address ?? current.address,
+    short: input.short ?? current.short,
+    seats: input.seats ?? current.seats,
+    phone: input.phone ?? current.phone,
+    halls: input.halls ?? current.halls,
+  });
+  return appendAudit(
+    {
+      ...snap,
+      branches: snap.branches.map((b) => (b.id === current.id ? { ...b, ...fields } : b)),
+    },
+    actor,
+    "branch",
+    "network",
+    fields.name,
+  );
+}
+
+export function applyDeleteBranch(snap: Snapshot, actor: Actor, input: { branchId: string }): Snapshot {
+  if (!canManageBranches(actor.role)) throw new AuthzError("Филиал удаляет владелец или администратор-техник");
+  const current = snap.branches.find((b) => b.id === input.branchId);
+  if (!current) throw new AuthzError("Филиал не найден", 404);
+  if (snap.branches.length <= 1) throw new AuthzError("Нельзя удалить последний филиал");
+  if (snap.users.some((u) => u.branchId === current.id)) {
+    throw new AuthzError("Сначала переведите сотрудников с этого филиала");
+  }
+  return appendAudit(
+    { ...snap, branches: snap.branches.filter((b) => b.id !== current.id) },
+    actor,
+    "branch",
+    "network",
+    `удалён ${current.name}`,
+  );
 }
 
 export function applyAddSupplier(

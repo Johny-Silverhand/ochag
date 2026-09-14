@@ -41,6 +41,9 @@ export const resetOpsSnapshot = createServerFn({ method: "POST" }).handler(async
 export const loadSampleOpsSnapshot = createServerFn({ method: "POST" }).handler(async () => {
   const { getRepo } = await import("@/lib/repo");
   const repo = await getRepo();
+  const current = await repo.load();
+  const { assertSampleLoadAllowed } = await import("./sample-guard");
+  assertSampleLoadAllowed(current);
   if (repo.loadSample) return repo.loadSample();
   const { createSeed } = await import("./seed");
   const seed = createSeed();

@@ -16,7 +16,11 @@ export function normalizeSnapshot(raw: Partial<Snapshot> | null | undefined): Sn
   const recipes = raw.recipes ?? [];
 
   return {
-    branches: raw.branches ?? [],
+    branches: (raw.branches ?? []).map((b) => ({
+      ...b,
+      seats: b.seats ?? 40,
+      halls: b.halls?.length ? b.halls : ["Основной зал"],
+    })),
     users: (raw.users ?? []).map((u) => ({
       ...u,
       pin: u.pin || "",

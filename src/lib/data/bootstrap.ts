@@ -160,6 +160,7 @@ export function applyEnsureBootstrap(
         address: input.address.trim() || "—",
         seats: 40,
         phone: "",
+        halls: ["Основной зал"],
       },
     ];
   }

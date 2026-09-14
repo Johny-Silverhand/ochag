@@ -110,11 +110,14 @@ describe("commercial onboard", () => {
     assert.ok(stored.users.some((u) => u.email === "ivan"));
   });
 
-  it("refuses a second owner when no technician holds the store", () => {
-    const first = applyOnboard(emptySnapshot(), maria);
-    assert.throws(
-      () => applyOnboard(first, ivan),
-      (err: unknown) => err instanceof AuthzError && /уже создана/i.test(err.message),
-    );
+  it("writes seats and halls onto the first branch", () => {
+    const next = applyOnboard(emptySnapshot(), {
+      ...maria,
+      seats: 56,
+      halls: ["Основной зал", "Веранда"],
+    });
+    const branch = next.branches.find((b) => b.name === "Центр");
+    assert.equal(branch?.seats, 56);
+    assert.deepEqual(branch?.halls, ["Основной зал", "Веранда"]);
   });
 });

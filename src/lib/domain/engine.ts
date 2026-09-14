@@ -11,9 +11,9 @@ import type {
   Snapshot,
   StockLevel,
   StockMovement,
-} from "./types";
-import { today } from "./types";
-import { addDays } from "../format";
+} from "./types.ts";
+import { today } from "./types.ts";
+import { addDays } from "../format.ts";
 import {
   dishCost,
   dishFoodCostPct,
@@ -26,7 +26,7 @@ import {
   saleCogsFrozen,
   unitCostOf,
   weightedAvgPurchasePrice,
-} from "./finance";
+} from "./finance.ts";
 
 export function periodStart(period: Period, day = today()) {
   if (period === "today") return day;
@@ -43,7 +43,8 @@ export function salePayments(sale: Sale) {
   const cash = sale.payments.filter((p) => p.type === "cash").reduce((s, p) => s + p.amount, 0);
   const card = sale.payments.filter((p) => p.type === "card").reduce((s, p) => s + p.amount, 0);
   const qr = sale.payments.filter((p) => p.type === "qr").reduce((s, p) => s + p.amount, 0);
-  return { cash, card, qr };
+  const transfer = sale.payments.filter((p) => p.type === "transfer").reduce((s, p) => s + p.amount, 0);
+  return { cash, card, qr, transfer };
 }
 
 export function recipeCost(recipe: Recipe, products: Product[], stock: StockLevel[] = [], branchId?: string) {
@@ -79,6 +80,7 @@ export interface KpiBundle {
   cash: number;
   card: number;
   qr: number;
+  transfer: number;
   checks: number;
   avgCheck: number;
   cogs: number;
@@ -115,6 +117,7 @@ export function computeKpis(
   let cash = 0;
   let card = 0;
   let qr = 0;
+  let transfer = 0;
   let revenue = 0;
   let cogs = 0;
   for (const s of sales) {
@@ -124,6 +127,7 @@ export function computeKpis(
     cash += p.cash;
     card += p.card;
     qr += p.qr;
+    transfer += p.transfer;
   }
   const writeoffSum = writeoffs.reduce((s, m) => s + Math.abs(m.cost), 0);
   const opex = expenses.reduce((s, e) => s + e.amount, 0);
@@ -134,6 +138,7 @@ export function computeKpis(
     cash,
     card,
     qr,
+    transfer,
     checks: sales.length,
     avgCheck: sales.length ? revenue / sales.length : 0,
     cogs,
@@ -247,14 +252,16 @@ export function shiftTotals(shift: Shift, sales: Sale[]) {
   let cash = 0;
   let card = 0;
   let qr = 0;
+  let transfer = 0;
   for (const s of rows) {
     const p = salePayments(s);
     cash += p.cash;
     card += p.card;
     qr += p.qr;
+    transfer += p.transfer;
   }
   const expected = expectedCash(shift.openCash, cash);
-  return { cash, card, qr, expected, checks: rows.length, revenue: cash + card + qr };
+  return { cash, card, qr, transfer, expected, checks: rows.length, revenue: cash + card + qr + transfer };
 }
 
 export function shiftHours(shift: Shift) {

@@ -12,7 +12,7 @@ export const TODAY = today();
 
 export type Role = "tech_admin" | "owner" | "manager" | "cook" | "waiter";
 export type Unit = "kg" | "l" | "шт" | "порц";
-export type PaymentType = "cash" | "card" | "qr";
+export type PaymentType = "cash" | "card" | "qr" | "transfer";
 export type MovementType = "receipt" | "sale" | "writeoff" | "revision" | "prep" | "transfer";
 export type ShiftStatus = "open" | "closed";
 export type BanquetStatus = "inquiry" | "confirmed" | "deposit_paid" | "done" | "cancelled";
@@ -44,6 +44,8 @@ export interface Branch {
   address: string;
   seats: number;
   phone: string;
+  /** Hall names for banquet seating. Empty → «Основной зал». */
+  halls?: string[];
 }
 
 export interface StaffUser {
@@ -226,6 +228,8 @@ export interface Banquet {
   status: BanquetStatus;
   notes: string;
   waiterNotes: string;
+  grillNotes?: string;
+  kitchenNotes?: string;
   grillItems: BanquetLine[];
   kitchenItems: BanquetLine[];
   serviceItems: BanquetLine[];
@@ -474,7 +478,23 @@ export const PAYMENT_LABEL: Record<PaymentType, string> = {
   cash: "Наличные",
   card: "Карта",
   qr: "QR",
+  transfer: "Перевод",
 };
+
+export const DEFAULT_HALL = "Основной зал";
+
+export function branchHalls(branch: Pick<Branch, "halls" | "name"> | undefined | null): string[] {
+  const named = branch?.halls?.map((h) => h.trim()).filter(Boolean) ?? [];
+  return named.length ? named : [DEFAULT_HALL];
+}
+
+export function parseHalls(raw: string): string[] {
+  const items = raw
+    .split(/[,;\n]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return items.length ? items : [DEFAULT_HALL];
+}
 
 export const MOVEMENT_LABEL: Record<MovementType, string> = {
   receipt: "Приход",

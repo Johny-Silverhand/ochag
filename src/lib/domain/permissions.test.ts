@@ -7,10 +7,15 @@ import {
   canDeleteAccount,
   canEditAccount,
   canInviteStaff,
+  canLoadSample,
+  canManageBranches,
+  canResetDemo,
   canSeeAllBranches,
+  canSeeNetworkStats,
   hasAbsoluteAccess,
   invitableRoles,
   isNetworkAdmin,
+  scopedBranchId,
 } from "./permissions.ts";
 
 describe("tech_admin access", () => {
@@ -54,6 +59,20 @@ describe("tech_admin access", () => {
     assert.equal(can("waiter", "integrations"), false);
     assert.equal(canSeeAllBranches("waiter"), false);
     assert.equal(can("owner", "integrations"), true);
+  });
+
+  it("scopes cook and waiter away from network aggregates and branch CRUD", () => {
+    assert.equal(canSeeNetworkStats("cook"), false);
+    assert.equal(canSeeNetworkStats("waiter"), false);
+    assert.equal(canSeeNetworkStats("manager"), true);
+    assert.equal(canManageBranches("manager"), false);
+    assert.equal(canManageBranches("owner"), true);
+    assert.equal(canManageBranches("tech_admin"), true);
+    assert.equal(canLoadSample("owner"), false);
+    assert.equal(canLoadSample("tech_admin"), true);
+    assert.equal(canResetDemo("manager"), false);
+    assert.equal(scopedBranchId("cook", "all", "br-1"), "br-1");
+    assert.equal(scopedBranchId("owner", "all", "br-1"), "all");
   });
 
   it("lets tech_admin edit owners but not themselves", () => {

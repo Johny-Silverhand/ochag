@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useHydrated, useOps } from "@/lib/data/store";
 import { ruDate, rub } from "@/lib/format";
 import { BootScreen } from "@/components/layout/app-shell";
-import { APP_NAME, LABS_CREDIT } from "@/lib/brand";
+import { APP_NAME } from "@/lib/brand";
 
 export const Route = createFileRoute("/print/banquet/$id")({ ssr: false, component: PrintBanquet });
 
@@ -35,13 +35,13 @@ function PrintBanquet() {
       role: "Шашлычнику",
       hint: "На мангал",
       lines: banquet.grillItems,
-      notes: "",
+      notes: banquet.grillNotes,
     },
     {
       role: "На кухню",
       hint: "Холодный и горячий цех",
       lines: banquet.kitchenItems,
-      notes: banquet.notes,
+      notes: banquet.kitchenNotes,
     },
   ];
 
@@ -124,7 +124,7 @@ function PrintBanquet() {
             <span>Клиент: {banquet.clientName}</span>
             <span>Сумма {rub(banquet.total)} · залог {banquet.depositPaid ? "есть" : "нет"}</span>
           </div>
-          <p className="mt-8 text-[10px] tracking-wide text-subtle">{LABS_CREDIT}</p>
+          <p className="mt-8 text-[10px] tracking-wide text-subtle">{APP_NAME}</p>
         </section>
       ))}
     </div>

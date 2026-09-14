@@ -16,7 +16,7 @@ import { PageHeader } from "@/components/layout/page";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { Field, Input, NativeSelect } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
@@ -28,7 +28,10 @@ import { NOTIFY_EVENT_LABEL, ROLE_LABEL, WRITEOFF_LABEL, type NotifyEvent, type 
 import { usePrefs } from "@/lib/prefs";
 import { applyThemeChrome, THEMES, type ThemeId } from "@/lib/theme";
 import { cn } from "@/lib/utils";
-import { canResetDemo, isNetworkAdmin, isOpsLead } from "@/lib/domain/permissions";
+import { canLoadSample, canManageBranches, canResetDemo, isNetworkAdmin, isOpsLead } from "@/lib/domain/permissions";
+import { parseHalls } from "@/lib/domain/types";
+import { LabsFooter } from "@/components/brand/labs-credit";
+import { canEnterWithPin, canOfferPin, setPinEnabled } from "@/lib/auth/pin-gate";
 
 export const Route = createFileRoute("/_app/settings")({ component: SettingsPage });
 
@@ -264,7 +267,7 @@ function ProfilePanel() {
   }
 
   function savePassword() {
-    if (current !== user.password) {
+    if (user.password && current !== user.password) {
       toast.error("Текущий пароль не совпал");
       return;
     }
@@ -331,6 +334,7 @@ function ProfilePanel() {
           </Button>
         </div>
       </Card>
+      <PinDeviceCard login={user.email} />
       <Card>
         <h2 className="text-sm font-medium tracking-tight">Сессия</h2>
         <p className="mt-1 text-sm text-muted">Выход возвращает на экран входа. Операции остаются в базе.</p>
@@ -349,6 +353,39 @@ function ProfilePanel() {
         </div>
       </Card>
     </div>
+  );
+}
+
+function PinDeviceCard({ login }: { login: string }) {
+  const [enabled, setEnabled] = useState(() => canEnterWithPin(login));
+  const unlocked = canOfferPin(login);
+
+  return (
+    <Card>
+      <h2 className="text-sm font-medium tracking-tight">Вход по PIN с этого устройства</h2>
+      <p className="mt-1 text-sm text-muted">
+        Первый вход всегда логин и пароль. PIN — только удобный повтор на этом браузере, после вашего согласия.
+      </p>
+      <div className="mt-3 divide-y divide-border">
+        <PrefRow
+          title="Разрешить PIN"
+          hint={
+            unlocked
+              ? "На экране входа появится вкладка PIN для этого логина."
+              : "Сначала войдите паролем на этом устройстве — затем можно включить PIN."
+          }
+        >
+          <Switch
+            checked={enabled}
+            disabled={!unlocked}
+            onCheckedChange={(v) => {
+              const next = setPinEnabled(login, v);
+              setEnabled(canEnterWithPin(login, next));
+            }}
+          />
+        </PrefRow>
+      </div>
+    </Card>
   );
 }
 
@@ -507,7 +544,11 @@ function WorkspacePanel({ role }: { role: Role }) {
   const setRequireNote = usePrefs((s) => s.setRequireWriteoffNote);
   const showAdvisor = usePrefs((s) => s.showAdvisor);
   const setShowAdvisor = usePrefs((s) => s.setShowAdvisor);
+  const addBranch = useOps((s) => s.addBranch);
+  const updateBranch = useOps((s) => s.updateBranch);
+  const deleteBranch = useOps((s) => s.deleteBranch);
   const [confirmReset, setConfirmReset] = useState(false);
+  const manageBranches = canManageBranches(role);
 
   const staffCount = users.filter((u) => !isNetworkAdmin(u.role)).length;
 
@@ -551,20 +592,47 @@ function WorkspacePanel({ role }: { role: Role }) {
   return (
     <div className="space-y-4">
       <Card>
-        <h2 className="text-sm font-medium tracking-tight">Филиалы</h2>
-        <p className="mt-1 text-sm text-muted">
-          {staffCount} сотрудников · {branches.length} точки
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-medium tracking-tight">Филиалы</h2>
+            <p className="mt-1 text-sm text-muted">
+              {staffCount} сотрудников · {branches.length} точки
+              {manageBranches ? "" : " · менять точки может только владелец"}
+            </p>
+          </div>
+          {manageBranches ? <BranchEditor onSave={(input) => addBranch(input)} /> : null}
+        </div>
         <ul className="mt-4 divide-y divide-border">
           {branches.map((b) => (
             <li key={b.id} className="flex items-start justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
               <div>
                 <div className="text-sm font-medium">{b.name}</div>
                 <div className="text-xs text-muted">
-                  {b.address} · {b.seats} мест
+                  {b.address} · {b.seats} мест · {(b.halls ?? ["Основной зал"]).join(", ")}
                 </div>
               </div>
-              <span className="font-mono text-xs text-subtle tabular-nums">{b.phone}</span>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs text-subtle tabular-nums">{b.phone}</span>
+                {manageBranches ? (
+                  <>
+                    <BranchEditor
+                      branch={b}
+                      onSave={(input) => updateBranch({ branchId: b.id, ...input })}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => {
+                        void deleteBranch({ branchId: b.id }).then((ok) => {
+                          if (ok) toast.success("Филиал удалён");
+                        });
+                      }}
+                    >
+                      Удалить
+                    </Button>
+                  </>
+                ) : null}
+              </div>
             </li>
           ))}
         </ul>
@@ -630,27 +698,31 @@ function WorkspacePanel({ role }: { role: Role }) {
       <Card>
         <h2 className="text-sm font-medium tracking-tight">Данные</h2>
         <p className="mt-1 text-sm text-muted">
-          Живая сеть пустая, пока вы её не создали. Учебный срез — явная кнопка для приёмки, не основной вход.
+          Учебный срез — только для демонстрации продукта администратором-техником. На живой сети кнопка не стирает
+          логины владельцев: сервер откажет, а не подменит контур.
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           <Button type="button" variant="secondary" onClick={exportJson}>
             Выгрузить JSON
           </Button>
-          {isNetworkAdmin(role) ? (
+          {canLoadSample(role) ? (
             <Button
               type="button"
               variant="secondary"
               onClick={() => {
-                void loadSample().then(() => {
+                void loadSample().then((result) => {
+                  if (!result.ok) return;
                   logout();
                   void navigate({ to: "/" });
-                  toast.success("Учебная сеть загружена — войдите owner / ochag");
+                  toast.success("Демо-контур загружен. Это учебные данные, не боевая сеть.");
                 });
               }}
             >
-              Загрузить учебную сеть
+              Загрузить учебный срез
             </Button>
-          ) : null}
+          ) : (
+            <p className="text-xs text-muted">Загрузка примера недоступна на боевой учёте.</p>
+          )}
           {canResetDemo(role) ? (
             <Button type="button" variant="danger" onClick={() => setConfirmReset(true)}>
               Очистить сеть
@@ -777,13 +849,107 @@ function AboutPanel() {
           </div>
         </dl>
       </Card>
-      <Card className="bg-sidebar text-sidebar-fg">
-        <p className="text-sm font-medium">{NETWORK_NAME}</p>
-        <p className="mt-3 text-xs leading-relaxed text-sidebar-muted">
-          Товароучёт и управление кафе. Копирование, разбор и перепродажа контура — только с согласия правообладателя.
-        </p>
+      <Card>
+        <LabsFooter />
       </Card>
     </div>
+  );
+}
+
+function BranchEditor({
+  branch,
+  onSave,
+}: {
+  branch?: { name: string; city: string; address: string; short: string; seats: number; phone: string; halls?: string[] };
+  onSave: (input: {
+    name: string;
+    city: string;
+    address: string;
+    short?: string;
+    seats?: number;
+    phone?: string;
+    halls?: string[];
+  }) => Promise<boolean> | boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState(branch?.name ?? "");
+  const [city, setCity] = useState(branch?.city ?? "");
+  const [address, setAddress] = useState(branch?.address ?? "");
+  const [seats, setSeats] = useState(String(branch?.seats ?? 40));
+  const [halls, setHalls] = useState((branch?.halls ?? ["Основной зал"]).join(", "));
+  const [phone, setPhone] = useState(branch?.phone ?? "");
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) {
+          setName(branch?.name ?? "");
+          setCity(branch?.city ?? "");
+          setAddress(branch?.address ?? "");
+          setSeats(String(branch?.seats ?? 40));
+          setHalls((branch?.halls ?? ["Основной зал"]).join(", "));
+          setPhone(branch?.phone ?? "");
+        }
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button type="button" variant={branch ? "ghost" : "secondary"}>
+          {branch ? "Изменить" : "Добавить филиал"}
+        </Button>
+      </DialogTrigger>
+      <DialogContent title={branch ? "Филиал" : "Новый филиал"}>
+        <div className="grid gap-3">
+          <Field label="Название">
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Город">
+              <Input value={city} onChange={(e) => setCity(e.target.value)} />
+            </Field>
+            <Field label="Мест">
+              <Input value={seats} onChange={(e) => setSeats(e.target.value)} inputMode="numeric" />
+            </Field>
+          </div>
+          <Field label="Адрес">
+            <Input value={address} onChange={(e) => setAddress(e.target.value)} />
+          </Field>
+          <Field label="Залы (через запятую)">
+            <Input value={halls} onChange={(e) => setHalls(e.target.value)} placeholder="Основной зал, Веранда" />
+          </Field>
+          <Field label="Телефон">
+            <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
+          </Field>
+          <Button
+            type="button"
+            onClick={() => {
+              if (!name.trim()) {
+                toast.error("Название обязательно");
+                return;
+              }
+              void Promise.resolve(
+                onSave({
+                  name: name.trim(),
+                  city: city.trim(),
+                  address: address.trim(),
+                  seats: Number(seats) || 40,
+                  halls: parseHalls(halls),
+                  phone: phone.trim(),
+                }),
+              ).then((ok) => {
+                if (ok !== false) {
+                  toast.success(branch ? "Филиал обновлён" : "Филиал добавлен");
+                  setOpen(false);
+                }
+              });
+            }}
+          >
+            Сохранить
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
