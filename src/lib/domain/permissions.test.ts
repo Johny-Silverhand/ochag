@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   adminVisibleUsers,
   can,
+  canDeleteAccount,
   canEditAccount,
   canInviteStaff,
   canSeeAllBranches,
@@ -72,6 +73,11 @@ describe("tech_admin access", () => {
       users,
     );
     assert.equal(tech.length, 3);
+    const techScoped = adminVisibleUsers(
+      { role: "tech_admin", userId: "u-tech", homeBranchId: null, sessionBranchId: "br-1" },
+      users,
+    );
+    assert.equal(techScoped.length, 3);
     const owner = adminVisibleUsers(
       { role: "owner", userId: "u-owner", homeBranchId: null, sessionBranchId: "all" },
       users,
@@ -79,6 +85,21 @@ describe("tech_admin access", () => {
     assert.deepEqual(
       owner.map((u) => u.id).sort(),
       ["u-owner", "u-wait"],
+    );
+  });
+
+  it("lets tech_admin delete others but not self or the last remaining tech_admin", () => {
+    const users = [
+      { id: "u-tech", role: "tech_admin" as const },
+      { id: "u-owner", role: "owner" as const },
+    ];
+    const actor = { role: "tech_admin" as const, userId: "u-tech" };
+    assert.equal(canDeleteAccount(actor, { id: "u-owner", role: "owner" }, users), true);
+    assert.equal(canDeleteAccount(actor, { id: "u-tech", role: "tech_admin" }, users), false);
+    assert.equal(canDeleteAccount({ role: "owner", userId: "u-owner" }, { id: "u-tech", role: "tech_admin" }, users), false);
+    assert.equal(
+      canDeleteAccount(actor, { id: "u-tech", role: "tech_admin" }, [{ id: "u-tech", role: "tech_admin" }]),
+      false,
     );
   });
 });

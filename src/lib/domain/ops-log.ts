@@ -1,11 +1,17 @@
 import { uid } from "../utils.ts";
-import type { OpsLogEntry, OpsLogEvent, OpsLogLevel, Snapshot } from "./types.ts";
+import type { OpsLogEntry, OpsLogEvent, OpsLogLevel, Snapshot, StaffUser } from "./types.ts";
+
+export const ACCOUNT_BLOCKED_MSG = "Аккаунт заблокирован";
+export const AUTH_BAD_CREDENTIALS_MSG = "Неверный логин или PIN";
 
 export const OPS_EVENT_LABEL: Record<OpsLogEvent, string> = {
   login: "Вход",
   login_fail: "Отказ во входе",
   account_create: "Учётка создана",
   account_edit: "Учётка изменена",
+  account_block: "Учётка заблокирована",
+  account_unblock: "Учётка разблокирована",
+  account_delete: "Учётка удалена",
   settings: "Настройки",
   bootstrap: "Bootstrap",
   sample: "Учебная сеть",
@@ -36,6 +42,23 @@ export function appendOpsLog(
   return { ...snap, opsLogs: [row, ...(snap.opsLogs ?? [])].slice(0, 2000) };
 }
 
+export function isAccountBlocked(user: { disabled?: boolean } | undefined) {
+  return Boolean(user?.disabled);
+}
+
+export function resolveStaffAuth(input: {
+  user?: Pick<StaffUser, "id" | "disabled">;
+  credentialsOk: boolean;
+}): { ok: boolean; reason?: string } {
+  if (!input.user || !input.credentialsOk) {
+    return { ok: false, reason: AUTH_BAD_CREDENTIALS_MSG };
+  }
+  if (isAccountBlocked(input.user)) {
+    return { ok: false, reason: ACCOUNT_BLOCKED_MSG };
+  }
+  return { ok: true };
+}
+
 export function recordAuthAttempt(
   snap: Snapshot,
   input: {
@@ -60,8 +83,15 @@ export function recordAuthAttempt(
       reason: input.reason,
     };
   }
+  const at = new Date().toISOString();
+  const withLogin = input.user?.id
+    ? {
+        ...snap,
+        users: (snap.users ?? []).map((u) => (u.id === input.user!.id ? { ...u, lastLoginAt: at } : u)),
+      }
+    : snap;
   return {
-    snap: appendOpsLog(snap, {
+    snap: appendOpsLog(withLogin, {
       level: "info",
       event: "login",
       detail: input.via === "pin" ? "PIN" : "пароль",

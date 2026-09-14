@@ -11,7 +11,10 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   transfer: "Перемещение",
   invite: "Создана учётка",
   staff: "Изменена учётка",
-  disable: "Учётка отключена",
+  disable: "Учётка заблокирована",
+  block: "Учётка заблокирована",
+  unblock: "Учётка разблокирована",
+  delete: "Учётка удалена",
   recipe: "Техкарта",
   import: "Импорт номенклатуры",
   period_close: "Закрытие периода",
@@ -26,7 +29,17 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
 export type AuditGroup = "all" | "users" | "stock" | "ops" | "other";
 
 export function auditGroup(action: string): Exclude<AuditGroup, "all"> {
-  if (action === "invite" || action === "staff" || action === "disable" || action === "bootstrap") return "users";
+  if (
+    action === "invite" ||
+    action === "staff" ||
+    action === "disable" ||
+    action === "block" ||
+    action === "unblock" ||
+    action === "delete" ||
+    action === "bootstrap"
+  ) {
+    return "users";
+  }
   if (action === "writeoff" || action === "receipt" || action === "transfer" || action === "revision" || action === "import") {
     return "stock";
   }

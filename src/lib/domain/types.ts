@@ -59,8 +59,10 @@ export interface StaffUser {
   shiftPay: number;
   salesPercent: number;
   phone: string;
-  /** When true, password and PIN login are rejected. */
+  /** Blocked flag: password and PIN login fail with «Аккаунт заблокирован». */
   disabled?: boolean;
+  /** ISO timestamp of the last successful password or PIN login. */
+  lastLoginAt?: string;
 }
 
 export interface Session {
@@ -353,6 +355,9 @@ export type OpsLogEvent =
   | "login_fail"
   | "account_create"
   | "account_edit"
+  | "account_block"
+  | "account_unblock"
+  | "account_delete"
   | "settings"
   | "bootstrap"
   | "sample"

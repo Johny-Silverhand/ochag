@@ -22,6 +22,7 @@ export function normalizeSnapshot(raw: Partial<Snapshot> | null | undefined): Sn
       pin: u.pin || "",
       password: u.password || "",
       disabled: Boolean(u.disabled),
+      lastLoginAt: u.lastLoginAt,
     })),
     products,
     recipes,

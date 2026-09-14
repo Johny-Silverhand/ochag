@@ -40,6 +40,7 @@ import {
   canClosePeriod,
   canEditNomenclature,
   canSeeAllBranches,
+  hasAbsoluteAccess,
   isNetworkAdmin,
   isOpsLead,
   invitableRoles,
@@ -818,7 +819,7 @@ export function applyUpdateStaff(
   }
   const nextDisabled = input.disabled ?? Boolean(target.disabled);
   if (target.role === "tech_admin" && (nextDisabled || nextRole !== "tech_admin") && enabledTechAdmins(snap).length <= 1) {
-    throw new AuthzError("Нельзя отключить последнего администратора-техника");
+    throw new AuthzError("Нельзя заблокировать последнего администратора-техника");
   }
   const nextBranch = isNetworkAdmin(nextRole) ? null : (input.branchId !== undefined ? input.branchId : target.branchId);
   if (!isNetworkAdmin(nextRole) && !nextBranch) throw new AuthzError("Выберите филиал");
@@ -836,7 +837,15 @@ export function applyUpdateStaff(
     phone: input.phone ?? target.phone,
     disabled: nextDisabled,
   };
-  const action = nextDisabled && !target.disabled ? "disable" : "staff";
+  const blockedNow = nextDisabled && !target.disabled;
+  const unblockedNow = !nextDisabled && target.disabled;
+  const action = blockedNow ? "block" : unblockedNow ? "unblock" : "staff";
+  const opsEvent = blockedNow ? "account_block" : unblockedNow ? "account_unblock" : "account_edit";
+  const opsDetail = blockedNow
+    ? `${next.email} заблокирована`
+    : unblockedNow
+      ? `${next.email} разблокирована`
+      : `${next.name} · ${next.email} · ${next.role}`;
   return appendOpsLog(
     appendAudit(
       { ...snap, users: snap.users.map((u) => (u.id === target.id ? next : u)) },
@@ -846,11 +855,41 @@ export function applyUpdateStaff(
       `${next.name} / ${next.role}`,
     ),
     {
-      level: "info",
-      event: "account_edit",
-      detail: nextDisabled && !target.disabled ? `${next.email} отключена` : `${next.name} · ${next.email} · ${next.role}`,
+      level: blockedNow ? "warn" : "info",
+      event: opsEvent,
+      detail: opsDetail,
       userId: actor.userId,
       login: next.email,
+    },
+  );
+}
+
+function remainingTechAdmins(snap: Snapshot) {
+  return snap.users.filter((u) => u.role === "tech_admin");
+}
+
+export function applyDeleteStaff(snap: Snapshot, actor: Actor, input: { userId: string }): Snapshot {
+  if (!hasAbsoluteAccess(actor.role)) throw new AuthzError("Удаление учётки недоступно");
+  const target = snap.users.find((u) => u.id === input.userId);
+  if (!target) throw new AuthzError("Сотрудник не найден", 404);
+  if (target.id === actor.userId) throw new AuthzError("Нельзя удалить свою учётку");
+  if (target.role === "tech_admin" && remainingTechAdmins(snap).length <= 1) {
+    throw new AuthzError("Нельзя удалить последнего администратора-техника");
+  }
+  return appendOpsLog(
+    appendAudit(
+      { ...snap, users: snap.users.filter((u) => u.id !== target.id) },
+      actor,
+      "delete",
+      "user",
+      `${target.name} / ${target.email} / ${target.role}`,
+    ),
+    {
+      level: "warn",
+      event: "account_delete",
+      detail: `${target.email} удалена`,
+      userId: actor.userId,
+      login: target.email,
     },
   );
 }

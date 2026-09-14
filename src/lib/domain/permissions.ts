@@ -136,10 +136,24 @@ export function canEditAccount(
   return invitableRoles(actor.role).includes(target.role);
 }
 
+export function canDeleteAccount(
+  actor: { role: Role; userId: string },
+  target: { id: string; role: Role },
+  users: Array<{ id: string; role: Role }>,
+) {
+  if (!hasAbsoluteAccess(actor.role)) return false;
+  if (target.id === actor.userId) return false;
+  if (target.role === "tech_admin" && users.filter((u) => u.role === "tech_admin").length <= 1) {
+    return false;
+  }
+  return true;
+}
+
 export function adminVisibleUsers<T extends { id: string; role: Role; branchId: string | null }>(
   actor: { role: Role; userId: string; homeBranchId: string | null; sessionBranchId: string },
   users: T[],
 ): T[] {
+  if (hasAbsoluteAccess(actor.role)) return users;
   const roles = invitableRoles(actor.role);
   const allBranches = canSeeAllBranches(actor.role);
   return users.filter((u) => {
