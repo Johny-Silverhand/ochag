@@ -13,7 +13,6 @@ import { canCreateSale, canDiscountSale, canImportKeeper, canVoidSale } from "@/
 import { filterByBranch, filterPeriod, openShiftFor, periodStart, salePayments, topDishes } from "@/lib/domain/engine";
 import { PAYMENT_LABEL, today, type PaymentType, type Period, type SaleItem } from "@/lib/domain/types";
 import { pct, ruDateTime, rub } from "@/lib/format";
-import { SAMPLE_KEEPER_XML } from "@/lib/integrations/keeper-xml";
 import { isStopped } from "@/lib/domain/stoplist";
 import { isWriteScope, WRITE_SCOPE_HINT } from "@/lib/ui/scope";
 import { usePrefs } from "@/lib/prefs";
@@ -362,13 +361,6 @@ function KeeperXmlDialog({
             <Textarea value={xml} onChange={(e) => setXml(e.target.value)} rows={8} className="font-mono text-xs" />
           </Field>
           <div className="flex flex-wrap gap-2">
-            <Button
-              variant="ghost"
-              type="button"
-              onClick={() => setXml(SAMPLE_KEEPER_XML)}
-            >
-              Подставить пример
-            </Button>
             <Button
               className="flex-1"
               disabled={busy || !xml.trim()}

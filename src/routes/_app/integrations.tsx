@@ -1,6 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,10 +7,8 @@ import { Card } from "@/components/ui/card";
 import { Field, Input } from "@/components/ui/input";
 import { api } from "@/lib/api/client";
 import { getOpsStatus } from "@/lib/data/ops";
-import { useOps, useSessionUser } from "@/lib/data/store";
 import { useSync } from "@/lib/data/sync";
 import { ruDateTime } from "@/lib/format";
-import { canLoadSample, canResetDemo } from "@/lib/domain/permissions";
 
 export const Route = createFileRoute("/_app/integrations")({ component: IntegrationsPage });
 
@@ -29,13 +26,7 @@ type KeeperStatus = {
 };
 
 function IntegrationsPage() {
-  const resetDemo = useOps((s) => s.resetDemo);
-  const loadSample = useOps((s) => s.loadSample);
-  const logout = useOps((s) => s.logout);
-  const user = useSessionUser();
-  const role = user?.role ?? "owner";
   const sync = useSync();
-  const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<{
     source: "neon" | "pglite" | "memory" | "json";
     ready: boolean;
@@ -125,52 +116,6 @@ function IntegrationsPage() {
               </p>
             </div>
             <Badge tone="success">в работе</Badge>
-          </div>
-        </Card>
-
-        <Card className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="text-sm font-medium">Учебный срез</div>
-            <p className="text-sm text-muted">
-              Пример для демонстрации продукта. На живой сети загрузка не стирает логины владельцев: сервер откажет.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {canLoadSample(role) ? (
-              <Button
-                variant="secondary"
-                disabled={busy}
-                onClick={() => {
-                  setBusy(true);
-                  void loadSample()
-                    .then((result) => {
-                      if (!result.ok) return;
-                      logout();
-                      toast.success("Демо-контур загружен. Это учебные данные, не боевая сеть.");
-                    })
-                    .finally(() => setBusy(false));
-                }}
-              >
-                Загрузить пример
-              </Button>
-            ) : (
-              <p className="text-xs text-muted">Только администратор-техник, и не поверх коммерческой сети.</p>
-            )}
-            {canResetDemo(role) ? (
-              <Button
-                variant="ghost"
-                disabled={busy}
-                onClick={() => {
-                  setBusy(true);
-                  void resetDemo()
-                    .then(() => toast.success("Сеть очищена"))
-                    .catch(() => toast.error("Не удалось записать в базу"))
-                    .finally(() => setBusy(false));
-                }}
-              >
-                Очистить
-              </Button>
-            ) : null}
           </div>
         </Card>
       </div>

@@ -58,7 +58,7 @@ function RecipesPage() {
       />
       {!recipes.length ? (
         <Card>
-          <p className="text-sm text-muted">Техкарт нет. Создайте первую или загрузите учебную сеть в настройках.</p>
+          <p className="text-sm text-muted">Техкарт нет. Создайте первую.</p>
         </Card>
       ) : (
         <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,15rem)_minmax(0,1fr)]">

@@ -124,6 +124,34 @@ describe("login intro copy", () => {
     assert.equal(root.includes("/__grok/"), false);
   });
 
+  it("does not surface шаблоны / demo-template pickers in product UI source", () => {
+    const hits: string[] = [];
+    const walk = (dir: string) => {
+      for (const ent of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, ent.name);
+        if (ent.isDirectory()) {
+          walk(path);
+          continue;
+        }
+        if (!/\.(tsx|html)$/.test(ent.name)) continue;
+        const text = readFileSync(path, "utf8");
+        if (
+          /шаблон/i.test(text) ||
+          /учебн(ый|ая|ую|ой)\s+(срез|сет)/i.test(text) ||
+          /демо-контур/i.test(text) ||
+          /Подставить пример/.test(text) ||
+          /Загрузить пример/.test(text) ||
+          /Загрузить учебн/.test(text)
+        ) {
+          hits.push(path.slice(srcRoot.length + 1));
+        }
+      }
+    };
+    walk(join(srcRoot, "components"));
+    walk(join(srcRoot, "routes"));
+    assert.deepEqual(hits, []);
+  });
+
   it("does not advertise *-theta hosts in user-facing UI source", () => {
     const hits: string[] = [];
     const skip = new Set(["brand.ts", "brand.test.ts"]);
