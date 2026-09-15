@@ -100,9 +100,14 @@
   --title-hero: clamp(2rem, 1.35rem + 2.2vw, 3.1rem);
   --kpi-value: clamp(1.05rem, 0.92rem + 1.2vw, 1.5rem);
   --shell-sidebar: 13rem;
+  --tabbar-h: 3.5rem;
+  --tabbar-stack: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px));
   --dialog-max-h: min(92dvh, calc(100dvh - env(safe-area-inset-top, 0px) - 0.75rem));
 
   --glass-fill: color-mix(in srgb, var(--palette-surface) 52%, transparent);
+  --overlay-fill: var(--palette-elevated);
+  --overlay-dim: color-mix(in srgb, var(--palette-fg) 55%, transparent);
+  --overlay-blur: 16px;
   --glass-blur: 28px;
   --glass-sat: 1.5;
   --glass-stroke: color-mix(in srgb, white 36%, var(--palette-border));
@@ -374,6 +379,8 @@
 }
 
 .dark {
+  --overlay-fill: var(--palette-elevated);
+  --overlay-dim: color-mix(in srgb, black 62%, transparent);
   --glass-fill: color-mix(in srgb, var(--palette-surface) 58%, transparent);
   --glass-stroke: color-mix(in srgb, white 12%, var(--palette-border));
   --glass-shine: color-mix(in srgb, white 16%, transparent);
@@ -486,11 +493,20 @@ body {
 
 .login-card,
 .glass-panel,
-.glass-chrome,
-.glass-sheet {
+.glass-chrome {
   background: var(--glass-fill);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border: 1px solid var(--glass-stroke);
+  box-shadow: var(--glass-shadow);
+}
+
+/* Sheets/dialogs must stay readable on mobile: liquid-glass fill is too thin
+   when backdrop-filter is weak or missing, and the page bleeds through. */
+.glass-sheet {
+  background: var(--overlay-fill);
+  backdrop-filter: blur(var(--overlay-blur)) saturate(1.15);
+  -webkit-backdrop-filter: blur(var(--overlay-blur)) saturate(1.15);
   border: 1px solid var(--glass-stroke);
   box-shadow: var(--glass-shadow);
 }
@@ -543,6 +559,9 @@ body {
     -webkit-backdrop-filter: none;
     background: var(--palette-surface);
   }
+  .glass-sheet {
+    background: var(--palette-elevated);
+  }
   .glass-chrome {
     background: var(--palette-bg);
   }
@@ -559,6 +578,10 @@ html[data-motion="reduce"] .glass-sheet {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   background: var(--palette-surface);
+}
+
+html[data-motion="reduce"] .glass-sheet {
+  background: var(--palette-elevated);
 }
 
 html[data-motion="reduce"] .sheet-backdrop {
@@ -645,6 +668,7 @@ html.keyboard-open .ios-tabbar {
 }
 
 .ios-tabbar {
+  min-height: var(--tabbar-stack);
   padding-bottom: env(safe-area-inset-bottom);
   transition: transform var(--duration-sheet) var(--ease-ios);
 }
@@ -697,6 +721,9 @@ html.keyboard-open .ios-tabbar {
 }
 
 .sheet-backdrop {
+  background: var(--overlay-dim);
+  backdrop-filter: blur(8px) saturate(1.05);
+  -webkit-backdrop-filter: blur(8px) saturate(1.05);
   transition: opacity var(--duration-fast) var(--ease-out-smooth);
 }
 

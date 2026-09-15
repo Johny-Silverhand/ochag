@@ -197,7 +197,7 @@ export function AppShell() {
         </div>
       </aside>
 
-      <div className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto scroll-touch pb-[calc(5.25rem+env(safe-area-inset-bottom))] lg:col-start-2 lg:row-start-1 lg:h-full lg:overflow-hidden lg:pb-0">
+      <div className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto scroll-touch pb-[calc(var(--tabbar-stack)+1.75rem)] lg:col-start-2 lg:row-start-1 lg:h-full lg:overflow-hidden lg:pb-0">
         <header className="glass-chrome no-print sticky top-0 z-30 flex min-w-0 items-center gap-2 border-b border-border px-[var(--page-pad-x)] pt-[max(0.75rem,env(safe-area-inset-top))] pb-3">
           <div className="flex min-w-0 items-center gap-2 lg:hidden">
             <Mark className="size-8 shrink-0 text-primary" />
@@ -276,22 +276,28 @@ export function AppShell() {
         </main>
       </div>
 
-      <div className={cn("fixed inset-0 z-50 lg:hidden", moreOpen ? "pointer-events-auto" : "pointer-events-none")}>
+      <div
+        className={cn("fixed inset-x-0 top-0 z-40 lg:hidden", moreOpen ? "pointer-events-auto" : "pointer-events-none")}
+        style={{ bottom: "var(--tabbar-stack)" }}
+      >
         <button
           type="button"
-          className={cn("sheet-backdrop absolute inset-0 bg-fg/40", moreOpen ? "opacity-100" : "opacity-0")}
+          className={cn("sheet-backdrop absolute inset-0", moreOpen ? "opacity-100" : "opacity-0")}
           aria-label="Закрыть"
           tabIndex={moreOpen ? 0 : -1}
           onClick={() => setMoreOpen(false)}
         />
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="more-sheet-title"
           className={cn(
-            "sheet-up glass-sheet absolute inset-x-0 bottom-0 max-h-[var(--dialog-max-h)] overflow-y-auto rounded-t-3xl px-[var(--page-pad-x)] pt-3 pb-[calc(env(safe-area-inset-bottom)+1rem)]",
+            "sheet-up glass-sheet absolute inset-x-0 bottom-0 max-h-[min(var(--dialog-max-h),calc(100dvh-var(--tabbar-stack)-0.5rem))] overflow-y-auto rounded-t-3xl px-[var(--page-pad-x)] pt-3 pb-4",
             moreOpen ? "translate-y-0" : "translate-y-full",
           )}
         >
           <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-border-strong" />
-          <div className="mb-2 text-xs font-medium tracking-wide text-muted uppercase">Ещё</div>
+          <div id="more-sheet-title" className="mb-2 text-xs font-medium tracking-wide text-muted uppercase">Ещё</div>
           <nav className="grid grid-cols-2 gap-2">
             {moreItems.map((item) => {
               const active = pathname === item.to || pathname.startsWith(`${item.to}/`);
@@ -314,7 +320,7 @@ export function AppShell() {
       </div>
 
       <nav
-        className="ios-tabbar glass-chrome no-print fixed inset-x-0 bottom-0 z-40 grid border-t border-border lg:hidden"
+        className="ios-tabbar glass-chrome no-print fixed inset-x-0 bottom-0 z-50 grid border-t border-border lg:hidden"
         style={{ gridTemplateColumns: `repeat(${primary.length + 1}, minmax(0, 1fr))` }}
       >
         {primary.map((item) => {
