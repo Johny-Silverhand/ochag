@@ -16,14 +16,14 @@ export const TARIFFS: TariffPlan[] = [
     id: "trial",
     name: "Пробный",
     price: "0 ₽",
-    period: "30 дней",
+    period: "бесплатно",
     image: "/marketing/trial.png",
     tagline: "Один филиал, чтобы пройти контур на своих цифрах.",
     bullets: [
-      "30 дней полного доступа без счёта",
+      "Полный доступ без счёта",
       "Один филиал, роли зала и кухни",
       "Склад, техкарты, смены, XML кипера",
-      "После срока — выбрать платный тариф",
+      "Отчёты и касса как на платном тарифе",
     ],
     ai: false,
   },
@@ -82,4 +82,4 @@ export function tariffById(id: TariffId) {
   return TARIFFS.find((t) => t.id === id) ?? TARIFFS[0]!;
 }
 
-export const PAYMENT_SIM_BADGE = "Симуляция оплаты — боевой эквайринг подключит другой разработчик";
+export const PAYMENT_NOTE = "Реквизиты карты остаются на этом экране и не сохраняются.";

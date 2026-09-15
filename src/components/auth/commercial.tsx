@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/input";
-import { PAYMENT_SIM_BADGE, TARIFFS, tariffById, type TariffId, type TariffPlan } from "@/lib/billing/plans";
+import { PAYMENT_NOTE, TARIFFS, tariffById, type TariffId, type TariffPlan } from "@/lib/billing/plans";
 import { NETWORK_NAME } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 import { parseHalls } from "@/lib/domain/types";
@@ -160,7 +160,7 @@ function PlansStep({
   return (
     <div>
       <p className="mb-4 text-sm text-muted">
-        Цены-заглушки. Оплата на этом экране — симуляция: боевой эквайринг подключит другой разработчик.
+        Четыре тарифа для сети. После оплаты создадите владельца и первый филиал.
       </p>
       <div className="grid gap-3 sm:grid-cols-2">
         {TARIFFS.map((plan) => (
@@ -230,16 +230,14 @@ function CheckoutStep({
   onPay: () => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
-  const [holder, setHolder] = useState("ООО Ромашка");
-  const [card, setCard] = useState("4242 4242 4242 4242");
-  const [expiry, setExpiry] = useState("12/28");
-  const [cvc, setCvc] = useState("000");
+  const [holder, setHolder] = useState("");
+  const [card, setCard] = useState("");
+  const [expiry, setExpiry] = useState("");
+  const [cvc, setCvc] = useState("");
 
   return (
     <div className="form-narrow">
-      <Badge tone="warning" className="mb-3 whitespace-normal text-left leading-snug">
-        {PAYMENT_SIM_BADGE}
-      </Badge>
+      <p className="mb-3 text-xs leading-snug text-muted">{PAYMENT_NOTE}</p>
       <div className="mb-4 flex gap-3 rounded-2xl bg-bg p-3">
         <img src={plan.image} alt="" className="size-16 shrink-0 rounded-xl object-cover" />
         <div>
@@ -258,21 +256,21 @@ function CheckoutStep({
         }}
       >
         <Field label="Плательщик">
-          <Input value={holder} onChange={(e) => setHolder(e.target.value)} autoComplete="cc-name" />
+          <Input value={holder} onChange={(e) => setHolder(e.target.value)} autoComplete="cc-name" placeholder="ООО «Ромашка»" />
         </Field>
-        <Field label="Номер карты (не уходит на сервер)">
-          <Input value={card} onChange={(e) => setCard(e.target.value)} inputMode="numeric" autoComplete="cc-number" />
+        <Field label="Номер карты">
+          <Input value={card} onChange={(e) => setCard(e.target.value)} inputMode="numeric" autoComplete="cc-number" placeholder="•••• •••• •••• ••••" />
         </Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Срок">
-            <Input value={expiry} onChange={(e) => setExpiry(e.target.value)} autoComplete="cc-exp" />
+          <Field label="Действует до">
+            <Input value={expiry} onChange={(e) => setExpiry(e.target.value)} autoComplete="cc-exp" placeholder="ММ/ГГ" />
           </Field>
           <Field label="CVC">
-            <Input value={cvc} onChange={(e) => setCvc(e.target.value)} autoComplete="cc-csc" />
+            <Input value={cvc} onChange={(e) => setCvc(e.target.value)} autoComplete="cc-csc" placeholder="•••" />
           </Field>
         </div>
         <p className="text-xs text-muted">
-          Нажмите «Оплатить» — симуляция всегда проходит, карта никуда не отправляется.
+          Нажмите «Оплатить», чтобы подтвердить тариф. Карта на сервер не уходит.
         </p>
         <div className="flex min-w-0 gap-2">
           <Button type="button" variant="outline" className="min-w-0 flex-1" onClick={onBack} disabled={busy}>

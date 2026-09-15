@@ -78,7 +78,14 @@ describe("API security helpers", () => {
     assert.equal(headers["access-control-allow-origin"], "https://restopro-theta.vercel.app");
   });
 
-  it("does not reflect restopro.vercel.app — that host is not ours", () => {
+  it("allows the previous ochag-theta alias", () => {
+    const req = new Request("https://preview.example/api/v1/state", {
+      headers: { origin: "https://ochag-theta.vercel.app" },
+    });
+    assert.equal(securityHeaders(req)["access-control-allow-origin"], "https://ochag-theta.vercel.app");
+  });
+
+  it("does not reflect restopro.vercel.app — that host is another team", () => {
     const req = new Request("https://preview.example/api/v1/state", {
       headers: { origin: "https://restopro.vercel.app" },
     });

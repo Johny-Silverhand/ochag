@@ -54,7 +54,7 @@
 1. **Environment**
    - `OCHAG_JWT_SECRET` — Production **и** Preview, длинная случайная строка.
    - При ротации: `OCHAG_JWT_SECRET_PREVIOUS`.
-   - Опционально `OCHAG_APP_ORIGIN`, если API когда-нибудь откроют с другого origin. Боевые хосты `https://restopro-theta.vercel.app` и `https://ochag-theta.vercel.app` уже разрешены в коде.
+   - Опционально `OCHAG_APP_ORIGIN`, если API когда-нибудь откроют с другого origin. Боевой хост `https://restopro-theta.vercel.app` (и алиас `https://ochag-theta.vercel.app`) уже разрешены в коде. `https://restopro.vercel.app` — чужой проект другой команды Vercel, в CORS его нет.
 
 2. **Firewall → Custom rules** (Dashboard или `vercel firewall rules add`):
    - Rate limit по IP на `/api/v1/auth/login`, `/api/v1/auth/pin`, `/api/v1/auth/onboard`, `/api/v1/auth/bootstrap`, `/api/v1/billing/simulate` — например 30 запросов / 60 с, action `rate_limit` (не `challenge` на PIN: зал бьёт PIN без капчи).
