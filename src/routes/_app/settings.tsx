@@ -28,7 +28,7 @@ import { NOTIFY_EVENT_LABEL, ROLE_LABEL, WRITEOFF_LABEL, type NotifyEvent, type 
 import { usePrefs } from "@/lib/prefs";
 import { applyThemeChrome, THEMES, type ThemeId } from "@/lib/theme";
 import { cn } from "@/lib/utils";
-import { canLoadSample, canManageBranches, canResetDemo, isNetworkAdmin, isOpsLead } from "@/lib/domain/permissions";
+import { canManageBranches, canResetDemo, isNetworkAdmin, isOpsLead } from "@/lib/domain/permissions";
 import { parseHalls } from "@/lib/domain/types";
 import { LabsFooter } from "@/components/brand/labs-credit";
 import { canEnterWithPin, canOfferPin, setPinEnabled } from "@/lib/auth/pin-gate";
@@ -533,11 +533,8 @@ function WorkspacePanel({ role }: { role: Role }) {
   const branches = useOps((s) => s.branches);
   const users = useOps((s) => s.users);
   const resetDemo = useOps((s) => s.resetDemo);
-  const loadSample = useOps((s) => s.loadSample);
   const updateSettings = useOps((s) => s.updateSettings);
   const flushNotify = useOps((s) => s.flushNotify);
-  const logout = useOps((s) => s.logout);
-  const navigate = useNavigate();
   const snap = useOps((s) => s);
   const period = usePrefs((s) => s.defaultPeriod);
   const setDefaultPeriod = usePrefs((s) => s.setDefaultPeriod);
@@ -713,31 +710,12 @@ function WorkspacePanel({ role }: { role: Role }) {
       <Card>
         <h2 className="text-sm font-medium tracking-tight">Данные</h2>
         <p className="mt-1 text-sm text-muted">
-          Учебный срез — только для демонстрации продукта администратором-техником. На живой сети кнопка не стирает
-          логины владельцев: сервер откажет, а не подменит контур.
+          Выгрузка контура в JSON. Очистка удаляет чеки, смены и учётки — после неё сеть создаётся заново на входе.
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           <Button type="button" variant="secondary" onClick={exportJson}>
             Выгрузить JSON
           </Button>
-          {canLoadSample(role) ? (
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                void loadSample().then((result) => {
-                  if (!result.ok) return;
-                  logout();
-                  void navigate({ to: "/" });
-                  toast.success("Демо-контур загружен. Это учебные данные, не боевая сеть.");
-                });
-              }}
-            >
-              Загрузить учебный срез
-            </Button>
-          ) : (
-            <p className="text-xs text-muted">Загрузка примера недоступна на боевой учёте.</p>
-          )}
           {canResetDemo(role) ? (
             <Button type="button" variant="danger" onClick={() => setConfirmReset(true)}>
               Очистить сеть

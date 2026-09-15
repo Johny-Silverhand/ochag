@@ -20,6 +20,7 @@ import {
   acceptsHtml,
   createHeadInjector,
   isDocumentPath,
+  isGrokPlatformHost,
   isInstallQuery,
   renderInstallPageHtml,
   renderWebManifest,
@@ -80,6 +81,7 @@ export default async function grokPwaMiddleware(
   }
 
   if (
+    isGrokPlatformHost(requestHost(event)) &&
     isInstallQuery(urlWithQuery) &&
     isDocumentPath(path) &&
     acceptsHtml(event.req.headers.get("accept"))

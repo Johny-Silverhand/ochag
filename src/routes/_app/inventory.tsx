@@ -27,7 +27,7 @@ import { usePrefs } from "@/lib/prefs";
 import { isWriteScope, WRITE_SCOPE_HINT } from "@/lib/ui/scope";
 import { compareRevisions } from "@/lib/domain/analytics";
 import { api } from "@/lib/api/client";
-import { downloadBase64, downloadText } from "@/lib/reports/download";
+import { downloadBase64 } from "@/lib/reports/download";
 
 export const Route = createFileRoute("/_app/inventory")({ component: InventoryPage });
 
@@ -257,7 +257,7 @@ function RevisionCompare({ branchId }: { branchId: string }) {
   if (!cmp?.left || !cmp.right) {
     return (
       <Card>
-        <p className="text-sm text-muted">Нужны две закрытые ревизии филиала. В учебной сети они есть на Южном.</p>
+        <p className="text-sm text-muted">Нужны две закрытые ревизии филиала.</p>
       </Card>
     );
   }
@@ -502,26 +502,15 @@ function NomenclatureImport({
   onImport: (rows: Array<{ name: string; category: string; unit: Unit; minQty: number; avgCost: number }>) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [text, setText] = useState("name;category;unit;minQty;avgCost\nСвинина шея;Мясо;kg;10;420");
+  const [text, setText] = useState("");
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="secondary">Импорт номенклатуры</Button>
       </DialogTrigger>
-      <DialogContent title="Шаблон номенклатуры">
+      <DialogContent title="Импорт номенклатуры">
         <div className="space-y-3">
           <p className="text-sm text-muted">Столбцы: name;category;unit;minQty;avgCost. Единицы: kg, l, шт, порц.</p>
-          <Button
-            variant="ghost"
-            className="w-full"
-            onClick={() => {
-              void api<{ filename: string; csv: string }>("nomenclature/template", { method: "GET" })
-                .then((r) => downloadText(r.filename, r.csv, "text/csv;charset=utf-8"))
-                .catch((err) => toast.error(err instanceof Error ? err.message : "Шаблон недоступен"));
-            }}
-          >
-            Скачать шаблон CSV
-          </Button>
           <Field label="CSV">
             <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={6} className="font-mono text-xs" />
           </Field>

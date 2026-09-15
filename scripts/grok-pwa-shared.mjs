@@ -124,6 +124,48 @@ export function isInstallQuery(url) {
   return (install === "1" || install === "true") && platform === "ios";
 }
 
+function hostName(hostHeader) {
+  return String(hostHeader ?? "")
+    .split(",")[0]
+    .trim()
+    .split(":")[0]
+    .toLowerCase();
+}
+
+/**
+ * Grok preview / grok.me hosts (and local dev). Product domains like
+ * restopro-theta.vercel.app must not surface Grok App install chrome.
+ */
+export function isGrokPlatformHost(hostHeader) {
+  const host = hostName(hostHeader);
+  if (!host) return false;
+  return (
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host === "grok.me" ||
+    host === "grok.com" ||
+    host.endsWith(".grok.me") ||
+    host.endsWith(".grok.com") ||
+    host.endsWith(".grok-sandbox.com")
+  );
+}
+
+/** Empty host keeps unit-test / unknown inject behavior. */
+export function shouldInjectGrokAppChrome(hostHeader) {
+  const host = hostName(hostHeader);
+  if (!host) return true;
+  return isGrokPlatformHost(hostHeader);
+}
+
+function stripGrokAppChrome(html) {
+  return String(html)
+    .replace(/<script\b[^>]*grok-app-builder\/extensions\.js[^>]*><\/script>/gi, "")
+    .replace(/<meta\b[^>]*name=["']grok-project-id["'][^>]*>/gi, "")
+    .replace(/<meta\b[^>]*property=["']grok:app_id["'][^>]*>/gi, "")
+    .replace(/<link\b[^>]*href=["']\/__grok\/manifest\.webmanifest["'][^>]*>/gi, "")
+    .replace(/<link\b[^>]*href=["']\/__grok\/icon-180\.png["'][^>]*>/gi, "");
+}
+
 /** Paths that can carry an app document (vs assets / API / internals). */
 export function isDocumentPath(pathname) {
   const path = String(pathname ?? "");
@@ -434,10 +476,20 @@ export function injectGrokPwaHead(html, ctx = {}) {
   );
   let next = stripShareMetaTags(html);
 
+  const injectGrokChrome = shouldInjectGrokAppChrome(host);
   const missing = grokPwaHeadTags(appName)
     .filter(([key]) => {
-      if (key === "manifest") return !next.includes('href="/__grok/manifest.webmanifest"');
-      if (key === "apple-touch-icon") return !next.includes('href="/__grok/icon-180.png"');
+      if (key === "manifest") {
+        return (
+          injectGrokChrome &&
+          !next.includes('rel="manifest"') &&
+          !next.includes("rel='manifest'") &&
+          !next.includes('href="/__grok/manifest.webmanifest"')
+        );
+      }
+      if (key === "apple-touch-icon") {
+        return injectGrokChrome && !next.includes("apple-touch-icon");
+      }
       return !next.includes(`name="${key}"`);
     })
     .map(([, tag]) => tag);
@@ -447,17 +499,21 @@ export function injectGrokPwaHead(html, ctx = {}) {
     grokOgHeadTags({ host, appName, site, documentTitle, cwd }).join(""),
   );
 
-  if (!next.includes("/grok-app-builder/extensions.js")) {
-    missing.push(...grokExtensionsHeadTags(projectId));
-  } else if (projectId && !next.includes('name="grok-project-id"')) {
-    missing.push(`<meta name="grok-project-id" content="${escapeHtml(projectId)}">`);
-  }
-  if (
-    projectId &&
-    !next.includes('property="grok:app_id"') &&
-    !next.includes("property='grok:app_id'")
-  ) {
-    missing.push(`<meta property="grok:app_id" content="${escapeHtml(projectId)}">`);
+  if (injectGrokChrome) {
+    if (!next.includes("/grok-app-builder/extensions.js")) {
+      missing.push(...grokExtensionsHeadTags(projectId));
+    } else if (projectId && !next.includes('name="grok-project-id"')) {
+      missing.push(`<meta name="grok-project-id" content="${escapeHtml(projectId)}">`);
+    }
+    if (
+      projectId &&
+      !next.includes('property="grok:app_id"') &&
+      !next.includes("property='grok:app_id'")
+    ) {
+      missing.push(`<meta property="grok:app_id" content="${escapeHtml(projectId)}">`);
+    }
+  } else {
+    next = stripGrokAppChrome(next);
   }
   const creatorTags = grokXCreatorHeadTags(creator, creatorId);
   if (creatorTags.length > 0) {

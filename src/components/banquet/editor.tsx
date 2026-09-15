@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Field, Input, NativeSelect, Textarea } from "@/components/ui/input";
-import { applyBanquetKit, autoBanquetKit, emptyBanquetLine, removeBanquetLine, upsertBanquetLine } from "@/lib/domain/banquet";
+import { emptyBanquetLine, removeBanquetLine, upsertBanquetLine } from "@/lib/domain/banquet";
 import { branchHalls, type Banquet, type BanquetLine, type Branch } from "@/lib/domain/types";
 import { uid } from "@/lib/utils";
 
@@ -16,36 +16,31 @@ const SHEETS: { key: SheetKey; title: string; notesKey: "grillNotes" | "kitchenN
 ];
 
 export function draftBanquet(branchId: string, halls: string[]): Banquet {
-  const startTime = "18:00";
-  const kit = autoBanquetKit({ guests: 24, startTime });
-  return applyBanquetKit(
-    {
-      id: uid("bn"),
-      number: `БН-${Math.floor(Math.random() * 80 + 110)}`,
-      branchId,
-      title: "",
-      clientName: "",
-      clientPhone: "",
-      date: new Date().toISOString().slice(0, 10),
-      startTime,
-      endTime: "23:00",
-      guests: 24,
-      hall: halls[0] ?? "Основной зал",
-      total: 0,
-      deposit: 0,
-      depositPaid: false,
-      status: "inquiry",
-      notes: "",
-      waiterNotes: "",
-      grillNotes: "",
-      kitchenNotes: "",
-      grillItems: [],
-      kitchenItems: [],
-      serviceItems: [],
-      timeline: [],
-    },
-    kit,
-  );
+  return {
+    id: uid("bn"),
+    number: `БН-${Math.floor(Math.random() * 80 + 110)}`,
+    branchId,
+    title: "",
+    clientName: "",
+    clientPhone: "",
+    date: new Date().toISOString().slice(0, 10),
+    startTime: "18:00",
+    endTime: "23:00",
+    guests: 0,
+    hall: halls[0] ?? "Основной зал",
+    total: 0,
+    deposit: 0,
+    depositPaid: false,
+    status: "inquiry",
+    notes: "",
+    waiterNotes: "",
+    grillNotes: "",
+    kitchenNotes: "",
+    grillItems: [],
+    kitchenItems: [],
+    serviceItems: [],
+    timeline: [],
+  };
 }
 
 export function BanquetEditor({
@@ -65,11 +60,6 @@ export function BanquetEditor({
 
   function patch(partial: Partial<Banquet>) {
     setCard((prev) => ({ ...prev, ...partial }));
-  }
-
-  function recalc() {
-    setCard((prev) => applyBanquetKit(prev, autoBanquetKit({ guests: prev.guests, startTime: prev.startTime })));
-    toast.success("Пересчитали приборы, блюда и тайминг. Ручные правки можно вернуть сразу.");
   }
 
   return (
@@ -139,13 +129,6 @@ export function BanquetEditor({
             inputMode="numeric"
           />
         </Field>
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <Button type="button" variant="secondary" onClick={recalc}>
-          Пересчитать по гостям
-        </Button>
-        <p className="self-center text-xs text-muted">Автоцифры можно править вручную в каждом листе.</p>
       </div>
 
       <div className="grid gap-3 lg:grid-cols-3">
