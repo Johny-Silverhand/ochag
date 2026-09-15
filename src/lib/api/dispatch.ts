@@ -322,7 +322,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
       if (!canSelfOnboard(snap)) {
         throw new AuthzError(
           showCommercialEntry(snap)
-            ? "Сначала выберите тариф и подтвердите оплату (симуляция)."
+            ? "Сначала выберите тариф и подтвердите оплату."
             : "Сеть уже создана",
           showCommercialEntry(snap) ? 403 : 400,
         );

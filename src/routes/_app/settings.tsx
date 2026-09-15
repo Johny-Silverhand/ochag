@@ -797,8 +797,7 @@ function IphonePanel() {
           система его не пустит — это ограничение Apple, не контура.
         </p>
         <p className="mt-2 text-sm text-muted">
-          Нативная оболочка Xcode уже собрана: тот же контур внутри WKWebView. Из неё архивируется настоящий .ipa, когда
-          появится команда разработчика.
+          Нативная оболочка Xcode уже в архиве: тот же контур внутри WKWebView. Из неё собирается подписанный .ipa.
         </p>
         <a
           href="/downloads/Ochag-iOS-Xcode.zip"

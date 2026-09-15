@@ -3,6 +3,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
+import { PAYMENT_NOTE, TARIFFS } from "./billing/plans.ts";
 import { APP_HOST, APP_NAME, APP_ORIGIN, APP_ORIGIN_ALIASES, APP_SLUG, DOWNLOAD_SLUG, LOGIN_INTRO, NETWORK_NAME, VENDOR_LINE, VENDOR_URL } from "./brand.ts";
 
 const srcRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -88,5 +89,25 @@ describe("login intro copy", () => {
     walk(join(srcRoot, "routes"));
     walk(join(srcRoot, "lib"));
     assert.deepEqual(hits, []);
+  });
+
+  it("keeps onboarding and tariff copy free of stub and deadline theater", () => {
+    const trial = TARIFFS.find((t) => t.id === "trial")!;
+    assert.equal(trial.name, "Пробный");
+    assert.equal(trial.period, "бесплатно");
+    assert.equal(trial.bullets.some((b) => /срок|30 дней/.test(b)), false);
+    assert.match(PAYMENT_NOTE, /не сохраняются/);
+    assert.equal(/заглушк|симуляц|дедлайн|другой разработчик/i.test(PAYMENT_NOTE), false);
+
+    const surfaces = [
+      readFileSync(join(srcRoot, "components/auth/commercial.tsx"), "utf8"),
+      readFileSync(join(srcRoot, "routes/index.tsx"), "utf8"),
+      readFileSync(join(srcRoot, "routes/_app/settings.tsx"), "utf8"),
+      readFileSync(join(srcRoot, "lib/billing/plans.ts"), "utf8"),
+      readFileSync(join(srcRoot, "lib/api/dispatch.ts"), "utf8"),
+    ];
+    for (const text of surfaces) {
+      assert.equal(/заглушк|Цены-заглушк|симуляц|После срока|другой разработчик|команда разработчик|дедлайн/i.test(text), false);
+    }
   });
 });
