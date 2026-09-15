@@ -6,15 +6,14 @@ export const APP_SLUG = "ochag";
 export const NETWORK_NAME = "RestoPro";
 /** User-visible download / PDF file prefix. */
 export const DOWNLOAD_SLUG = "restopro";
-/** Public production origin. Legacy `*-theta` hosts stay in APP_ORIGIN_ALIASES. */
-export const APP_ORIGIN = "https://restopro.vercel.app";
-export const APP_HOST = "restopro.vercel.app";
-/** Same deployment; previous Vercel aliases until DNS/project rename catches up. */
-export const APP_ORIGIN_ALIASES = [
-  APP_ORIGIN,
-  "https://restopro-theta.vercel.app",
-  "https://ochag-theta.vercel.app",
-] as const;
+/**
+ * Public production origin on our Vercel project.
+ * `restopro.vercel.app` belongs to another team — do not add it to CORS/Android.
+ */
+export const APP_ORIGIN = "https://restopro-theta.vercel.app";
+export const APP_HOST = "restopro-theta.vercel.app";
+/** Same deployment, previous project alias still live. */
+export const APP_ORIGIN_ALIASES = [APP_ORIGIN, "https://ochag-theta.vercel.app"] as const;
 export const LOGIN_INTRO =
   "Контур склада, смен и прибыли для кафе и ресторана. Свой логин — форма ниже; если открываете сеть впервые, загляните в «Что это?».";
 export const VENDOR_NAME = "Arach.tech";

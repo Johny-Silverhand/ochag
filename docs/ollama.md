@@ -40,7 +40,7 @@ ollama pull llama3.2
 
 ## Сайт на Vercel, Ollama в кафе
 
-`https://restopro.vercel.app` не достучится до `127.0.0.1` кухни. Нужен **публичный HTTPS до машины с Ollama**:
+`https://restopro-theta.vercel.app` не достучится до `127.0.0.1` кухни. Нужен **публичный HTTPS до машины с Ollama**:
 
 - Cloudflare Tunnel (`cloudflared`) на `11434`
 - Tailscale Funnel

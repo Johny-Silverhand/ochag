@@ -13,14 +13,13 @@ describe("login intro copy", () => {
     assert.equal(APP_NAME, "RestoPro");
     assert.equal(NETWORK_NAME, "RestoPro");
     assert.equal(DOWNLOAD_SLUG, "restopro");
-    assert.equal(APP_ORIGIN, "https://restopro.vercel.app");
-    assert.equal(APP_HOST, "restopro.vercel.app");
+    assert.equal(APP_ORIGIN, "https://restopro-theta.vercel.app");
+    assert.equal(APP_HOST, "restopro-theta.vercel.app");
     assert.deepEqual(APP_ORIGIN_ALIASES, [
-      "https://restopro.vercel.app",
       "https://restopro-theta.vercel.app",
       "https://ochag-theta.vercel.app",
     ]);
-    assert.equal(APP_ORIGIN.includes("-theta"), false);
+    assert.equal(APP_ORIGIN_ALIASES.includes("https://restopro.vercel.app"), false);
     assert.equal(APP_NAME.includes("Очаг"), false);
     assert.equal(NETWORK_NAME.includes("Очаг"), false);
   });

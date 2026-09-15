@@ -1,7 +1,8 @@
 # RestoPro — Android WebView shell
 
 Single-activity Android app (`labs.victimok.ochag`) that loads
-`https://restopro.vercel.app` in a WebView. Display name: **RestoPro**.
+`https://restopro-theta.vercel.app` in a WebView. Display name: **RestoPro**.
+`restopro.vercel.app` belongs to another Vercel team — do not load it.
 
 ## Build
 
