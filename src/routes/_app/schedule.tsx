@@ -28,7 +28,7 @@ function PeriodPage() {
   return (
     <div>
       <PageHeader
-        eyebrow="Этап 2"
+        eyebrow="Период"
         title="Закрытие периода"
         description="После ревизии период запирается. Правка задним числом отклоняется с объяснением — не тихим отказом."
       />

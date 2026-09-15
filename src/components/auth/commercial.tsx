@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/input";
 import { PAYMENT_NOTE, TARIFFS, tariffById, type TariffId, type TariffPlan } from "@/lib/billing/plans";
-import { NETWORK_NAME } from "@/lib/brand";
+import { MARKETING_HERO_SRC, NETWORK_NAME } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 import { parseHalls } from "@/lib/domain/types";
 
@@ -77,7 +77,7 @@ export function CommercialGate({
       <Dialog open={about} onOpenChange={setAbout}>
         <DialogContent title={`Что такое ${NETWORK_NAME}`} className="max-w-2xl">
           <img
-            src="/marketing/hero.png"
+            src={MARKETING_HERO_SRC}
             alt="Планшет с контуром RestoPro на фоне кафе"
             className="mb-4 aspect-video w-full rounded-2xl object-cover"
           />

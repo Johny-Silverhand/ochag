@@ -1,6 +1,8 @@
 export const APP_NAME = "RestoPro";
 export const APP_VERSION = "1.0";
-export const APP_BUILD = "2026.09.14";
+export const APP_BUILD = "2026.09.15";
+/** Login explainer banner. Query busts clients that still hold the previous wordmark JPEG. */
+export const MARKETING_HERO_SRC = `/marketing/hero-restopro.png?v=${APP_BUILD}`;
 /** Internal slug: Neon `ops_state` id, env prefixes (`OCHAG_*`), repo. Do not rename — that would reset live data. */
 export const APP_SLUG = "ochag";
 export const NETWORK_NAME = "RestoPro";

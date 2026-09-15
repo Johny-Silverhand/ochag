@@ -32,7 +32,7 @@ function JournalsPage() {
   return (
     <div>
       <PageHeader
-        eyebrow="Этап 2"
+        eyebrow="Аудит"
         title="Журналы"
         description="Аудит действий и история стоп-листа за месяц. Журналы ХАССП и претензий зала — вне этого контура."
       />
