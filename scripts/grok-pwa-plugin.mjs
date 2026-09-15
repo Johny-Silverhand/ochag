@@ -12,6 +12,7 @@ import {
   createHeadInjector,
   injectGrokPwaHead,
   isDocumentPath,
+  isGrokPlatformHost,
   isInstallQuery,
   readOgSite,
   renderInstallPageHtml,
@@ -64,7 +65,12 @@ function serveGrokPwa(middlewares, cwd = process.cwd()) {
       return;
     }
 
-    if (isInstallQuery(rawUrl) && isDocumentPath(pathOnly) && acceptsHtml(req.headers.accept)) {
+    if (
+      isGrokPlatformHost(requestHost(req)) &&
+      isInstallQuery(rawUrl) &&
+      isDocumentPath(pathOnly) &&
+      acceptsHtml(req.headers.accept)
+    ) {
       try {
         sendHtml(res, renderInstallPage(requestHost(req), rawUrl));
       } catch (err) {

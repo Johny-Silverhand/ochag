@@ -10,10 +10,12 @@ import {
   grokXCreatorHeadTags,
   injectGrokPwaHead as injectGrokPwaHeadRaw,
   isDocumentPath,
+  isGrokPlatformHost,
   isInstallQuery,
   publicAppHost,
   renderWebManifest,
   resolveOgCardAsset,
+  shouldInjectGrokAppChrome,
   snapshotOgIdentity,
   stripInstallParams,
 } from "./grok-pwa-shared.mjs";
@@ -519,5 +521,42 @@ test("vite plugin bakes og identity as a virtual module", () => {
   const plugin = readFileSync(join(TEMPLATE_ROOT, "scripts/grok-pwa-plugin.mjs"), "utf8");
   assert.match(plugin, /virtual:grok-og-identity/);
   assert.match(plugin, /snapshotOgIdentity/);
+});
+
+test("product hosts do not get Grok App install chrome", () => {
+  assert.equal(isGrokPlatformHost("restopro-theta.vercel.app"), false);
+  assert.equal(shouldInjectGrokAppChrome("restopro-theta.vercel.app"), false);
+  assert.equal(isGrokPlatformHost("wild-race.grok.me"), true);
+  assert.equal(shouldInjectGrokAppChrome(""), true);
+
+  const product = injectGrokPwaHead("<html><head><title>RestoPro</title></head></html>", {
+    host: "restopro-theta.vercel.app",
+    site: { title: "RestoPro" },
+  });
+  assert.doesNotMatch(product, /grok-app-builder\/extensions\.js/);
+  assert.doesNotMatch(product, /\/__grok\/manifest\.webmanifest/);
+  assert.doesNotMatch(product, /\/__grok\/icon-180\.png/);
+  assert.doesNotMatch(product, /grok:app_id/);
+
+  const baked = injectGrokPwaHead(
+    '<html><head><script src="https://grok.com/grok-app-builder/extensions.js" defer></script><link rel="manifest" href="/__grok/manifest.webmanifest"></head></html>',
+    { host: "restopro-theta.vercel.app", site: { title: "RestoPro" } },
+  );
+  assert.doesNotMatch(baked, /grok-app-builder\/extensions\.js/);
+  assert.doesNotMatch(baked, /\/__grok\/manifest\.webmanifest/);
+
+  const preview = injectGrokPwaHead("<html><head></head></html>", {
+    host: "demo.grok-sandbox.com",
+  });
+  assert.match(preview, /grok-app-builder\/extensions\.js/);
+});
+
+test("keeps an existing product manifest instead of injecting /__grok/", () => {
+  const out = injectGrokPwaHead(
+    '<html><head><link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/apple-touch-icon.png"></head></html>',
+  );
+  assert.match(out, /href="\/manifest\.webmanifest"/);
+  assert.equal(out.includes('href="/__grok/manifest.webmanifest"'), false);
+  assert.equal(out.includes('href="/__grok/icon-180.png"'), false);
 });
 

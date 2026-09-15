@@ -97,6 +97,33 @@ describe("login intro copy", () => {
     assert.deepEqual(hits, []);
   });
 
+  it("does not surface Grok App chrome in product UI source", () => {
+    const hits: string[] = [];
+    const skip = new Set(["brand.test.ts"]);
+    const walk = (dir: string) => {
+      for (const ent of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, ent.name);
+        if (ent.isDirectory()) {
+          walk(path);
+          continue;
+        }
+        if (!/\.(tsx|ts|html)$/.test(ent.name) || skip.has(ent.name)) continue;
+        if (ent.name.endsWith(".test.ts")) continue;
+        const text = readFileSync(path, "utf8");
+        if (/Grok App|\?install=1|\/__grok\/|Created with Grok|Continue with Grok/.test(text)) {
+          hits.push(path.slice(srcRoot.length + 1));
+        }
+      }
+    };
+    walk(join(srcRoot, "components"));
+    walk(join(srcRoot, "routes"));
+    walk(join(srcRoot, "lib"));
+    assert.deepEqual(hits, []);
+    const root = readFileSync(join(srcRoot, "routes/__root.tsx"), "utf8");
+    assert.match(root, /href: "\/manifest\.webmanifest"/);
+    assert.equal(root.includes("/__grok/"), false);
+  });
+
   it("does not advertise *-theta hosts in user-facing UI source", () => {
     const hits: string[] = [];
     const skip = new Set(["brand.ts", "brand.test.ts"]);
