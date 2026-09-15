@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 import { PAYMENT_NOTE, TARIFFS } from "./billing/plans.ts";
-import { APP_HOST, APP_NAME, APP_ORIGIN, APP_ORIGIN_ALIASES, APP_SLUG, DOWNLOAD_SLUG, LOGIN_INTRO, NETWORK_NAME, VENDOR_LINE, VENDOR_URL } from "./brand.ts";
+import { APP_HOST, APP_NAME, APP_ORIGIN, APP_ORIGIN_ALIASES, APP_SLUG, DOWNLOAD_SLUG, LOGIN_INTRO, MARKETING_HERO_SRC, NETWORK_NAME, VENDOR_LINE, VENDOR_URL } from "./brand.ts";
 
 const srcRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -43,6 +43,14 @@ describe("login intro copy", () => {
     assert.match(boot, /\{APP_NAME\}/);
     assert.equal(boot.includes("ОЧАГ"), false);
     assert.equal(boot.includes("Очаг"), false);
+  });
+
+  it("cache-busts the login explainer hero as RestoPro", () => {
+    assert.match(MARKETING_HERO_SRC, /^\/marketing\/hero-restopro\.png\?v=/);
+    assert.equal(MARKETING_HERO_SRC.includes("Очаг"), false);
+    const commercial = readFileSync(join(srcRoot, "components/auth/commercial.tsx"), "utf8");
+    assert.match(commercial, /MARKETING_HERO_SRC/);
+    assert.equal(commercial.includes("/marketing/hero.png"), false);
   });
 
   it("does not show demo stage framing in user-facing UI source", () => {
