@@ -56,6 +56,9 @@ export function applyHouseholdMove(
   const signed = input.type === "receive" ? qtyAbs : input.type === "consume" ? -qtyAbs : Number(input.qty);
   const unitCost = Number(input.cost) || 0;
   const photos = sanitizePhotos(input.photos);
+  if (input.type === "receive" && photos.length < 1) {
+    throw new AuthzError("Для прихода хозтовара нужен хотя бы один снимок в фотоотчёте", 400);
+  }
   const mov = {
     id: uid("hm"),
     at: new Date().toISOString(),

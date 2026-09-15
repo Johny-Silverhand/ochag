@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { defaultSettings, type Snapshot } from "../domain/types.ts";
-import { applySimulatePayment, billingPublic, canSelfOnboard, showCommercialEntry, snapshotForCommercialOnboard } from "./simulate.ts";
+import { applySimulatePayment, billingPublic, canSelfOnboard, canSubmitNetworkApplication, showCommercialEntry, snapshotForCommercialOnboard } from "./simulate.ts";
 import { isTariffId } from "./plans.ts";
 
 function blank(): Snapshot {
@@ -39,17 +39,18 @@ function blank(): Snapshot {
 }
 
 describe("billing simulation", () => {
-  it("records tariff and unlocks self-onboard only after simulated pay", () => {
+  it("records tariff but never auto-unlocks self-onboard", () => {
     const empty = blank();
     assert.equal(canSelfOnboard(empty), false);
     assert.equal(isTariffId("mid"), true);
     const paid = applySimulatePayment(empty, "mid", "2026-09-14T12:00:00.000Z");
     assert.equal(paid.settings.tariff, "mid");
     assert.equal(paid.settings.paymentSimulatedAt, "2026-09-14T12:00:00.000Z");
-    assert.equal(canSelfOnboard(paid), true);
+    assert.equal(canSelfOnboard(paid), false);
     const pub = billingPublic(paid);
     assert.equal(pub.paid, true);
-    assert.equal(pub.canCreateNetwork, true);
+    assert.equal(pub.canCreateNetwork, false);
+    assert.equal(pub.canSubmitApplication, true);
     assert.equal(pub.onboarded, false);
   });
 
@@ -95,9 +96,10 @@ describe("billing simulation", () => {
     assert.equal(canSelfOnboard(picked), false);
     const paid = applySimulatePayment(picked, "basic", "2026-09-14T13:00:00.000Z");
     assert.equal(showCommercialEntry(paid), true);
-    assert.equal(canSelfOnboard(paid), true);
+    assert.equal(canSelfOnboard(paid), false);
     assert.equal(billingPublic(paid).commercialEntry, true);
-    assert.equal(billingPublic(paid).canCreateNetwork, true);
+    assert.equal(billingPublic(paid).canCreateNetwork, false);
+    assert.equal(billingPublic(paid).canSubmitApplication, true);
     assert.equal(billingPublic(paid).onboarded, false);
   });
 
@@ -132,10 +134,11 @@ describe("billing simulation", () => {
     ];
     leftover.products = [{ id: "p-1", name: "Мука", category: "Бакалея", unit: "kg", minQty: 1, avgCost: 1 }];
     assert.equal(showCommercialEntry(leftover), true);
-    assert.equal(canSelfOnboard(leftover), true);
+    assert.equal(canSelfOnboard(leftover), false);
+    assert.equal(canSubmitNetworkApplication(leftover), true);
     const pub = billingPublic(leftover);
     assert.equal(pub.commercialEntry, true);
-    assert.equal(pub.canCreateNetwork, true);
+    assert.equal(pub.canCreateNetwork, false);
     const cleared = snapshotForCommercialOnboard(leftover);
     assert.equal(cleared.users.length, 0);
     assert.equal(cleared.products.length, 0);
@@ -176,7 +179,7 @@ describe("billing simulation", () => {
       },
     ];
     assert.equal(showCommercialEntry(leftover), true);
-    assert.equal(canSelfOnboard(leftover), true);
+    assert.equal(canSelfOnboard(leftover), false);
     const cleared = snapshotForCommercialOnboard(leftover);
     assert.equal(cleared.users.length, 1);
     assert.equal(cleared.users[0]?.role, "tech_admin");
@@ -248,7 +251,7 @@ describe("billing simulation", () => {
       },
     ];
     assert.equal(showCommercialEntry(paid), true);
-    assert.equal(canSelfOnboard(paid), true);
+    assert.equal(canSelfOnboard(paid), false);
     const same = snapshotForCommercialOnboard(paid);
     assert.equal(same.users.length, 2);
     assert.equal(same.users.find((u) => u.role === "tech_admin")?.password, "secret");

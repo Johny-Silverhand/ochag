@@ -199,15 +199,18 @@ export function AppShell() {
 
       <div className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto scroll-touch pb-[calc(var(--tabbar-stack)+1.75rem)] lg:col-start-2 lg:row-start-1 lg:h-full lg:overflow-hidden lg:pb-0">
         <header className="glass-chrome no-print sticky top-0 z-30 flex min-w-0 items-center gap-2 border-b border-border px-[var(--page-pad-x)] pt-[max(0.75rem,env(safe-area-inset-top))] pb-3">
-          <div className="flex min-w-0 items-center gap-2 lg:hidden">
-            <Mark className="size-8 shrink-0 text-primary" />
-            <span className="truncate text-sm font-semibold tracking-wide">{NETWORK_NAME}</span>
-          </div>
+          <Link
+            to="/dashboard"
+            aria-label="Обзор"
+            className="flex size-11 shrink-0 items-center justify-center rounded-2xl text-primary lg:hidden"
+          >
+            <Mark className="size-8" />
+          </Link>
           <div className="ml-auto flex min-w-0 items-center gap-1.5 sm:gap-2">
             {hasAbsoluteAccess(role) ? <OwnerContourSelect value={session?.actingOwnerId ?? ""} onChange={setOwner} /> : null}
             {canSeeAllBranches(role) ? (
               <NativeSelect
-                className="h-11 w-[min(9rem,38vw)] min-w-0 shrink bg-surface sm:w-52 md:h-10"
+                className="h-11 w-[min(9.5rem,42vw)] min-w-0 shrink rounded-full bg-surface px-4 sm:w-52 md:h-10"
                 value={session?.branchId ?? "all"}
                 onChange={(e) => setBranch(e.target.value)}
               >
@@ -219,39 +222,13 @@ export function AppShell() {
                 ))}
               </NativeSelect>
             ) : (
-              <span className="truncate text-sm text-muted">{branch?.name}</span>
+              <span className="truncate rounded-full bg-surface px-3 py-2 text-sm text-muted">{branch?.name}</span>
             )}
-            <span
-              className={cn(
-                "hidden items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] sm:inline-flex",
-                sync.status === "error" ? "bg-danger-soft text-danger" : "bg-surface text-muted",
-              )}
-              title={
-                sync.status === "error"
-                  ? sync.error || "База временно недоступна"
-                  : sync.source === "neon"
-                    ? "Neon Postgres"
-                    : sync.source === "json"
-                      ? "JSON store"
-                      : "Память / контур"
-              }
-            >
-              <span
-                className={cn(
-                  "size-1.5 rounded-full",
-                  sync.status === "saving"
-                    ? "bg-warning"
-                    : sync.status === "error"
-                      ? "bg-danger"
-                      : "bg-success",
-                )}
-              />
-              {sync.status === "saving"
-                ? "запись"
-                : sync.status === "error"
-                  ? "нет базы"
-                  : "база"}
-            </span>
+            {sync.status === "error" ? (
+              <span className="hidden items-center rounded-full bg-danger-soft px-2.5 py-1 text-[11px] text-danger sm:inline-flex" title={sync.error || "База временно недоступна"}>
+                нет связи
+              </span>
+            ) : null}
             <ThemeSwitcher />
             <Link
               to="/settings"
@@ -292,7 +269,7 @@ export function AppShell() {
           aria-modal="true"
           aria-labelledby="more-sheet-title"
           className={cn(
-            "sheet-up glass-sheet absolute inset-x-0 bottom-0 max-h-[min(var(--dialog-max-h),calc(100dvh-var(--tabbar-stack)-0.5rem))] overflow-y-auto rounded-t-3xl px-[var(--page-pad-x)] pt-3 pb-4",
+            "sheet-up glass-sheet absolute inset-x-0 bottom-0 max-h-[min(var(--dialog-max-h),calc(100dvh-var(--tabbar-stack)-0.5rem))] overflow-y-auto rounded-t-3xl bg-elevated px-[var(--page-pad-x)] pt-3 pb-4",
             moreOpen ? "translate-y-0" : "translate-y-full",
           )}
         >
@@ -320,7 +297,7 @@ export function AppShell() {
       </div>
 
       <nav
-        className="ios-tabbar glass-chrome no-print fixed inset-x-0 bottom-0 z-50 grid border-t border-border lg:hidden"
+        className="ios-tabbar glass-chrome no-print fixed z-50 grid lg:hidden"
         style={{ gridTemplateColumns: `repeat(${primary.length + 1}, minmax(0, 1fr))` }}
       >
         {primary.map((item) => {

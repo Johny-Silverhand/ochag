@@ -3,7 +3,9 @@ import type {
   BanquetStatus,
   DocumentPhoto,
   ExpenseKind,
+  Hall,
   InvoiceLine,
+  MoneySource,
   PaymentType,
   PurchaseLine,
   RequestStatus,
@@ -14,7 +16,8 @@ import type {
   StopListReason,
   WriteoffReason,
 } from "./types.ts";
-import { today } from "./types.ts";
+import { today, syncHalls, hallDetailsOf, DEFAULT_HALL } from "./types.ts";
+import { assertPeriodOpen } from "./period.ts";
 import type {
   NotifyEvent,
   OutboxItem,
@@ -52,7 +55,7 @@ import { sanitizePhotos } from "./photos.ts";
 import { attachIncidentals } from "./incidentals.ts";
 import { appendAudit } from "./audit.ts";
 import { appendOpsLog } from "./ops-log.ts";
-import { assertPeriodOpen } from "./period.ts";
+import { cashDiscrepancy, parseMoney } from "./money.ts";
 import { assertReadableBranch, resolveOwnerForWrite } from "./tenancy.ts";
 
 function queueEvent(snap: Snapshot, event: NotifyEvent, title: string, body: string, to?: string): Snapshot {
@@ -241,7 +244,7 @@ export function applyOpenShift(
     startList: string[];
     topUpDebtId?: string;
     topUpAmount?: number;
-    incidentals?: Array<{ title: string; amount: number; paidFromTill?: boolean; note?: string }>;
+    incidentals?: Array<{ title: string; amount: number; paidFromTill?: boolean; paidFrom?: MoneySource; note?: string }>;
   },
 ): Snapshot {
   if (!canOpenShift(actor.role)) throw new AuthzError("Открытие смены недоступно");
@@ -293,7 +296,7 @@ export function applyCloseShift(
   input: {
     closeCash: number;
     note?: string;
-    incidentals?: Array<{ title: string; amount: number; paidFromTill?: boolean; note?: string }>;
+    incidentals?: Array<{ title: string; amount: number; paidFromTill?: boolean; paidFrom?: MoneySource; note?: string }>;
   },
 ): Snapshot {
   assertCash(actor);
@@ -304,7 +307,8 @@ export function applyCloseShift(
   const withInc = attachIncidentals(snap, actor, open.id, input.incidentals, "close");
   const shift = withInc.shifts.find((s) => s.id === open.id) ?? open;
   const totals = shiftTotals(shift, withInc.sales);
-  const discrepancy = Math.round(input.closeCash - totals.expected);
+  const counted = parseMoney(input.closeCash);
+  const discrepancy = Math.round(cashDiscrepancy(counted, totals.expected));
   const pays = payrollForShift(shift, withInc.sales, withInc.users);
   let next: Snapshot = {
     ...withInc,
@@ -315,7 +319,7 @@ export function applyCloseShift(
             status: "closed" as const,
             closedAt: new Date().toISOString(),
             closedBy: actor.userId,
-            closeCash: input.closeCash,
+            closeCash: counted,
             expectedCash: totals.expected,
             discrepancy,
             cashTotal: totals.cash,
@@ -351,12 +355,12 @@ export function applyCloseShift(
           date: today(),
           amount: Math.abs(discrepancy),
           status: "open",
-          note: "Недостача к утреннему довнесению",
+          note: "Недосдача к утреннему довнесению",
         },
         ...next.debts,
       ],
     };
-    next = queueEvent(next, "debt", "Вечерний долг", `Недостача ${Math.abs(discrepancy)} ₽. Довнести на следующей смене.`);
+    next = queueEvent(next, "debt", "Вечерний долг", `Недосдача ${Math.abs(discrepancy)} ₽. Довнести на следующей смене.`);
   }
   if (discrepancy !== 0) {
     next = queueEvent(next, "cash_mismatch", "Расхождение кассы", `Ожидалось ${totals.expected} ₽, факт ${input.closeCash} ₽.`);
@@ -461,6 +465,21 @@ export function applyBanquet(snap: Snapshot, actor: Actor, banquet: Banquet): Sn
   const next = snap.banquets.slice();
   next[i] = banquet;
   return { ...snap, banquets: next };
+}
+
+export function applyDeleteBanquet(snap: Snapshot, actor: Actor, id: string): Snapshot {
+  if (!canEditBanquet(actor.role)) throw new AuthzError("Банкет недоступен");
+  const row = snap.banquets.find((b) => b.id === id);
+  if (!row) throw new AuthzError("Банкет не найден", 404);
+  assertReadableBranch(snap, actor, row.branchId);
+  return appendAudit(
+    { ...snap, banquets: snap.banquets.filter((b) => b.id !== id) },
+    actor,
+    "banquet_delete",
+    "banquet",
+    `${row.title} · ${row.date}`,
+    row.branchId,
+  );
 }
 
 export function applyBanquetStatus(snap: Snapshot, actor: Actor, id: string, status: BanquetStatus): Snapshot {
@@ -617,21 +636,32 @@ export function applyExpense(
   const branchId = writeBranch(actor);
   assertReadableBranch(snap, actor, branchId);
   assertPeriodOpen(snap, branchId, input.date ?? today());
-  return {
-    ...snap,
-    expenses: [
-      {
-        id: uid("exp"),
-        branchId,
-        date: input.date ?? today(),
-        category: input.category,
-        amount: input.amount,
-        note: input.note ?? "",
-        kind: input.kind,
-      },
-      ...snap.expenses,
-    ],
-  };
+  const category = (input.category ?? "").trim();
+  const amount = Number(input.amount) || 0;
+  if (!category) throw new AuthzError("Укажите статью расхода", 400);
+  if (amount <= 0) throw new AuthzError("Сумма должна быть больше нуля", 400);
+  return appendAudit(
+    {
+      ...snap,
+      expenses: [
+        {
+          id: uid("exp"),
+          branchId,
+          date: input.date ?? today(),
+          category,
+          amount,
+          note: input.note ?? "",
+          kind: input.kind,
+        },
+        ...snap.expenses,
+      ],
+    },
+    actor,
+    "expense",
+    "expense",
+    `${category} ${amount} ₽`,
+    branchId,
+  );
 }
 
 export function applyProfile(
@@ -673,6 +703,11 @@ export { applyUpsertHouseholdItem, applyHouseholdMove } from "./household.ts";
 export { applyShiftIncidental } from "./incidentals.ts";
 export { applyVoidSale, applyDiscountSale } from "./sales-adjust.ts";
 export { applyOnboard } from "./onboard.ts";
+export {
+  applySubmitNetworkApplication,
+  applyApproveNetworkApplication,
+  applyRejectNetworkApplication,
+} from "./applications.ts";
 
 export function applyBootstrap(
   snap: Snapshot,
@@ -934,14 +969,38 @@ export function applyImportProducts(
   if (!canEditNomenclature(actor.role)) throw new AuthzError("Номенклатура недоступна");
   const products = [...snap.products];
   for (const row of rows) {
-    const existing = products.find((p) => p.name.toLowerCase() === row.name.toLowerCase());
+    const name = row.name.trim();
+    if (!name) continue;
+    const existing = products.find((p) => p.name.toLowerCase() === name.toLowerCase());
     if (existing) {
-      Object.assign(existing, row);
+      Object.assign(existing, { ...row, name });
     } else {
-      products.push({ id: uid("prd"), ...row });
+      products.push({ id: uid("prd"), ...row, name });
     }
   }
   return appendAudit({ ...snap, products }, actor, "import", "product", `${rows.length} позиций`);
+}
+
+export function applyCreateProduct(
+  snap: Snapshot,
+  actor: Actor,
+  input: { name: string; category?: string; unit?: Product["unit"]; minQty?: number; avgCost?: number },
+): Snapshot {
+  if (!canEditNomenclature(actor.role)) throw new AuthzError("Номенклатура недоступна");
+  const name = input.name.trim();
+  if (!name) throw new AuthzError("Название продукции обязательно", 400);
+  if (snap.products.some((p) => p.name.toLowerCase() === name.toLowerCase())) {
+    throw new AuthzError("Такая позиция уже есть в номенклатуре", 400);
+  }
+  const product: Product = {
+    id: uid("prd"),
+    name,
+    category: (input.category ?? "Прочее").trim() || "Прочее",
+    unit: input.unit ?? "kg",
+    minQty: Number(input.minQty) || 0,
+    avgCost: Number(input.avgCost) || 0,
+  };
+  return appendAudit({ ...snap, products: [product, ...snap.products] }, actor, "product", "product", product.name);
 }
 
 export function applyClosePeriod(
@@ -1040,17 +1099,21 @@ export function applyPayrollAdjustment(
 export function applyAccrueMonthlyPremiums(
   snap: Snapshot,
   actor: Actor,
-  input: { month?: string } = {},
+  input: { month?: string; userIds?: string[] } = {},
 ): Snapshot {
   if (!canInviteStaff(actor.role)) throw new AuthzError("Начисление премий недоступно");
   const month = (input.month ?? today()).slice(0, 7);
   const branchId = writeBranch(actor);
+  const picked = new Set((input.userIds ?? []).filter(Boolean));
+  if (!picked.size) throw new AuthzError("Выберите сотрудников для премии", 400);
   let next = snap;
+  let count = 0;
   for (const u of snap.users) {
+    if (!picked.has(u.id)) continue;
     const premium = u.monthlyPremium ?? 0;
     if (premium <= 0) continue;
     if (isNetworkAdmin(u.role)) continue;
-    if (u.branchId && u.branchId !== branchId) continue;
+    if (u.branchId && u.branchId !== branchId && branchId) continue;
     const already = next.payrollAdjustments.some(
       (a) => a.userId === u.id && a.kind === "premium" && a.date.startsWith(month) && a.note.includes("месячная"),
     );
@@ -1062,7 +1125,9 @@ export function applyAccrueMonthlyPremiums(
       note: `месячная премия ${month}`,
       date: `${month}-01`,
     });
+    count += 1;
   }
+  if (!count) throw new AuthzError("Нет ставки премии у выбранных сотрудников, либо уже начислено в этом месяце", 400);
   return next;
 }
 
@@ -1124,6 +1189,18 @@ export function applyPushSub(
   };
 }
 
+function scaleHallCapacities(details: Hall[], seats: number): Hall[] {
+  const list = details.length ? details : [{ id: "hall_main", name: DEFAULT_HALL, capacity: 0 }];
+  const n = list.length;
+  const total = Math.max(0, Math.round(Number(seats) || 0));
+  const share = Math.floor(total / n);
+  const rem = total - share * n;
+  return list.map((h, i) => ({
+    ...h,
+    capacity: share + (i === n - 1 ? rem : 0),
+  }));
+}
+
 function normalizeBranchInput(input: {
   name: string;
   city?: string;
@@ -1132,19 +1209,33 @@ function normalizeBranchInput(input: {
   seats?: number;
   phone?: string;
   halls?: string[];
+  hallDetails?: Hall[];
 }) {
   const name = input.name.trim();
   if (!name) throw new AuthzError("Название филиала обязательно", 400);
-  const seats = Math.max(0, Math.round(Number(input.seats) || 0)) || 40;
-  const halls = (input.halls ?? []).map((h) => h.trim()).filter(Boolean);
+  const fromDetails = input.hallDetails?.length
+    ? syncHalls(input.hallDetails)
+    : syncHalls(
+        (input.halls ?? []).map((h, i) => ({
+          id: `hall_${i}`,
+          name: h,
+          capacity: 0,
+        })),
+      );
+  const detailSum = fromDetails.hallDetails.reduce((s, h) => s + h.capacity, 0);
+  const requested = Math.max(0, Math.round(Number(input.seats) || 0));
+  const keepCapacities = Boolean(input.hallDetails?.length) && detailSum > 0 && (requested === 0 || requested === detailSum);
+  const seats = keepCapacities ? detailSum : requested || detailSum || 40;
+  const hallDetails = keepCapacities ? fromDetails.hallDetails : scaleHallCapacities(fromDetails.hallDetails, seats);
   return {
     name,
     short: (input.short || name).trim().slice(0, 16) || name.slice(0, 16),
     city: (input.city ?? "").trim() || "—",
     address: (input.address ?? "").trim() || "—",
-    seats,
+    seats: hallDetails.reduce((s, h) => s + h.capacity, 0) || seats,
     phone: (input.phone ?? "").trim(),
-    halls: halls.length ? halls : ["Основной зал"],
+    halls: hallDetails.map((h) => h.name),
+    hallDetails,
   };
 }
 
@@ -1159,6 +1250,7 @@ export function applyAddBranch(
     seats?: number;
     phone?: string;
     halls?: string[];
+    hallDetails?: Hall[];
   },
 ): Snapshot {
   if (!canManageBranches(actor.role)) throw new AuthzError("Филиал добавляет владелец или администратор-техник");
@@ -1180,11 +1272,22 @@ export function applyUpdateBranch(
     seats?: number;
     phone?: string;
     halls?: string[];
+    hallDetails?: Hall[];
   },
 ): Snapshot {
   if (!canManageBranches(actor.role)) throw new AuthzError("Филиал меняет владелец или администратор-техник");
   const current = snap.branches.find((b) => b.id === input.branchId);
   if (!current) throw new AuthzError("Филиал не найден", 404);
+  const nextDetails = input.hallDetails
+    ?? (input.halls
+      ? input.halls.map((name, i) => ({
+          id: current.hallDetails?.[i]?.id ?? `hall_${i}`,
+          name,
+          capacity: 0,
+        }))
+      : input.seats != null
+        ? scaleHallCapacities(hallDetailsOf(current), input.seats)
+        : current.hallDetails);
   const fields = normalizeBranchInput({
     name: input.name ?? current.name,
     city: input.city ?? current.city,
@@ -1193,6 +1296,7 @@ export function applyUpdateBranch(
     seats: input.seats ?? current.seats,
     phone: input.phone ?? current.phone,
     halls: input.halls ?? current.halls,
+    hallDetails: nextDetails,
   });
   return appendAudit(
     {

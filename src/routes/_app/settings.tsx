@@ -29,7 +29,7 @@ import { usePrefs } from "@/lib/prefs";
 import { applyThemeChrome, THEMES, type ThemeId } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { canManageBranches, canResetDemo, isNetworkAdmin, isOpsLead } from "@/lib/domain/permissions";
-import { parseHalls } from "@/lib/domain/types";
+import { hallDetailsOf, syncHalls, type Hall } from "@/lib/domain/types";
 import { LabsFooter } from "@/components/brand/labs-credit";
 import { canEnterWithPin, canOfferPin, setPinEnabled } from "@/lib/auth/pin-gate";
 import { DeviceSessionsCard } from "@/components/settings/device-sessions";
@@ -109,6 +109,8 @@ function AppearancePanel() {
   const setMotion = usePrefs((s) => s.setMotion);
   const typeScale = usePrefs((s) => s.typeScale);
   const setTypeScale = usePrefs((s) => s.setTypeScale);
+  const glassOff = usePrefs((s) => s.glassOff);
+  const setGlassOff = usePrefs((s) => s.setGlassOff);
   const light = THEMES.filter((t) => t.group === "light");
   const dark = THEMES.filter((t) => t.group === "dark");
 
@@ -130,6 +132,9 @@ function AppearancePanel() {
           </PrefRow>
           <PrefRow title="Крупный шрифт" hint="Для зала при плохом свете и для кухни с планшета на стене.">
             <Switch checked={typeScale === "large"} onCheckedChange={(v) => setTypeScale(v ? "large" : "normal")} />
+          </PrefRow>
+          <PrefRow title="Убрать Glassmorphism" hint="Отключает матовое стекло на панелях, шапке и нижней навигации. Остаётся плотная подложка.">
+            <Switch checked={glassOff} onCheckedChange={setGlassOff} />
           </PrefRow>
           <PrefRow title="Меньше анимации" hint="Отключает появление блоков, если мешает на слабом устройстве.">
             <Switch checked={motion === "reduce"} onCheckedChange={(v) => setMotion(v ? "reduce" : "system")} />
@@ -607,7 +612,7 @@ function WorkspacePanel({ role }: { role: Role }) {
               <div>
                 <div className="text-sm font-medium">{b.name}</div>
                 <div className="text-xs text-muted">
-                  {b.address} · {b.seats} мест · {(b.halls ?? ["Основной зал"]).join(", ")}
+                  {b.address} · {b.seats} мест · {hallDetailsOf(b).map((h) => `${h.name} (${h.capacity})`).join(", ")}
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -852,7 +857,16 @@ function BranchEditor({
   branch,
   onSave,
 }: {
-  branch?: { name: string; city: string; address: string; short: string; seats: number; phone: string; halls?: string[] };
+  branch?: {
+    name: string;
+    city: string;
+    address: string;
+    short: string;
+    seats: number;
+    phone: string;
+    halls?: string[];
+    hallDetails?: Hall[];
+  };
   onSave: (input: {
     name: string;
     city: string;
@@ -861,29 +875,30 @@ function BranchEditor({
     seats?: number;
     phone?: string;
     halls?: string[];
+    hallDetails?: Hall[];
   }) => Promise<boolean> | boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(branch?.name ?? "");
   const [city, setCity] = useState(branch?.city ?? "");
   const [address, setAddress] = useState(branch?.address ?? "");
-  const [seats, setSeats] = useState(String(branch?.seats ?? 40));
-  const [halls, setHalls] = useState((branch?.halls ?? ["Основной зал"]).join(", "));
   const [phone, setPhone] = useState(branch?.phone ?? "");
+  const [halls, setHalls] = useState<Hall[]>(hallDetailsOf(branch));
+
+  function reset() {
+    setName(branch?.name ?? "");
+    setCity(branch?.city ?? "");
+    setAddress(branch?.address ?? "");
+    setPhone(branch?.phone ?? "");
+    setHalls(hallDetailsOf(branch));
+  }
 
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (next) {
-          setName(branch?.name ?? "");
-          setCity(branch?.city ?? "");
-          setAddress(branch?.address ?? "");
-          setSeats(String(branch?.seats ?? 40));
-          setHalls((branch?.halls ?? ["Основной зал"]).join(", "));
-          setPhone(branch?.phone ?? "");
-        }
+        if (next) reset();
       }}
     >
       <DialogTrigger asChild>
@@ -891,28 +906,61 @@ function BranchEditor({
           {branch ? "Изменить" : "Добавить филиал"}
         </Button>
       </DialogTrigger>
-      <DialogContent title={branch ? "Филиал" : "Новый филиал"}>
+      <DialogContent title={branch ? "Филиал и залы" : "Новый филиал"}>
         <div className="grid gap-3">
           <Field label="Название">
             <Input value={name} onChange={(e) => setName(e.target.value)} />
           </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Город">
-              <Input value={city} onChange={(e) => setCity(e.target.value)} />
-            </Field>
-            <Field label="Мест">
-              <Input value={seats} onChange={(e) => setSeats(e.target.value)} inputMode="numeric" />
-            </Field>
-          </div>
+          <Field label="Город">
+            <Input value={city} onChange={(e) => setCity(e.target.value)} />
+          </Field>
           <Field label="Адрес">
             <Input value={address} onChange={(e) => setAddress(e.target.value)} />
-          </Field>
-          <Field label="Залы (через запятую)">
-            <Input value={halls} onChange={(e) => setHalls(e.target.value)} placeholder="Основной зал, Веранда" />
           </Field>
           <Field label="Телефон">
             <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
           </Field>
+          <div>
+            <div className="mb-1.5 text-xs font-medium text-muted">Залы филиала</div>
+            <ul className="space-y-2">
+              {halls.map((h, i) => (
+                <li key={h.id || i} className="grid grid-cols-[minmax(0,1fr)_5.5rem_auto] gap-2">
+                  <Input
+                    value={h.name}
+                    onChange={(e) =>
+                      setHalls((prev) => prev.map((row, idx) => (idx === i ? { ...row, name: e.target.value } : row)))
+                    }
+                    placeholder="Название зала"
+                  />
+                  <Input
+                    value={String(h.capacity || "")}
+                    onChange={(e) =>
+                      setHalls((prev) =>
+                        prev.map((row, idx) => (idx === i ? { ...row, capacity: Number(e.target.value) || 0 } : row)),
+                      )
+                    }
+                    inputMode="numeric"
+                    placeholder="мест"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setHalls((prev) => prev.filter((_, idx) => idx !== i))}
+                  >
+                    ×
+                  </Button>
+                </li>
+              ))}
+            </ul>
+            <Button
+              type="button"
+              variant="outline"
+              className="mt-2"
+              onClick={() => setHalls((prev) => [...prev, { id: `hall_${prev.length}`, name: "", capacity: 20 }])}
+            >
+              Добавить зал
+            </Button>
+          </div>
           <Button
             type="button"
             onClick={() => {
@@ -920,13 +968,15 @@ function BranchEditor({
                 toast.error("Название обязательно");
                 return;
               }
+              const synced = syncHalls(halls);
               void Promise.resolve(
                 onSave({
                   name: name.trim(),
                   city: city.trim(),
                   address: address.trim(),
-                  seats: Number(seats) || 40,
-                  halls: parseHalls(halls),
+                  seats: synced.seats,
+                  halls: synced.halls,
+                  hallDetails: synced.hallDetails,
                   phone: phone.trim(),
                 }),
               ).then((ok) => {

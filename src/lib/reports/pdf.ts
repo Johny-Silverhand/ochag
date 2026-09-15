@@ -1,37 +1,41 @@
 import PDFDocument from "pdfkit";
-import { readFileSync, existsSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { APP_NAME, DOWNLOAD_SLUG } from "../brand.ts";
 import type { Banquet, Snapshot } from "../domain/types";
+import { cyrillicFontBytes } from "./font-bytes.ts";
+import { transferLegs } from "./transfer-legs.ts";
 
-function fontPath() {
-  const here = dirname(fileURLToPath(import.meta.url));
-  const candidates = [
-    join(here, "fonts/DejaVuSans.ttf"),
-    join(process.cwd(), "src/lib/reports/fonts/DejaVuSans.ttf"),
-    join(process.cwd(), "public/fonts/DejaVuSans.ttf"),
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-  ];
-  return candidates.find((p) => existsSync(p));
+function fontBuffer(): Buffer | null {
+  return cyrillicFontBytes();
 }
 
 function pdfBuffer(draw: (doc: PDFKit.PDFDocument) => void): Promise<Buffer> {
   return new Promise((resolve, reject) => {
+    const font = fontBuffer();
+    if (!font) {
+      reject(new Error("Нет шрифта с кириллицей — PDF сейчас собрать нельзя. Обратитесь к администратору контура."));
+      return;
+    }
     const doc = new PDFDocument({ size: "A4", margin: 48 });
     const chunks: Buffer[] = [];
     doc.on("data", (c) => chunks.push(c as Buffer));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
-    doc.on("error", reject);
-    const font = fontPath();
-    if (!font) {
-      reject(new Error("Нет DejaVuSans.ttf — PDF с кириллицей недоступен. Положите шрифт в public/fonts."));
-      return;
+    doc.on("error", (err) => {
+      reject(new Error(`Не удалось собрать PDF: ${err instanceof Error ? err.message : "ошибка записи"}`));
+    });
+    try {
+      const fontName = "DejaVuSans";
+      doc.registerFont(fontName, font);
+      doc.font(fontName);
+      draw(doc);
+      doc.end();
+    } catch (err) {
+      reject(new Error(`Не удалось собрать PDF: ${err instanceof Error ? err.message : "ошибка шрифта"}`));
     }
-    doc.font(font);
-    draw(doc);
-    doc.end();
   });
+}
+
+export function pdfBytesToBase64(bytes: Buffer | Uint8Array) {
+  return Buffer.from(bytes).toString("base64");
 }
 
 export async function banquetPdf(snap: Snapshot, banquet: Banquet, sheet: "guest" | "waiter" | "cook" | "grill") {
@@ -98,14 +102,6 @@ export async function revisionActPdf(snap: Snapshot, revisionId: string) {
     }
   });
   return { filename: `${DOWNLOAD_SLUG}-revision-${rev.date}.pdf`, bytes: buf };
-}
-
-export function transferLegs(snap: Snapshot, refId: string) {
-  const id = refId.trim();
-  if (!id) throw new Error("Накладная не найдена");
-  const legs = snap.movements.filter((m) => m.type === "transfer" && m.refId === id);
-  if (!legs.length) throw new Error("Накладная не найдена");
-  return legs.slice().sort((a, b) => a.qty - b.qty);
 }
 
 export async function transferWaybillPdf(snap: Snapshot, refId: string) {

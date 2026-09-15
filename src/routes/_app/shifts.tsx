@@ -10,12 +10,13 @@ import { useOps, useSessionUser } from "@/lib/data/store";
 import { openShiftFor, shiftTotals, staffName } from "@/lib/domain/engine";
 import { activeStopList, startList } from "@/lib/domain/stoplist";
 import { canManageStopList } from "@/lib/domain/permissions";
-import { STOP_REASON_LABEL, type StopListReason } from "@/lib/domain/types";
+import { STOP_REASON_LABEL, MONEY_SOURCE_LABEL, type MoneySource, type StopListReason } from "@/lib/domain/types";
 import { ruDate, ruDateTime, rub, signedRub } from "@/lib/format";
 import { notify } from "@/lib/notify";
 import { isWriteScope, WRITE_SCOPE_HINT } from "@/lib/ui/scope";
 import { toast } from "sonner";
 import { canOpenShift } from "@/lib/domain/permissions";
+import { cashDiscrepancy, parseMoney } from "@/lib/domain/money";
 
 export const Route = createFileRoute("/_app/shifts")({ component: ShiftsPage });
 
@@ -51,9 +52,11 @@ function ShiftsPage() {
               expected={totals?.expected ?? 0}
               incidentalCash={totals?.incidentalCash ?? 0}
               onClose={(closeCash, note, incidentals) => {
-                closeShift({ closeCash, note, incidentals });
-                notify("shift", "Смена закрыта, зарплата начислена");
-                notify("payroll", "ФОТ начислен по ставке и проценту");
+                void closeShift({ closeCash, note, incidentals }).then((ok) => {
+                  if (!ok) return;
+                  notify("shift", "Смена закрыта, зарплата начислена");
+                  notify("payroll", "ФОТ начислен по ставке и проценту");
+                });
               }}
             />
           ) : canOpenShift(user.role) ? (
@@ -103,7 +106,7 @@ function ShiftsPage() {
               {current.incidentals.map((i) => (
                 <li key={i.id}>
                   {i.title} · {rub(i.amount)}
-                  {i.paidFromTill ? " · из кассы" : ""}
+                  {i.paidFrom ? ` · ${MONEY_SOURCE_LABEL[i.paidFrom]}` : i.paidFromTill ? " · из кассы" : " · безнал"}
                 </li>
               ))}
             </ul>
@@ -111,8 +114,9 @@ function ShiftsPage() {
           {canWrite ? (
             <IncidentalDialog
               onSave={(input) => {
-                addShiftIncidental(input);
-                toast.success("Побочный расход записан в смену");
+                void addShiftIncidental(input).then((ok) => {
+                  if (ok) toast.success("Побочный расход записан в смену");
+                });
               }}
             />
           ) : null}
@@ -127,19 +131,19 @@ function ShiftsPage() {
         <Card className="mb-4">
           <div className="text-sm font-medium">Открытые долги кассы</div>
           <p className="mt-1 text-xs text-muted">
-            Недостача не режет выручку и прибыль дня. Довнесение увеличивает размен открытой смены, не создаёт чек.
+            Недосдача не режет выручку и прибыль дня. Довнесение увеличивает размен открытой смены, не создаёт чек.
           </p>
           <ul className="mt-3 space-y-2 text-sm">
             {snap.debts
-              .filter((d) => d.branchId === branchId)
-              .slice(0, 6)
+              .filter((d) => d.status === "open" && (!branchId || d.branchId === branchId))
               .map((d) => (
                 <li key={d.id} className="flex flex-wrap items-center justify-between gap-2">
                   <span>
                     {ruDate(d.date)} · {rub(d.amount)}
-                    <span className="ml-2 text-xs text-muted">{d.status === "open" ? "открыт" : "довнесён"}</span>
+                    <span className="ml-2 text-xs text-muted">открыт</span>
+                    {d.note ? <span className="block text-xs text-muted">{d.note}</span> : null}
                   </span>
-                  {d.status === "open" && current ? (
+                  {current ? (
                     <Button
                       size="sm"
                       variant="secondary"
@@ -153,8 +157,8 @@ function ShiftsPage() {
                   ) : null}
                 </li>
               ))}
-            {snap.debts.filter((d) => d.branchId === branchId).length === 0 ? (
-              <li className="text-muted">Долгов нет.</li>
+            {snap.debts.filter((d) => d.status === "open" && (!branchId || d.branchId === branchId)).length === 0 ? (
+              <li className="text-muted">Открытых долгов кассы нет.</li>
             ) : null}
           </ul>
         </Card>
@@ -269,7 +273,7 @@ function OpenDialog({
     staffIds: string[],
     startList: string[],
     topUp?: { id: string; amount: number },
-    incidentals?: Array<{ title: string; amount: number; paidFromTill?: boolean; note?: string }>,
+    incidentals?: Array<{ title: string; amount: number; paidFromTill?: boolean; paidFrom?: MoneySource; note?: string }>,
   ) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -279,6 +283,7 @@ function OpenDialog({
   const [topUpId, setTopUpId] = useState(debts[0]?.id ?? "");
   const [incTitle, setIncTitle] = useState("");
   const [incAmount, setIncAmount] = useState("");
+  const [incFrom, setIncFrom] = useState<MoneySource>("cash");
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -347,6 +352,7 @@ function OpenDialog({
           <Field label="Сумма расхода, ₽">
             <Input value={incAmount} onChange={(e) => setIncAmount(e.target.value)} inputMode="numeric" />
           </Field>
+          <MoneySourceField value={incFrom} onChange={setIncFrom} />
           <Button
             className="w-full"
             onClick={() => {
@@ -355,11 +361,12 @@ function OpenDialog({
                 return;
               }
               const debt = debts.find((d) => d.id === topUpId);
+              const amount = parseMoney(incAmount);
               const incidentals =
-                incTitle.trim() && Number(incAmount) > 0
-                  ? [{ title: incTitle.trim(), amount: Number(incAmount), paidFromTill: true }]
+                incTitle.trim() && amount > 0
+                  ? [{ title: incTitle.trim(), amount, paidFrom: incFrom, paidFromTill: incFrom === "cash" }]
                   : [];
-              onOpen(Number(cash) || 0, ids, startIds, debt ? { id: debt.id, amount: debt.amount } : undefined, incidentals);
+              onOpen(parseMoney(cash), ids, startIds, debt ? { id: debt.id, amount: debt.amount } : undefined, incidentals);
               setOpen(false);
             }}
           >
@@ -381,16 +388,18 @@ function CloseDialog({
   onClose: (
     cash: number,
     note?: string,
-    incidentals?: Array<{ title: string; amount: number; paidFromTill?: boolean; note?: string }>,
+    incidentals?: Array<{ title: string; amount: number; paidFromTill?: boolean; paidFrom?: MoneySource; note?: string }>,
   ) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [cash, setCash] = useState(String(Math.round(expected)));
+  const [cash, setCash] = useState("");
   const [note, setNote] = useState("");
   const [incTitle, setIncTitle] = useState("");
   const [incAmount, setIncAmount] = useState("");
-  const extra = Number(incAmount) || 0;
-  const disc = (Number(cash) || 0) - (expected - extra);
+  const [incFrom, setIncFrom] = useState<MoneySource>("cash");
+  const extra = incFrom === "cash" ? parseMoney(incAmount) : 0;
+  const counted = parseMoney(cash);
+  const disc = cashDiscrepancy(counted, expected, extra);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -399,17 +408,19 @@ function CloseDialog({
       <DialogContent title="Закрытие кассы">
         <p className="mb-3 text-sm text-muted">
           По чекам в ящике должно быть <span className="font-mono text-fg">{rub(expected)}</span>
-          {incidentalCash ? ` (уже учтено побочных ${rub(incidentalCash)})` : ""}.
+          {incidentalCash ? ` (уже учтено побочных из кассы ${rub(incidentalCash)})` : ""}.
+          Расхождение = пересчёт − ожидаемая касса. Если касса в минусе, плюс значит «в ящике больше, чем по книгам».
         </p>
         <Field label="Пересчёт наличных, ₽">
-          <Input value={cash} onChange={(e) => setCash(e.target.value)} inputMode="numeric" />
+          <Input value={cash} onChange={(e) => setCash(e.target.value)} inputMode="numeric" placeholder="Сколько в ящике" />
         </Field>
         <Field label="Ещё расход на закрытие" className="mt-3">
           <Input value={incTitle} onChange={(e) => setIncTitle(e.target.value)} placeholder="Певица, такси, декор…" />
         </Field>
-        <Field label="Сумма, ₽" className="mt-3">
+        <Field label="Сумма расхода, ₽" className="mt-3">
           <Input value={incAmount} onChange={(e) => setIncAmount(e.target.value)} inputMode="numeric" />
         </Field>
+        <MoneySourceField value={incFrom} onChange={setIncFrom} />
         <p className={`mt-2 text-sm ${disc === 0 ? "text-success" : "text-danger"}`}>Расхождение: {signedRub(disc)}</p>
         <Field label="Комментарий" className="mt-3">
           <Input value={note} onChange={(e) => setNote(e.target.value)} />
@@ -417,9 +428,12 @@ function CloseDialog({
         <Button
           className="mt-4 w-full"
           onClick={() => {
+            const amount = parseMoney(incAmount);
             const incidentals =
-              incTitle.trim() && extra > 0 ? [{ title: incTitle.trim(), amount: extra, paidFromTill: true }] : [];
-            onClose(Number(cash) || 0, note, incidentals);
+              incTitle.trim() && amount > 0
+                ? [{ title: incTitle.trim(), amount, paidFrom: incFrom, paidFromTill: incFrom === "cash" }]
+                : [];
+            onClose(parseMoney(cash), note, incidentals);
             setOpen(false);
           }}
         >
@@ -430,15 +444,29 @@ function CloseDialog({
   );
 }
 
+function MoneySourceField({ value, onChange }: { value: MoneySource; onChange: (v: MoneySource) => void }) {
+  return (
+    <Field label="Откуда деньги" className="mt-3">
+      <NativeSelect value={value} onChange={(e) => onChange(e.target.value as MoneySource)}>
+        {(Object.keys(MONEY_SOURCE_LABEL) as MoneySource[]).map((k) => (
+          <option key={k} value={k}>
+            {MONEY_SOURCE_LABEL[k]}
+          </option>
+        ))}
+      </NativeSelect>
+    </Field>
+  );
+}
+
 function IncidentalDialog({
   onSave,
 }: {
-  onSave: (input: { title: string; amount: number; paidFromTill: boolean; note?: string }) => void;
+  onSave: (input: { title: string; amount: number; paidFromTill: boolean; paidFrom: MoneySource; note?: string }) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [amount, setAmount] = useState("");
-  const [fromTill, setFromTill] = useState(true);
+  const [from, setFrom] = useState<MoneySource>("cash");
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -447,25 +475,23 @@ function IncidentalDialog({
         </Button>
       </DialogTrigger>
       <DialogContent title="Расход смены">
-        <p className="text-sm text-muted">DJ, певец, шары, такси — свободная формулировка. Если платили из ящика, сумма уйдёт из ожидаемой кассы.</p>
+        <p className="text-sm text-muted">DJ, певец, шары, такси. Наличные из ящика уменьшают ожидаемую кассу; безнал — нет.</p>
         <Field label="На что" className="mt-3">
           <Input value={title} onChange={(e) => setTitle(e.target.value)} />
         </Field>
         <Field label="Сумма, ₽" className="mt-3">
           <Input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="numeric" />
         </Field>
-        <label className="mt-3 flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={fromTill} onChange={(e) => setFromTill(e.target.checked)} />
-          Из кассы (наличные)
-        </label>
+        <MoneySourceField value={from} onChange={setFrom} />
         <Button
           className="mt-4 w-full"
           onClick={() => {
-            if (!title.trim() || !(Number(amount) > 0)) {
+            const n = parseMoney(amount);
+            if (!title.trim() || !(n > 0)) {
               toast.error("Название и сумма обязательны");
               return;
             }
-            onSave({ title: title.trim(), amount: Number(amount), paidFromTill: fromTill });
+            onSave({ title: title.trim(), amount: n, paidFromTill: from === "cash", paidFrom: from });
             setOpen(false);
             setTitle("");
             setAmount("");

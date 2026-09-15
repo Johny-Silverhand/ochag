@@ -39,12 +39,15 @@ function BanquetsPage() {
   if (pathname !== "/banquets" && pathname.startsWith("/banquets/")) {
     return <Outlet />;
   }
+  const needle = phoneQ.trim().toLowerCase();
+  const digits = phoneQ.replace(/\D/g, "");
   const rows = snap.banquets
     .filter((b) => scope === "all" || b.branchId === scope)
     .filter((b) => {
-      const digits = phoneQ.replace(/\D/g, "");
-      if (!digits) return true;
-      return b.clientPhone.replace(/\D/g, "").includes(digits);
+      if (!needle) return true;
+      const byPhone = digits ? b.clientPhone.replace(/\D/g, "").includes(digits) : false;
+      const byName = b.title.toLowerCase().includes(needle) || b.clientName.toLowerCase().includes(needle);
+      return byPhone || byName;
     })
     .slice()
     .sort((a, b) => (a.date > b.date ? 1 : -1));
@@ -117,8 +120,8 @@ function BanquetsPage() {
       </Card>
 
       <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
-        <Field label="Поиск клиента по телефону" className="max-w-sm">
-          <Input value={phoneQ} onChange={(e) => setPhoneQ(e.target.value)} placeholder="+7 …" inputMode="tel" />
+        <Field label="Поиск по телефону или названию" className="max-w-sm">
+          <Input value={phoneQ} onChange={(e) => setPhoneQ(e.target.value)} placeholder="телефон или банкет" />
         </Field>
       </div>
       {!canWrite ? <p className="mt-2 text-xs text-muted">{WRITE_SCOPE_HINT}</p> : null}

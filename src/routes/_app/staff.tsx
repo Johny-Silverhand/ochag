@@ -52,20 +52,20 @@ function StaffPage() {
             </Button>
             {canInviteStaff(user.role) && isWriteScope(scope) ? (
               <>
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    accruePremiums();
-                    toast.success("Месячные премии начислены по ставке в карточке");
+                <AccruePremiums
+                  staff={staff}
+                  onSave={(userIds) => {
+                    void accruePremiums({ userIds }).then((ok) => {
+                      if (ok) toast.success("Премии начислены выбранным сотрудникам");
+                    });
                   }}
-                >
-                  Начислить премии
-                </Button>
+                />
                 <AdjustPayroll
                   staff={staff}
                   onSave={(input) => {
-                    adjustPayroll(input);
-                    toast.success("Корректировка записана");
+                    void adjustPayroll(input).then((ok) => {
+                      if (ok) toast.success("Корректировка записана");
+                    });
                   }}
                 />
               </>
@@ -84,7 +84,8 @@ function StaffPage() {
         <Kpi label="В штате" value={String(staff.length)} />
       </div>
       <Card className="overflow-hidden p-0">
-        <table className="w-full text-left text-sm">
+        <div className="overflow-x-auto">
+        <table className="w-full min-w-[52rem] text-left text-sm">
           <thead className="bg-bg text-xs text-muted">
             <tr>
               <th className="px-5 py-2 font-medium">Сотрудник</th>
@@ -124,10 +125,12 @@ function StaffPage() {
             ))}
           </tbody>
         </table>
+        </div>
       </Card>
       <Card className="mt-4 overflow-hidden p-0">
         <div className="border-b border-border px-5 py-3 text-sm font-medium">Последние начисления</div>
-        <table className="w-full text-left text-sm">
+        <div className="overflow-x-auto">
+        <table className="w-full min-w-[24rem] text-left text-sm">
           <tbody>
             {rows.slice(0, 12).map((r) => (
               <tr key={r.id} className="border-t border-border">
@@ -138,6 +141,7 @@ function StaffPage() {
             ))}
           </tbody>
         </table>
+        </div>
       </Card>
     </div>
   );
@@ -199,6 +203,77 @@ function AdjustPayroll({
             Записать
           </Button>
         </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AccruePremiums({
+  staff,
+  onSave,
+}: {
+  staff: { id: string; name: string; monthlyPremium?: number }[];
+  onSave: (userIds: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [ids, setIds] = useState<string[]>([]);
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) setIds(staff.map((u) => u.id));
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button variant="secondary">Начислить премии</Button>
+      </DialogTrigger>
+      <DialogContent title="Месячные премии">
+        <p className="mb-3 text-sm text-muted">Отметьте, кому начислить. Пустой список никому не платит.</p>
+        {staff.length ? (
+          <ul className="max-h-64 space-y-1 overflow-auto">
+            {staff.map((u) => (
+              <li key={u.id}>
+                <label className="flex min-h-11 items-center gap-2 rounded-sm px-2 hover:bg-bg">
+                  <input
+                    type="checkbox"
+                    checked={ids.includes(u.id)}
+                    onChange={(e) =>
+                      setIds((prev) => (e.target.checked ? [...prev, u.id] : prev.filter((x) => x !== u.id)))
+                    }
+                  />
+                  <span className="text-sm">
+                    {u.name}
+                    {u.monthlyPremium ? <span className="text-muted"> · {u.monthlyPremium} ₽</span> : null}
+                  </span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted">Нет сотрудников со ставкой месячной премии.</p>
+        )}
+        <div className="mt-3 flex gap-2">
+          <Button type="button" variant="outline" className="flex-1" onClick={() => setIds([])}>
+            Снять всех
+          </Button>
+          <Button type="button" variant="outline" className="flex-1" onClick={() => setIds(staff.map((u) => u.id))}>
+            Все
+          </Button>
+        </div>
+        <Button
+          className="mt-3 w-full"
+          onClick={() => {
+            if (!ids.length) {
+              toast.error("Выберите сотрудников");
+              return;
+            }
+            onSave(ids);
+            setOpen(false);
+          }}
+        >
+          Начислить выбранным
+        </Button>
       </DialogContent>
     </Dialog>
   );

@@ -1,10 +1,12 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
 import { Printer } from "lucide-react";
 import { BanquetEditor } from "@/components/banquet/editor";
 import { PageHeader } from "@/components/layout/page";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { NativeSelect } from "@/components/ui/input";
 import { useOps, useSessionUser } from "@/lib/data/store";
 import { canEditBanquet } from "@/lib/domain/permissions";
@@ -25,8 +27,11 @@ function BanquetDetail() {
   const branch = branches.find((b) => b.id === banquet?.branchId);
   const setBanquetStatus = useOps((s) => s.setBanquetStatus);
   const upsertBanquet = useOps((s) => s.upsertBanquet);
+  const deleteBanquet = useOps((s) => s.deleteBanquet);
   const user = useSessionUser()!;
   const canWrite = canEditBanquet(user.role);
+  const navigate = useNavigate();
+  const [confirmDel, setConfirmDel] = useState(false);
 
   if (!banquet) {
     return <p className="text-sm text-muted">Банкет не найден.</p>;
@@ -64,6 +69,11 @@ function BanquetDetail() {
                 PDF {sheet === "guest" ? "лист" : sheet === "waiter" ? "зал" : sheet === "cook" ? "кухня" : "мангал"}
               </Button>
             ))}
+            {canWrite ? (
+              <Button variant="ghost" onClick={() => setConfirmDel(true)}>
+                Удалить
+              </Button>
+            ) : null}
           </div>
         }
       />
@@ -152,6 +162,31 @@ function BanquetDetail() {
           </Card>
         </>
       )}
+      <Dialog open={confirmDel} onOpenChange={setConfirmDel}>
+        <DialogContent title="Удалить банкет?">
+          <p className="text-sm leading-relaxed text-muted">
+            Удалить «{banquet.title}» на {ruDate(banquet.date, { day: "numeric", month: "long", year: "numeric" })}? Это нельзя отменить.
+          </p>
+          <div className="mt-4 flex gap-2">
+            <Button variant="outline" className="flex-1" onClick={() => setConfirmDel(false)}>
+              Оставить
+            </Button>
+            <Button
+              className="flex-1"
+              onClick={() => {
+                void deleteBanquet(banquet.id).then((ok) => {
+                  if (!ok) return;
+                  toast.success("Банкет удалён");
+                  setConfirmDel(false);
+                  void navigate({ to: "/banquets" });
+                });
+              }}
+            >
+              Удалить
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

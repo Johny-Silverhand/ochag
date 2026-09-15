@@ -92,6 +92,7 @@ export function applyThemeChrome(
   density: string = "comfortable",
   motion: string = "system",
   typeScale: string = "normal",
+  glassOff = false,
 ) {
   if (typeof document === "undefined") return;
   const id = isThemeId(theme) ? theme : DEFAULT_THEME;
@@ -101,6 +102,7 @@ export function applyThemeChrome(
   root.setAttribute("data-density", density === "compact" ? "compact" : "comfortable");
   root.setAttribute("data-motion", motion === "reduce" ? "reduce" : "system");
   root.setAttribute("data-type", typeScale === "large" ? "large" : "normal");
+  root.setAttribute("data-glass", glassOff ? "off" : "on");
   root.classList.toggle("dark", meta.scheme === "dark");
   root.style.colorScheme = meta.scheme;
   const color = document.querySelector('meta[name="theme-color"]');
@@ -114,12 +116,14 @@ export function readStoredChrome(): {
   density: Density;
   motion: MotionPref;
   typeScale: TypeScale;
+  glassOff: boolean;
 } {
   const fallback = {
     theme: DEFAULT_THEME,
     density: "comfortable" as Density,
     motion: "system" as MotionPref,
     typeScale: "normal" as TypeScale,
+    glassOff: false,
   };
   if (typeof window === "undefined") return fallback;
   try {
@@ -132,6 +136,7 @@ export function readStoredChrome(): {
       density: st.density === "compact" ? "compact" : "comfortable",
       motion: st.motion === "reduce" ? "reduce" : "system",
       typeScale: st.typeScale === "large" ? "large" : "normal",
+      glassOff: st.glassOff === true,
     };
   } catch {
     return fallback;
@@ -140,5 +145,5 @@ export function readStoredChrome(): {
 
 if (typeof document !== "undefined") {
   const boot = readStoredChrome();
-  applyThemeChrome(boot.theme, boot.density, boot.motion, boot.typeScale);
+  applyThemeChrome(boot.theme, boot.density, boot.motion, boot.typeScale, boot.glassOff);
 }

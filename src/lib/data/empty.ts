@@ -31,6 +31,7 @@ export function emptySnapshot(): Snapshot {
     outbox: [],
     pushSubs: [],
     deviceSessions: [],
+    pendingNetworks: [],
     settings: defaultSettings(),
   };
 }

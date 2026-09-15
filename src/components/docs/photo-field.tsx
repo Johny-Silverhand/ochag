@@ -19,7 +19,12 @@ async function compress(file: File): Promise<DocumentPhoto> {
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("canvas");
   ctx.drawImage(bitmap, 0, 0, w, h);
-  const dataUrl = canvas.toDataURL("image/jpeg", QUALITY);
+  let quality = QUALITY;
+  let dataUrl = canvas.toDataURL("image/jpeg", quality);
+  while (dataUrl.length > 700_000 && quality > 0.4) {
+    quality -= 0.08;
+    dataUrl = canvas.toDataURL("image/jpeg", quality);
+  }
   return {
     id: uid("ph"),
     name: file.name.replace(/\.[^.]+$/, "").slice(0, 80) || "фото",

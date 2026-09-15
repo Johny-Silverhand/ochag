@@ -16,7 +16,7 @@
  */
 import type { Product, Recipe, Role, Sale, SaleItem, Snapshot, StockLevel } from "./types.ts";
 import { defaultSettings } from "./types.ts";
-import { canSeeDebts, canSeeOpsLog } from "./permissions.ts";
+import { canSeeDebts, canSeeDocumentPhotos, canSeeOpsLog } from "./permissions.ts";
 import { snapshotForActor, type TenantActor } from "./tenancy.ts";
 
 export function roundMoney(value: number, digits = 2) {
@@ -169,7 +169,9 @@ export function publicSnapshot(snap: Snapshot, roleOrActor?: Role | TenantActor)
     ledgerDebts: scoped.ledgerDebts ?? [],
     householdItems: scoped.householdItems ?? [],
     householdStock: scoped.householdStock ?? [],
-    householdMovements: scoped.householdMovements ?? [],
+    householdMovements: (scoped.householdMovements ?? []).map((m) =>
+      role && !canSeeDocumentPhotos(role) ? { ...m, photos: [] } : m,
+    ),
     payrollAdjustments: scoped.payrollAdjustments ?? [],
     revenuePlans: scoped.revenuePlans ?? [],
     audit: scoped.audit ?? [],
@@ -177,6 +179,10 @@ export function publicSnapshot(snap: Snapshot, roleOrActor?: Role | TenantActor)
     outbox: (scoped.outbox ?? []).map((o) => ({ ...o, to: undefined })),
     pushSubs: (scoped.pushSubs ?? []).map((s) => ({ ...s, keys: { p256dh: "", auth: "" }, endpoint: "" })),
     deviceSessions: (scoped.deviceSessions ?? []).map((s) => ({ ...s })),
+    pendingNetworks:
+      role && canSeeOpsLog(role)
+        ? (scoped.pendingNetworks ?? []).map((a) => ({ ...a, password: "" }))
+        : [],
   };
   if (role && !canSeeDebts(role)) {
     return { ...base, ledgerDebts: [] };

@@ -10,8 +10,7 @@ import { BootScreen } from "@/components/layout/app-shell";
 import { IosInstallCard, useIosInstall } from "@/components/ios/runtime";
 import { LabsCredit } from "@/components/brand/labs-credit";
 import { LOGIN_INTRO, NETWORK_NAME } from "@/lib/brand";
-import { canSelfOnboard } from "@/lib/billing/simulate";
-import { looksLikeSeedNetwork } from "@/lib/data/bootstrap";
+import { canSubmitNetworkApplication } from "@/lib/billing/simulate";
 import { usePrefs } from "@/lib/prefs";
 import { canEnterWithPin, queuePinOffer } from "@/lib/auth/pin-gate";
 
@@ -27,14 +26,12 @@ function LoginPage() {
   const login = useOps((s) => s.login);
   const loginPin = useOps((s) => s.loginPin);
   const setPeriod = useOps((s) => s.setPeriod);
-  const simulatePayment = useOps((s) => s.simulatePayment);
   const onboardNetwork = useOps((s) => s.onboardNetwork);
   const snap = useOps((s) => s);
   const defaultPeriod = usePrefs((s) => s.defaultPeriod);
   const navigate = useNavigate();
   const ready = hydrated && isOnboarded(snap);
-  const paidTariff = snap.settings.tariff;
-  const canCreateNetwork = canSelfOnboard(snap);
+  const canSubmit = canSubmitNetworkApplication(snap);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [pin, setPin] = useState("");
@@ -66,22 +63,22 @@ function LoginPage() {
   }
 
   return (
-    <main className="login-scene max-h-[var(--app-height,100dvh)] min-h-dvh min-w-0 overflow-x-clip overflow-y-auto scroll-touch text-fg lg:max-h-none lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(22rem,32rem)]">
+    <main className="login-scene min-h-dvh min-w-0 overflow-x-clip text-fg lg:grid lg:h-dvh lg:max-h-dvh lg:grid-cols-[minmax(0,1fr)_minmax(22rem,32rem)] lg:overflow-hidden">
       <div className="login-scene-bg" aria-hidden="true" />
-      <section className="relative z-10 hidden min-w-0 flex-col justify-end overflow-hidden px-[var(--login-pad-x)] pt-[max(2.5rem,env(safe-area-inset-top))] pb-[max(2.5rem,env(safe-area-inset-bottom))] lg:flex">
+      <section className="relative z-10 hidden min-h-0 min-w-0 flex-col justify-center overflow-hidden px-[var(--login-pad-x)] py-[max(2rem,env(safe-area-inset-top))] lg:flex">
         <div className="login-card max-w-md">
           <div className="text-xs font-medium tracking-[0.28em] text-muted uppercase">{NETWORK_NAME}</div>
           <h1 className="login-hero-title mt-6 max-w-md font-medium tracking-tight">
             Товароучёт и управление кафе на продажах r_keeper.
           </h1>
           <p className="mt-5 max-w-md text-sm leading-relaxed text-muted">
-            Склад, роли, филиалы, смены, банкеты и прибыль. Новый контур — после тарифа. Выданный логин работает сразу.
+            Склад, роли, филиалы, смены, банкеты и прибыль. Новый контур — по заявке. Выданный логин работает сразу.
           </p>
         </div>
       </section>
 
-      <section className="relative z-10 flex min-h-dvh min-w-0 flex-col justify-start px-[var(--login-pad-x)] pt-[max(3.25rem,env(safe-area-inset-top))] pb-[max(2.5rem,env(safe-area-inset-bottom))] md:justify-center md:py-[max(2.25rem,env(safe-area-inset-top))]">
-        <div className="login-card mx-auto w-full max-w-md pb-10">
+      <section className="relative z-10 flex min-h-dvh min-w-0 flex-col justify-center overflow-y-auto px-[var(--login-pad-x)] py-[max(1.5rem,env(safe-area-inset-top))] lg:h-dvh lg:min-h-0 lg:overflow-hidden lg:py-8">
+        <div className="login-card mx-auto w-full max-w-md lg:max-h-[calc(100dvh-4.5rem)] lg:overflow-y-auto">
           <div className="mb-8">
             <div className="text-xs font-medium tracking-[0.28em] text-muted uppercase">{NETWORK_NAME}</div>
             <h1 className="login-title mt-2 font-medium tracking-tight lg:hidden">Вход в контур</h1>
@@ -98,19 +95,8 @@ function LoginPage() {
           ) : null}
 
           <CommercialGate
-            onboarded={Boolean(snap.settings.paymentSimulatedAt) && !looksLikeSeedNetwork(snap)}
-            canCreateNetwork={canCreateNetwork}
-            paidTariff={paidTariff}
-            simulatePayment={simulatePayment}
-            onboardNetwork={async (input) => {
-              const result = await onboardNetwork(input);
-              if (result.ok) {
-                queuePinOffer(input.login);
-                setPeriod(defaultPeriod);
-                void navigate({ to: "/dashboard" });
-              }
-              return result;
-            }}
+            canSubmit={canSubmit}
+            submitApplication={async (input) => onboardNetwork(input)}
           />
 
           <form
@@ -171,15 +157,19 @@ function LoginPage() {
             {error ? <p className="text-sm text-danger">{error}</p> : null}
             {!ready ? (
               <p className="text-sm text-muted">
-                Нет своей учётки — её выдаёт администратор сети. Если заводите контур сами, начните с «Что это?».
+                Нет своей учётки — её выдаёт администратор сети. Если открываете контур впервые, начните с «Что такое RestoPro?».
               </p>
             ) : null}
-            <Button type="submit" className="w-full" variant={canCreateNetwork ? "secondary" : "default"} disabled={busy}>
+            <Button type="submit" className="w-full" disabled={busy}>
               {busy ? "Входим…" : "Войти"}
             </Button>
           </form>
         </div>
-        <LabsCredit compact align="center" className="mx-auto mt-5 w-full max-w-md" />
+        <LabsCredit
+          compact
+          align="center"
+          className="mx-auto mt-4 w-full max-w-md pb-[env(safe-area-inset-bottom)] lg:absolute lg:inset-x-0 lg:bottom-3 lg:mt-0 lg:pb-0"
+        />
       </section>
     </main>
   );

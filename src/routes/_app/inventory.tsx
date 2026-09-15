@@ -10,7 +10,7 @@ import { Field, Input, NativeSelect, Textarea } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/tabs";
 import { useOps, useSessionUser } from "@/lib/data/store";
 import { PhotoField, PhotoThumbs } from "@/components/docs/photo-field";
-import { canManageHousehold, canTransfer, canWriteoff } from "@/lib/domain/permissions";
+import { canManageHousehold, canTransfer, canWriteoff, canEditNomenclature, canSeeDocumentPhotos } from "@/lib/domain/permissions";
 import {
   HOUSEHOLD_MOVE_LABEL,
   MOVEMENT_LABEL,
@@ -28,6 +28,7 @@ import { isWriteScope, WRITE_SCOPE_HINT } from "@/lib/ui/scope";
 import { compareRevisions } from "@/lib/domain/analytics";
 import { api } from "@/lib/api/client";
 import { downloadBase64 } from "@/lib/reports/download";
+import { parseNomenclatureCsv } from "@/lib/domain/nomenclature-csv";
 
 export const Route = createFileRoute("/_app/inventory")({ component: InventoryPage });
 
@@ -40,6 +41,7 @@ function InventoryPage() {
   const transferStock = useOps((s) => s.transferStock);
   const showFoodCost = usePrefs((s) => s.showFoodCost);
   const importProducts = useOps((s) => s.importProducts);
+  const createProduct = useOps((s) => s.createProduct);
   const canWrite = isWriteScope(session.branchId);
   const branchId = canWrite ? session.branchId : "";
   const [tab, setTab] = useState("stock");
@@ -101,10 +103,20 @@ function InventoryPage() {
                 }}
               />
             ) : null}
+            {canEditNomenclature(user.role) && canWrite ? (
+              <AddProductDialog
+                onSave={(input) => {
+                  void createProduct(input).then((ok) => {
+                    if (ok) toast.success("Продукция добавлена");
+                  });
+                }}
+              />
+            ) : null}
             <NomenclatureImport
-              onImport={(rows) => {
-                importProducts(rows);
-                toast.success(`Импорт: ${rows.length} позиций`);
+              onImport={(rows, csv) => {
+                void importProducts(rows, csv).then((ok) => {
+                  if (ok) toast.success(`Импорт: ${rows.length} позиций`);
+                });
               }}
             />
           </div>
@@ -268,7 +280,7 @@ function RevisionCompare({ branchId }: { branchId: string }) {
           {cmp.left.date} → {cmp.right.date}
         </div>
         <p className="mt-1 text-sm text-muted">
-          Недостачи относительно книги новой ревизии
+          Недосдачи относительно книги новой ревизии
           {cmp.shift ? ` · смена ${cmp.shift.date}` : ""}.
         </p>
         {cmp.byCategory?.length ? (
@@ -288,7 +300,7 @@ function RevisionCompare({ branchId }: { branchId: string }) {
               <th className="px-5 py-2 font-medium">Продукт</th>
               <th className="px-3 py-2 font-medium">Было</th>
               <th className="px-3 py-2 font-medium">Стало</th>
-              <th className="px-5 py-2 text-right font-medium">Недостача</th>
+              <th className="px-5 py-2 text-right font-medium">Недосдача</th>
             </tr>
           </thead>
           <tbody>
@@ -447,9 +459,10 @@ function TransferDialog({
   fromId: string;
   onSubmit: (input: { fromBranchId: string; toBranchId: string; productId: string; qty: number; note?: string }) => void;
 }) {
+  const destinations = Array.from(new Map(branches.filter((b) => b.id && b.id !== fromId).map((b) => [b.id, b])).values());
   const [open, setOpen] = useState(false);
   const [productId, setProductId] = useState(products[0]?.id ?? "");
-  const [toId, setToId] = useState(branches.find((b) => b.id !== fromId)?.id ?? "");
+  const [toId, setToId] = useState(destinations[0]?.id ?? "");
   const [qtyV, setQtyV] = useState("1");
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -459,15 +472,17 @@ function TransferDialog({
       <DialogContent title="Между филиалами">
         <div className="space-y-3">
           <Field label="Куда">
-            <NativeSelect value={toId} onChange={(e) => setToId(e.target.value)}>
-              {branches
-                .filter((b) => b.id !== fromId)
-                .map((b) => (
+            {destinations.length ? (
+              <NativeSelect value={toId} onChange={(e) => setToId(e.target.value)}>
+                {destinations.map((b) => (
                   <option key={b.id} value={b.id}>
                     {b.short}
                   </option>
                 ))}
-            </NativeSelect>
+              </NativeSelect>
+            ) : (
+              <p className="text-sm text-muted">Других филиалов нет — перемещать некуда.</p>
+            )}
           </Field>
           <Field label="Продукт">
             <NativeSelect value={productId} onChange={(e) => setProductId(e.target.value)}>
@@ -484,6 +499,10 @@ function TransferDialog({
           <Button
             className="w-full"
             onClick={() => {
+              if (!toId || toId === fromId) {
+                toast.error("Выберите другой филиал");
+                return;
+              }
               onSubmit({ fromBranchId: fromId, toBranchId: toId, productId, qty: Number(qtyV) });
               setOpen(false);
             }}
@@ -499,7 +518,7 @@ function TransferDialog({
 function NomenclatureImport({
   onImport,
 }: {
-  onImport: (rows: Array<{ name: string; category: string; unit: Unit; minQty: number; avgCost: number }>) => void;
+  onImport: (rows: Array<{ name: string; category: string; unit: Unit; minQty: number; avgCost: number }>, csv?: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
@@ -510,36 +529,89 @@ function NomenclatureImport({
       </DialogTrigger>
       <DialogContent title="Импорт номенклатуры">
         <div className="space-y-3">
-          <p className="text-sm text-muted">Столбцы: name;category;unit;minQty;avgCost. Единицы: kg, l, шт, порц.</p>
+          <p className="text-sm text-muted">Столбцы: name;category;unit;minQty;avgCost. Заголовок необязателен. Единицы: kg, l, шт, порц.</p>
           <Field label="CSV">
             <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={6} className="font-mono text-xs" />
           </Field>
           <Button
             className="w-full"
             onClick={() => {
-              const lines = text
-                .split(/\r?\n/)
-                .map((l) => l.trim())
-                .filter(Boolean);
-              const rows = lines.slice(1).map((line) => {
-                const [name, category, unit, minQty, avgCost] = line.split(/[;,]/);
-                return {
-                  name: (name ?? "").trim(),
-                  category: (category ?? "Прочее").trim(),
-                  unit: ((unit ?? "kg").trim() as Unit) || "kg",
-                  minQty: Number(minQty) || 0,
-                  avgCost: Number(avgCost) || 0,
-                };
-              }).filter((r) => r.name);
+              const rows = parseNomenclatureCsv(text);
               if (!rows.length) {
                 toast.error("Нет строк для импорта");
                 return;
               }
-              onImport(rows);
+              onImport(rows, text);
               setOpen(false);
             }}
           >
             Импортировать
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AddProductDialog({
+  onSave,
+}: {
+  onSave: (input: { name: string; category?: string; unit?: Unit; minQty?: number; avgCost?: number }) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [category, setCategory] = useState("Прочее");
+  const [unit, setUnit] = useState<Unit>("kg");
+  const [minQty, setMinQty] = useState("1");
+  const [avgCost, setAvgCost] = useState("0");
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button>Добавить продукцию</Button>
+      </DialogTrigger>
+      <DialogContent title="Новая продукция">
+        <div className="space-y-3">
+          <Field label="Название">
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </Field>
+          <Field label="Категория">
+            <Input value={category} onChange={(e) => setCategory(e.target.value)} />
+          </Field>
+          <Field label="Единица">
+            <NativeSelect value={unit} onChange={(e) => setUnit(e.target.value as Unit)}>
+              <option value="kg">kg</option>
+              <option value="l">l</option>
+              <option value="шт">шт</option>
+              <option value="порц">порц</option>
+            </NativeSelect>
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Мин. остаток">
+              <Input value={minQty} onChange={(e) => setMinQty(e.target.value)} inputMode="decimal" />
+            </Field>
+            <Field label="Себест., ₽">
+              <Input value={avgCost} onChange={(e) => setAvgCost(e.target.value)} inputMode="decimal" />
+            </Field>
+          </div>
+          <Button
+            className="w-full"
+            onClick={() => {
+              if (!name.trim()) {
+                toast.error("Название обязательно");
+                return;
+              }
+              onSave({
+                name: name.trim(),
+                category: category.trim() || "Прочее",
+                unit,
+                minQty: Number(minQty) || 0,
+                avgCost: Number(avgCost) || 0,
+              });
+              setOpen(false);
+              setName("");
+            }}
+          >
+            Добавить
           </Button>
         </div>
       </DialogContent>
@@ -583,7 +655,9 @@ function HouseholdPanel({ branchId, canWrite }: { branchId: string; canWrite: bo
           </thead>
           <tbody>
             {items.map((item) => {
-              const have = snap.householdStock.find((s) => s.itemId === item.id && s.branchId === branchId)?.qty ?? 0;
+              const have =
+                snap.householdStock.find((s) => s.itemId === item.id && (!branchId || s.branchId === branchId))?.qty ??
+                snap.householdStock.filter((s) => s.itemId === item.id).reduce((sum, s) => sum + s.qty, 0);
               return (
                 <tr key={item.id} className="border-t border-border">
                   <td className="px-5 py-2.5">
@@ -597,8 +671,9 @@ function HouseholdPanel({ branchId, canWrite }: { branchId: string; canWrite: bo
                         itemId={item.id}
                         name={item.name}
                         onSave={(input) => {
-                          householdMove(input);
-                          toast.success("Движение хозов проведено");
+                          void householdMove(input).then((ok) => {
+                            if (ok) toast.success("Движение хозов проведено");
+                          });
                         }}
                       />
                     ) : null}
@@ -626,7 +701,7 @@ function HouseholdPanel({ branchId, canWrite }: { branchId: string; canWrite: bo
               <li key={m.id} className="text-sm">
                 <span className="text-muted">{ruDateTime(m.at)} · </span>
                 {HOUSEHOLD_MOVE_LABEL[m.type]} · {snap.householdItems.find((i) => i.id === m.itemId)?.name} · {m.qty}
-                <PhotoThumbs photos={m.photos} />
+                {canSeeDocumentPhotos(user.role) ? <PhotoThumbs photos={m.photos} /> : null}
               </li>
             ))}
         </ul>
@@ -729,11 +804,15 @@ function HouseholdMoveDialog({
           <Input value={note} onChange={(e) => setNote(e.target.value)} />
         </Field>
         <div className="mt-3">
-          <PhotoField value={photos} onChange={setPhotos} label="Фотоотчёт" />
+          <PhotoField value={photos} onChange={setPhotos} label={type === "receive" ? "Фотоотчёт (обязательно)" : "Фотоотчёт"} />
         </div>
         <Button
           className="mt-4 w-full"
           onClick={() => {
+            if (type === "receive" && photos.length < 1) {
+              toast.error("Для прихода нужен хотя бы один снимок");
+              return;
+            }
             onSave({
               itemId,
               type,

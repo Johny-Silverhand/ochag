@@ -21,6 +21,7 @@ import { today, WRITEOFF_LABEL, type WriteoffReason } from "@/lib/domain/types";
 import { downloadBase64, downloadText } from "@/lib/reports/download";
 import { averageCheque, revenueByHour, waiterVoidsAndDiscounts } from "@/lib/domain/reports-extra";
 import { pct, ruDate, rub } from "@/lib/format";
+import { parseMoney } from "@/lib/domain/money";
 import { isWriteScope, WRITE_SCOPE_HINT } from "@/lib/ui/scope";
 import { ContourAssist } from "@/components/ai/contour-assist";
 
@@ -214,17 +215,23 @@ function ReportsPage() {
       </Card>
       <Card className="mt-4 overflow-hidden p-0">
         <div className="border-b border-border px-5 py-3 text-sm font-medium">Постоянные и переменные</div>
-        <ul>
-          {expenses.slice(0, 10).map((e) => (
-            <li key={e.id} className="flex justify-between border-t border-border px-5 py-2 text-sm">
-              <span>
-                {e.category}
-                <span className="ml-2 text-xs text-muted">{EXPENSE_KIND_LABEL[e.kind]}</span>
-              </span>
-              <span className="font-mono tabular-nums">{rub(e.amount)}</span>
-            </li>
-          ))}
-        </ul>
+        {expenses.length ? (
+          <ul>
+            {expenses.map((e) => (
+              <li key={e.id} className="flex justify-between gap-3 border-t border-border px-5 py-2 text-sm">
+                <span>
+                  {e.category}
+                  <span className="ml-2 text-xs text-muted">{EXPENSE_KIND_LABEL[e.kind]}</span>
+                  <span className="ml-2 text-xs text-subtle">{ruDate(e.date)}</span>
+                  {e.note ? <span className="block text-xs text-muted">{e.note}</span> : null}
+                </span>
+                <span className="font-mono tabular-nums">{rub(e.amount)}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="px-5 py-4 text-sm text-muted">Расходов за период нет. Кнопка «Расход» записывает сюда постоянные и переменные.</p>
+        )}
       </Card>
     </div>
   );
@@ -233,7 +240,7 @@ function ReportsPage() {
 function ExpenseDialog({
   onSave,
 }: {
-  onSave: (input: { category: string; amount: number; note?: string; kind: ExpenseKind }) => void;
+  onSave: (input: { category: string; amount: number; note?: string; kind: ExpenseKind }) => Promise<boolean> | boolean | void;
 }) {
   const [open, setOpen] = useState(false);
   const [category, setCategory] = useState("Аренда");
@@ -261,9 +268,16 @@ function ExpenseDialog({
           <Button
             className="w-full"
             onClick={() => {
-              onSave({ category, amount: Number(amount) || 0, kind });
-              setOpen(false);
-              toast.success("Расход записан");
+              const n = parseMoney(amount);
+              if (!category.trim() || n <= 0) {
+                toast.error("Статья и сумма обязательны");
+                return;
+              }
+              void Promise.resolve(onSave({ category: category.trim(), amount: n, kind })).then((ok) => {
+                if (ok === false) return;
+                setOpen(false);
+                toast.success("Расход записан");
+              });
             }}
           >
             Записать

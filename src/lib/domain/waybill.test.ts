@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { emptySnapshot } from "../data/empty.ts";
-import { transferLegs } from "../reports/pdf.ts";
+import { transferLegs } from "../reports/transfer-legs.ts";
 import type { Snapshot, StockMovement } from "./types.ts";
 
 function mov(partial: Partial<StockMovement> & Pick<StockMovement, "id" | "qty">): StockMovement {

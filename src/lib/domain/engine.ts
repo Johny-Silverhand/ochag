@@ -12,7 +12,7 @@ import type {
   StockLevel,
   StockMovement,
 } from "./types.ts";
-import { today } from "./types.ts";
+import { today, incidentalFromTill } from "./types.ts";
 import { addDays } from "../format.ts";
 import {
   dishCost,
@@ -261,9 +261,9 @@ export function shiftTotals(shift: Shift, sales: Sale[]) {
     qr += p.qr;
     transfer += p.transfer;
   }
-  const incidentalCash = (shift.incidentals ?? [])
-    .filter((i) => i.paidFromTill)
-    .reduce((s, i) => s + i.amount, 0);
+  const incidentalCash = roundMoney(
+    (shift.incidentals ?? []).filter((i) => incidentalFromTill(i)).reduce((s, i) => s + i.amount, 0),
+  );
   const expected = roundMoney(expectedCash(shift.openCash, cash) - incidentalCash);
   return {
     cash,

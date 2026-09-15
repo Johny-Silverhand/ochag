@@ -1,4 +1,5 @@
-import type { Snapshot, ShiftIncidental, ShiftIncidentalPhase } from "./types.ts";
+import type { Snapshot, ShiftIncidental, ShiftIncidentalPhase, MoneySource } from "./types.ts";
+import { incidentalFromTill } from "./types.ts";
 import { uid } from "../utils.ts";
 import { AuthzError, type Actor, writeBranch } from "../authz/actor.ts";
 import { canEditExpenses, canOpenShift } from "./permissions.ts";
@@ -12,6 +13,7 @@ export type IncidentalDraft = {
   title: string;
   amount: number;
   paidFromTill?: boolean;
+  paidFrom?: MoneySource;
   note?: string;
   phase?: ShiftIncidentalPhase;
 };
@@ -22,8 +24,13 @@ function assertShiftMoney(actor: Actor) {
   }
 }
 
+function resolvePaidFrom(input: IncidentalDraft): MoneySource {
+  if (input.paidFrom) return input.paidFrom;
+  return input.paidFromTill === false ? "card" : "cash";
+}
+
 export function incidentalCashTotal(incidentals: ShiftIncidental[] | undefined) {
-  return roundMoney((incidentals ?? []).filter((i) => i.paidFromTill).reduce((s, i) => s + i.amount, 0));
+  return roundMoney((incidentals ?? []).filter((i) => incidentalFromTill(i)).reduce((s, i) => s + i.amount, 0));
 }
 
 export function applyShiftIncidental(
@@ -45,17 +52,20 @@ export function applyShiftIncidental(
   const amount = roundMoney(Number(input.amount) || 0);
   if (!title) throw new AuthzError("Укажите, на что расход (DJ, певец, декор…)", 400);
   if (amount <= 0) throw new AuthzError("Сумма должна быть больше нуля", 400);
+  const paidFrom = resolvePaidFrom(input);
+  const paidFromTill = paidFrom === "cash";
   const row: ShiftIncidental = {
     id: uid("inc"),
     phase: input.phase ?? (shift.status === "open" ? "during" : "close"),
     title,
     amount,
-    paidFromTill: input.paidFromTill !== false,
+    paidFromTill,
+    paidFrom,
     note: (input.note ?? "").trim(),
     at: new Date().toISOString(),
     userId: actor.userId,
   };
-  let next: Snapshot = {
+  const next: Snapshot = {
     ...snap,
     shifts: snap.shifts.map((s) => (s.id === shift.id ? { ...s, incidentals: [...(s.incidentals ?? []), row] } : s)),
     expenses: [
@@ -65,7 +75,7 @@ export function applyShiftIncidental(
         date: shift.date || today(),
         category: "Смена",
         amount,
-        note: `${title}${row.note ? ` — ${row.note}` : ""}`,
+        note: `${title}${row.note ? ` — ${row.note}` : ""}${paidFromTill ? "" : " · безнал"}`,
         kind: "variable",
       },
       ...snap.expenses,

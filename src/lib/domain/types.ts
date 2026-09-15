@@ -13,6 +13,8 @@ export const TODAY = today();
 export type Role = "tech_admin" | "owner" | "manager" | "cook" | "waiter";
 export type Unit = "kg" | "l" | "шт" | "порц";
 export type PaymentType = "cash" | "card" | "qr" | "transfer";
+export type MoneySource = PaymentType;
+export type NetworkApplicationStatus = "pending" | "approved" | "rejected";
 export type MovementType = "receipt" | "sale" | "writeoff" | "revision" | "prep" | "transfer";
 export type ShiftStatus = "open" | "closed";
 export type BanquetStatus = "inquiry" | "confirmed" | "deposit_paid" | "done" | "cancelled";
@@ -40,6 +42,12 @@ export type StopListReason = "no_stock" | "quality" | "manual" | "shift_start";
 
 export type Period = "today" | "7d" | "30d";
 
+export interface Hall {
+  id: string;
+  name: string;
+  capacity: number;
+}
+
 export interface Branch {
   id: string;
   name: string;
@@ -50,6 +58,8 @@ export interface Branch {
   phone: string;
   /** Hall names for banquet seating. Empty → «Основной зал». */
   halls?: string[];
+  /** Per-hall capacity and names. Names stay mirrored in `halls`. */
+  hallDetails?: Hall[];
   /** Owner who owns this branch. Missing on old snapshots until normalize. */
   ownerId?: string;
 }
@@ -365,9 +375,34 @@ export interface ShiftIncidental {
   title: string;
   amount: number;
   paidFromTill: boolean;
+  /** Where the money actually left: till cash or a non-cash rail. */
+  paidFrom?: MoneySource;
   note: string;
   at: string;
   userId: string;
+}
+
+export interface NetworkApplication {
+  id: string;
+  status: NetworkApplicationStatus;
+  createdAt: string;
+  decidedAt?: string;
+  decidedBy?: string;
+  rejectReason?: string;
+  ownerName: string;
+  login: string;
+  password: string;
+  pin: string;
+  phone: string;
+  branchName: string;
+  city: string;
+  address: string;
+  seats: number;
+  halls: string[];
+  tariff: "trial" | "basic" | "mid" | "pro" | null;
+  payerName?: string;
+  note?: string;
+  ownerUserId?: string;
 }
 
 export interface LedgerPayment {
@@ -473,6 +508,7 @@ export type OpsLogEvent =
   | "settings"
   | "bootstrap"
   | "sample"
+  | "showcase"
   | "api"
   | "outbox";
 
@@ -576,6 +612,7 @@ export interface Snapshot {
   outbox: OutboxItem[];
   pushSubs: PushSubscriptionRecord[];
   deviceSessions?: DeviceSession[];
+  pendingNetworks?: NetworkApplication[];
   settings: NetworkSettings;
 }
 
@@ -601,9 +638,23 @@ export const PAYMENT_LABEL: Record<PaymentType, string> = {
   transfer: "Перевод",
 };
 
+export const MONEY_SOURCE_LABEL: Record<MoneySource, string> = {
+  cash: "Из кассы (наличные)",
+  card: "Безнал · карта",
+  qr: "Безнал · QR",
+  transfer: "Безнал · перевод",
+};
+
+export function incidentalFromTill(row: { paidFromTill?: boolean; paidFrom?: MoneySource }) {
+  if (row.paidFrom) return row.paidFrom === "cash";
+  return row.paidFromTill !== false;
+}
+
 export const DEFAULT_HALL = "Основной зал";
 
-export function branchHalls(branch: Pick<Branch, "halls" | "name"> | undefined | null): string[] {
+export function branchHalls(branch: Pick<Branch, "halls" | "hallDetails" | "name"> | undefined | null): string[] {
+  const fromDetails = branch?.hallDetails?.map((h) => h.name.trim()).filter(Boolean) ?? [];
+  if (fromDetails.length) return fromDetails;
   const named = branch?.halls?.map((h) => h.trim()).filter(Boolean) ?? [];
   return named.length ? named : [DEFAULT_HALL];
 }
@@ -614,6 +665,42 @@ export function parseHalls(raw: string): string[] {
     .map((s) => s.trim())
     .filter(Boolean);
   return items.length ? items : [DEFAULT_HALL];
+}
+
+export function hallDetailsOf(
+  branch: Pick<Branch, "halls" | "hallDetails" | "seats" | "name"> | undefined | null,
+): Hall[] {
+  if (branch?.hallDetails?.length) {
+    return branch.hallDetails.map((h) => ({
+      id: h.id || `hall_${h.name}`,
+      name: h.name.trim() || DEFAULT_HALL,
+      capacity: Math.max(0, Math.round(Number(h.capacity) || 0)),
+    }));
+  }
+  const names = branchHalls(branch);
+  const seats = Math.max(0, Math.round(Number(branch?.seats) || 0)) || 40;
+  const share = Math.max(1, Math.round(seats / names.length));
+  return names.map((name, i) => ({
+    id: `hall_${i}_${name}`,
+    name,
+    capacity: i === names.length - 1 ? Math.max(0, seats - share * (names.length - 1)) : share,
+  }));
+}
+
+export function syncHalls(details: Hall[]): { halls: string[]; hallDetails: Hall[]; seats: number } {
+  const hallDetails = details
+    .map((h, i) => ({
+      id: h.id || `hall_${i}`,
+      name: h.name.trim(),
+      capacity: Math.max(0, Math.round(Number(h.capacity) || 0)),
+    }))
+    .filter((h) => h.name);
+  const list = hallDetails.length ? hallDetails : [{ id: "hall_main", name: DEFAULT_HALL, capacity: 40 }];
+  return {
+    halls: list.map((h) => h.name),
+    hallDetails: list,
+    seats: list.reduce((s, h) => s + h.capacity, 0) || 40,
+  };
 }
 
 export const MOVEMENT_LABEL: Record<MovementType, string> = {
@@ -641,7 +728,7 @@ export const WRITEOFF_LABEL: Record<WriteoffReason, string> = {
   spoilage: "Порча",
   staff_meal: "Питание персонала",
   error: "Ошибка",
-  theft: "Недостача",
+  theft: "Недосдача",
   revision: "Ревизия",
 };
 
