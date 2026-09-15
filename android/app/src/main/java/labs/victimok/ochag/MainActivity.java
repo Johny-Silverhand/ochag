@@ -19,7 +19,7 @@ import androidx.appcompat.app.AppCompatActivity;
  * Loads the live web app; mirrors the Windows / iOS wrappers.
  */
 public class MainActivity extends AppCompatActivity {
-    public static final String APP_URL = "https://restopro-theta.vercel.app";
+    public static final String APP_URL = "https://restopro.vercel.app";
 
     private WebView webView;
     private ProgressBar progress;
@@ -55,7 +55,9 @@ public class MainActivity extends AppCompatActivity {
                 if (request == null || request.getUrl() == null) return false;
                 String host = request.getUrl().getHost();
                 // Keep same-origin navigations inside the shell; open others externally.
-                if (host != null && (host.equals("restopro-theta.vercel.app") || host.equals("ochag-theta.vercel.app"))) {
+                if (host != null && (host.equals("restopro.vercel.app")
+                        || host.equals("restopro-theta.vercel.app")
+                        || host.equals("ochag-theta.vercel.app"))) {
                     return false;
                 }
                 try {
