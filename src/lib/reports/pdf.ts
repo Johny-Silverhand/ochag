@@ -2,6 +2,7 @@ import PDFDocument from "pdfkit";
 import { APP_NAME, DOWNLOAD_SLUG } from "../brand.ts";
 import type { Banquet, Snapshot } from "../domain/types";
 import { cyrillicFontBytes } from "./font-bytes.ts";
+import { transferLegs } from "./transfer-legs.ts";
 
 function fontBuffer(): Buffer | null {
   return cyrillicFontBytes();
@@ -101,14 +102,6 @@ export async function revisionActPdf(snap: Snapshot, revisionId: string) {
     }
   });
   return { filename: `${DOWNLOAD_SLUG}-revision-${rev.date}.pdf`, bytes: buf };
-}
-
-export function transferLegs(snap: Snapshot, refId: string) {
-  const id = refId.trim();
-  if (!id) throw new Error("Накладная не найдена");
-  const legs = snap.movements.filter((m) => m.type === "transfer" && m.refId === id);
-  if (!legs.length) throw new Error("Накладная не найдена");
-  return legs.slice().sort((a, b) => a.qty - b.qty);
 }
 
 export async function transferWaybillPdf(snap: Snapshot, refId: string) {
