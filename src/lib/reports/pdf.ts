@@ -1,35 +1,10 @@
 import PDFDocument from "pdfkit";
-import { readFileSync, existsSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { APP_NAME, DOWNLOAD_SLUG } from "../brand.ts";
 import type { Banquet, Snapshot } from "../domain/types";
-
-function fontCandidates() {
-  const here = dirname(fileURLToPath(import.meta.url));
-  return [
-    join(here, "fonts/DejaVuSans.ttf"),
-    join(process.cwd(), "src/lib/reports/fonts/DejaVuSans.ttf"),
-    join(process.cwd(), "public/fonts/DejaVuSans.ttf"),
-    join(process.cwd(), "fonts/DejaVuSans.ttf"),
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-  ];
-}
+import { cyrillicFontBytes } from "./font-bytes.ts";
 
 function fontBuffer(): Buffer | null {
-  for (const p of fontCandidates()) {
-    try {
-      if (existsSync(p)) return readFileSync(p);
-    } catch {
-      /* next */
-    }
-  }
-  try {
-    return readFileSync(new URL("./fonts/DejaVuSans.ttf", import.meta.url));
-  } catch {
-    return null;
-  }
+  return cyrillicFontBytes();
 }
 
 function pdfBuffer(draw: (doc: PDFKit.PDFDocument) => void): Promise<Buffer> {

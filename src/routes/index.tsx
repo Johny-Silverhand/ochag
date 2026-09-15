@@ -63,7 +63,7 @@ function LoginPage() {
   }
 
   return (
-    <main className="login-scene min-h-dvh min-w-0 overflow-x-clip text-fg lg:grid lg:h-dvh lg:grid-cols-[minmax(0,1fr)_minmax(22rem,32rem)] lg:overflow-hidden">
+    <main className="login-scene min-h-dvh min-w-0 overflow-x-clip text-fg lg:grid lg:h-dvh lg:max-h-dvh lg:grid-cols-[minmax(0,1fr)_minmax(22rem,32rem)] lg:overflow-hidden">
       <div className="login-scene-bg" aria-hidden="true" />
       <section className="relative z-10 hidden min-h-0 min-w-0 flex-col justify-center overflow-hidden px-[var(--login-pad-x)] py-[max(2rem,env(safe-area-inset-top))] lg:flex">
         <div className="login-card max-w-md">
@@ -77,8 +77,8 @@ function LoginPage() {
         </div>
       </section>
 
-      <section className="relative z-10 flex min-h-dvh min-w-0 flex-col justify-center overflow-y-auto px-[var(--login-pad-x)] py-[max(1.5rem,env(safe-area-inset-top))] lg:h-dvh lg:min-h-0">
-        <div className="login-card mx-auto w-full max-w-md">
+      <section className="relative z-10 flex min-h-dvh min-w-0 flex-col justify-center overflow-y-auto px-[var(--login-pad-x)] py-[max(1.5rem,env(safe-area-inset-top))] lg:h-dvh lg:min-h-0 lg:overflow-hidden lg:py-8">
+        <div className="login-card mx-auto w-full max-w-md lg:max-h-[calc(100dvh-4.5rem)] lg:overflow-y-auto">
           <div className="mb-8">
             <div className="text-xs font-medium tracking-[0.28em] text-muted uppercase">{NETWORK_NAME}</div>
             <h1 className="login-title mt-2 font-medium tracking-tight lg:hidden">Вход в контур</h1>
@@ -165,7 +165,11 @@ function LoginPage() {
             </Button>
           </form>
         </div>
-        <LabsCredit compact align="center" className="mx-auto mt-4 w-full max-w-md pb-[env(safe-area-inset-bottom)]" />
+        <LabsCredit
+          compact
+          align="center"
+          className="mx-auto mt-4 w-full max-w-md pb-[env(safe-area-inset-bottom)] lg:absolute lg:inset-x-0 lg:bottom-3 lg:mt-0 lg:pb-0"
+        />
       </section>
     </main>
   );

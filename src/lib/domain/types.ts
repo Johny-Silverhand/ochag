@@ -508,6 +508,7 @@ export type OpsLogEvent =
   | "settings"
   | "bootstrap"
   | "sample"
+  | "showcase"
   | "api"
   | "outbox";
 
@@ -666,7 +667,9 @@ export function parseHalls(raw: string): string[] {
   return items.length ? items : [DEFAULT_HALL];
 }
 
-export function hallDetailsOf(branch: Pick<Branch, "halls" | "hallDetails" | "seats"> | undefined | null): Hall[] {
+export function hallDetailsOf(
+  branch: Pick<Branch, "halls" | "hallDetails" | "seats" | "name"> | undefined | null,
+): Hall[] {
   if (branch?.hallDetails?.length) {
     return branch.hallDetails.map((h) => ({
       id: h.id || `hall_${h.name}`,

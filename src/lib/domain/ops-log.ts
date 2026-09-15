@@ -18,6 +18,7 @@ export const OPS_EVENT_LABEL: Record<OpsLogEvent, string> = {
   settings: "Настройки",
   bootstrap: "Bootstrap",
   sample: "Учебная сеть",
+  showcase: "Витрина показа",
   api: "API",
   outbox: "Очередь",
 };

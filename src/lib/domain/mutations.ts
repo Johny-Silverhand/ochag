@@ -16,7 +16,8 @@ import type {
   StopListReason,
   WriteoffReason,
 } from "./types.ts";
-import { today, syncHalls } from "./types.ts";
+import { today, syncHalls, hallDetailsOf, DEFAULT_HALL } from "./types.ts";
+import { assertPeriodOpen } from "./period.ts";
 import type {
   NotifyEvent,
   OutboxItem,
@@ -1188,6 +1189,18 @@ export function applyPushSub(
   };
 }
 
+function scaleHallCapacities(details: Hall[], seats: number): Hall[] {
+  const list = details.length ? details : [{ id: "hall_main", name: DEFAULT_HALL, capacity: 0 }];
+  const n = list.length;
+  const total = Math.max(0, Math.round(Number(seats) || 0));
+  const share = Math.floor(total / n);
+  const rem = total - share * n;
+  return list.map((h, i) => ({
+    ...h,
+    capacity: share + (i === n - 1 ? rem : 0),
+  }));
+}
+
 function normalizeBranchInput(input: {
   name: string;
   city?: string;
@@ -1209,23 +1222,20 @@ function normalizeBranchInput(input: {
           capacity: 0,
         })),
       );
-  const seats =
-    input.hallDetails?.length
-      ? fromDetails.seats
-      : Math.max(0, Math.round(Number(input.seats) || 0)) || fromDetails.seats || 40;
+  const detailSum = fromDetails.hallDetails.reduce((s, h) => s + h.capacity, 0);
+  const requested = Math.max(0, Math.round(Number(input.seats) || 0));
+  const keepCapacities = Boolean(input.hallDetails?.length) && detailSum > 0 && (requested === 0 || requested === detailSum);
+  const seats = keepCapacities ? detailSum : requested || detailSum || 40;
+  const hallDetails = keepCapacities ? fromDetails.hallDetails : scaleHallCapacities(fromDetails.hallDetails, seats);
   return {
     name,
     short: (input.short || name).trim().slice(0, 16) || name.slice(0, 16),
     city: (input.city ?? "").trim() || "—",
     address: (input.address ?? "").trim() || "—",
-    seats,
+    seats: hallDetails.reduce((s, h) => s + h.capacity, 0) || seats,
     phone: (input.phone ?? "").trim(),
-    halls: fromDetails.halls,
-    hallDetails: fromDetails.hallDetails.map((h, i) => ({
-      ...h,
-      capacity: h.capacity || Math.round(seats / fromDetails.halls.length) || seats,
-      id: h.id || `hall_${i}`,
-    })),
+    halls: hallDetails.map((h) => h.name),
+    hallDetails,
   };
 }
 
@@ -1268,6 +1278,16 @@ export function applyUpdateBranch(
   if (!canManageBranches(actor.role)) throw new AuthzError("Филиал меняет владелец или администратор-техник");
   const current = snap.branches.find((b) => b.id === input.branchId);
   if (!current) throw new AuthzError("Филиал не найден", 404);
+  const nextDetails = input.hallDetails
+    ?? (input.halls
+      ? input.halls.map((name, i) => ({
+          id: current.hallDetails?.[i]?.id ?? `hall_${i}`,
+          name,
+          capacity: 0,
+        }))
+      : input.seats != null
+        ? scaleHallCapacities(hallDetailsOf(current), input.seats)
+        : current.hallDetails);
   const fields = normalizeBranchInput({
     name: input.name ?? current.name,
     city: input.city ?? current.city,
@@ -1276,7 +1296,7 @@ export function applyUpdateBranch(
     seats: input.seats ?? current.seats,
     phone: input.phone ?? current.phone,
     halls: input.halls ?? current.halls,
-    hallDetails: input.hallDetails ?? current.hallDetails,
+    hallDetails: nextDetails,
   });
   return appendAudit(
     {

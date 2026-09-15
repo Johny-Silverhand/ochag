@@ -52,7 +52,6 @@ function stretchHistory(cloned: Snapshot): Snapshot {
       ...s,
       id: retagId(s.id, tag),
       number: `${s.number}-${tag}`,
-      date: shiftStamp(s.date, days) ?? s.date,
       at: shiftStamp(s.at, days) ?? s.at,
       shiftId: s.shiftId ? retagId(s.shiftId, tag) : s.shiftId,
     })),
