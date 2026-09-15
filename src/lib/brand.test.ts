@@ -45,6 +45,27 @@ describe("login intro copy", () => {
     assert.equal(boot.includes("Очаг"), false);
   });
 
+  it("does not show demo stage framing in user-facing UI source", () => {
+    const hits: string[] = [];
+    const walk = (dir: string) => {
+      for (const ent of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, ent.name);
+        if (ent.isDirectory()) {
+          walk(path);
+          continue;
+        }
+        if (!/\.(tsx|ts)$/.test(ent.name)) continue;
+        if (ent.name.endsWith(".test.ts")) continue;
+        const text = readFileSync(path, "utf8");
+        if (/Этап\s*\d|ЭТАП\s*\d|Stage\s*\d/.test(text)) hits.push(path.slice(srcRoot.length + 1));
+      }
+    };
+    walk(join(srcRoot, "components"));
+    walk(join(srcRoot, "routes"));
+    walk(join(srcRoot, "lib"));
+    assert.deepEqual(hits, []);
+  });
+
   it("keeps Очаг off user-facing UI source", () => {
     const hits: string[] = [];
     const skip = new Set(["brand.test.ts", "bootstrap.test.ts"]);

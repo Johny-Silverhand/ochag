@@ -41,7 +41,7 @@ function PlanningPage() {
   return (
     <div>
       <PageHeader
-        eyebrow="Этап 3"
+        eyebrow="Цифры"
         title="Аналитика"
         description="ABC, план-факт месяца, дни покрытия склада и отклонения. Разбор по цифрам контура — Ollama, если включена, иначе формулы."
       />
