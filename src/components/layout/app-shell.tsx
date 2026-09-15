@@ -29,7 +29,7 @@ import { useActiveBranch, useOps, useSessionUser } from "@/lib/data/store";
 import { can, canSeeAllBranches, hasAbsoluteAccess, type ModuleKey } from "@/lib/domain/permissions";
 import { ROLE_LABEL, type Role } from "@/lib/domain/types";
 import { NativeSelect } from "@/components/ui/input";
-import { NETWORK_NAME } from "@/lib/brand";
+import { APP_NAME, NETWORK_NAME } from "@/lib/brand";
 import { ThemeSwitcher } from "@/components/theme/switcher";
 import { useSync } from "@/lib/data/sync";
 import { PinOfferDialog } from "@/components/auth/pin-offer";
@@ -354,7 +354,7 @@ export function BootScreen() {
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center bg-bg px-6 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] text-fg">
       <div className="text-center">
-        <div className="text-sm font-semibold tracking-[0.22em]">ОЧАГ</div>
+        <div className="text-sm font-semibold tracking-[0.22em] uppercase">{APP_NAME}</div>
         <div className="mt-2 text-xs text-muted">Загрузка контура…</div>
       </div>
     </div>

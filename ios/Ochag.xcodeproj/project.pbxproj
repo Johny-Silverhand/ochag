@@ -186,7 +186,7 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Ochag/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Очаг";
+				INFOPLIST_KEY_CFBundleDisplayName = RestoPro;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.business";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -213,7 +213,7 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Ochag/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Очаг";
+				INFOPLIST_KEY_CFBundleDisplayName = RestoPro;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.business";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
