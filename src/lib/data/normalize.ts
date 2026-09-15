@@ -22,11 +22,17 @@ export function normalizeSnapshot(raw: Partial<Snapshot> | null | undefined): Sn
   }));
 
   const normalized: Snapshot = {
-    branches: (raw.branches ?? []).map((b) => ({
-      ...b,
-      seats: b.seats ?? 40,
-      halls: b.halls?.length ? b.halls : ["Основной зал"],
-    })),
+    branches: (raw.branches ?? []).map((b) => {
+      const halls = b.halls?.length ? b.halls : b.hallDetails?.map((h) => h.name).filter(Boolean);
+      return {
+        ...b,
+        seats: b.seats ?? 40,
+        halls: halls?.length ? halls : ["Основной зал"],
+        hallDetails: b.hallDetails?.length
+          ? b.hallDetails
+          : undefined,
+      };
+    }),
     users: (raw.users ?? []).map((u) => ({
       ...u,
       pin: u.pin || "",
@@ -66,7 +72,10 @@ export function normalizeSnapshot(raw: Partial<Snapshot> | null | undefined): Sn
     shifts: (raw.shifts ?? []).map((s) => ({
       ...s,
       startList: s.startList ?? recipes.map((r) => r.id),
-      incidentals: s.incidentals ?? [],
+      incidentals: (s.incidentals ?? []).map((i) => ({
+        ...i,
+        paidFrom: i.paidFrom ?? (i.paidFromTill === false ? undefined : "cash"),
+      })),
     })),
     requests: raw.requests ?? [],
     banquets: raw.banquets ?? [],
@@ -100,6 +109,7 @@ export function normalizeSnapshot(raw: Partial<Snapshot> | null | undefined): Sn
       notifyEvents: { ...defaultSettings().notifyEvents, ...(raw.settings?.notifyEvents ?? {}) },
     },
     deviceSessions: raw.deviceSessions ?? [],
+    pendingNetworks: raw.pendingNetworks ?? [],
   };
   return assignOwnerIds(normalized);
 }

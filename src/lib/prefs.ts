@@ -58,6 +58,7 @@ export interface PrefsState {
   waiterOwnSalesOnly: boolean;
   requireWriteoffNote: boolean;
   showAdvisor: boolean;
+  glassOff: boolean;
   setupComplete: boolean;
   install: InstallConfig;
   setTheme: (theme: ThemeId) => void;
@@ -81,12 +82,13 @@ export interface PrefsState {
   setWaiterOwnSalesOnly: (value: boolean) => void;
   setRequireWriteoffNote: (value: boolean) => void;
   setShowAdvisor: (value: boolean) => void;
+  setGlassOff: (value: boolean) => void;
   completeSetup: (install: InstallConfig) => void;
   resetSetup: () => void;
 }
 
-function paint(state: Pick<PrefsState, "theme" | "density" | "motion" | "typeScale">) {
-  applyThemeChrome(state.theme, state.density, state.motion, state.typeScale);
+function paint(state: Pick<PrefsState, "theme" | "density" | "motion" | "typeScale" | "glassOff">) {
+  applyThemeChrome(state.theme, state.density, state.motion, state.typeScale, state.glassOff);
 }
 
 const stored = readStoredChrome();
@@ -111,6 +113,7 @@ export const usePrefs = create<PrefsState>()(
       waiterOwnSalesOnly: true,
       requireWriteoffNote: false,
       showAdvisor: true,
+      glassOff: stored.glassOff,
       setupComplete: false,
       install: DEFAULT_INSTALL,
       setTheme: (theme) => {
@@ -137,12 +140,16 @@ export const usePrefs = create<PrefsState>()(
       setWaiterOwnSalesOnly: (waiterOwnSalesOnly) => set({ waiterOwnSalesOnly }),
       setRequireWriteoffNote: (requireWriteoffNote) => set({ requireWriteoffNote }),
       setShowAdvisor: (showAdvisor) => set({ showAdvisor }),
+      setGlassOff: (glassOff) => {
+        set({ glassOff });
+        paint(get());
+      },
       completeSetup: (install) => set({ setupComplete: true, install }),
       resetSetup: () => set({ setupComplete: false, install: DEFAULT_INSTALL }),
     }),
     {
       name: PREFS_STORAGE_KEY,
-      version: 4,
+      version: 5,
       partialize: (s) => ({
         theme: s.theme,
         density: s.density,
@@ -161,6 +168,7 @@ export const usePrefs = create<PrefsState>()(
         waiterOwnSalesOnly: s.waiterOwnSalesOnly,
         requireWriteoffNote: s.requireWriteoffNote,
         showAdvisor: s.showAdvisor,
+        glassOff: s.glassOff,
         setupComplete: s.setupComplete,
         install: s.install,
       }),
@@ -177,6 +185,7 @@ export const usePrefs = create<PrefsState>()(
             ? p.defaultWriteoffReason
             : current.defaultWriteoffReason,
           install: { ...DEFAULT_INSTALL, ...(p.install ?? {}) },
+          glassOff: Boolean(p.glassOff),
           setupComplete: Boolean(p.setupComplete),
         };
         return next;

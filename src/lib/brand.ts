@@ -17,7 +17,7 @@ export const APP_HOST = "restopro-theta.vercel.app";
 /** Same deployment, previous project alias still live. */
 export const APP_ORIGIN_ALIASES = [APP_ORIGIN, "https://ochag-theta.vercel.app"] as const;
 export const LOGIN_INTRO =
-  "Контур склада, смен и прибыли для кафе и ресторана. Свой логин — форма ниже; если открываете сеть впервые, загляните в «Что это?».";
+  "Контур склада, смен и прибыли для кафе и ресторана. Свой логин — форма ниже; если открываете сеть впервые, загляните в «Что такое RestoPro?».";
 export const VENDOR_NAME = "Arach.tech";
 export const VENDOR_LINE = "Разработано Arach.tech";
 export const VENDOR_URL = "https://arach.tech";

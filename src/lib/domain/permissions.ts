@@ -72,6 +72,11 @@ export function canEditExpenses(role: Role) {
   return grants(role, ["owner", "manager"]);
 }
 
+/** Household receipt photos: owner and manager only — not kitchen, hall, or technician. */
+export function canSeeDocumentPhotos(role: Role) {
+  return role === "owner" || role === "manager";
+}
+
 export function can(role: Role, module: ModuleKey) {
   return grants(role, MODULE_ROLES[module]);
 }

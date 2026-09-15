@@ -3,7 +3,7 @@ import { uid } from "../utils.ts";
 import { AuthzError } from "../authz/error.ts";
 
 export const MAX_PHOTOS = 4;
-export const MAX_PHOTO_CHARS = 220_000;
+export const MAX_PHOTO_CHARS = 900_000;
 const ALLOWED = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 
 export function sanitizePhotos(input: unknown, at = new Date().toISOString()): DocumentPhoto[] {

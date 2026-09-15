@@ -8,6 +8,7 @@ import {
   applyAddSupplier,
   applyBanquet,
   applyBanquetStatus,
+  applyDeleteBanquet,
   applyClosePeriod,
   applyCloseShift,
   applyDeleteBranch,
@@ -15,12 +16,12 @@ import {
   applyDeleteStaff,
   applyExpense,
   applyImportProducts,
+  applyCreateProduct,
   applyInviteStaff,
   applyInvoice,
   applyKeeperSales,
   applyManualSale,
   applyBootstrap,
-  applyOnboard,
   applyOpenShift,
   applyPayrollAdjustment,
   applyProfile,
@@ -48,6 +49,9 @@ import {
   applyVoidSale,
   applyDiscountSale,
   applyAccrueMonthlyPremiums,
+  applyApproveNetworkApplication,
+  applyRejectNetworkApplication,
+  applySubmitNetworkApplication,
 } from "../domain/mutations";
 import type { Period, Snapshot } from "../domain/types";
 import { today } from "../domain/types";
@@ -55,17 +59,19 @@ import { getRepo } from "../repo";
 import { mapKeeperReceipts } from "../integrations/keeper";
 import { parseKeeperXml } from "../integrations/keeper-xml";
 import { fetchKeeperReceipts, publicKeeperStatus } from "../integrations/keeper-http";
-import { applySimulatePayment, billingPublic, canSelfOnboard, showCommercialEntry, snapshotForCommercialOnboard } from "../billing/simulate";
+import { applySimulatePayment, billingPublic, canSubmitNetworkApplication, showCommercialEntry } from "../billing/simulate";
 import { isTariffId } from "../billing/plans";
 import { explainCalc, periodNarrative, recommendMetrics, ollamaAvailable, resolveOllamaConfig, isCalcTask, calcSnapshot } from "../ai";
 import { safeMetrics } from "../ai/safe-context";
 import { flushOutbox, notifyReady } from "../notify/send";
-import { banquetPdf, periodPdf, revisionActPdf, toCsv, transferWaybillPdf, ttkPdf } from "../reports/pdf";
+import { banquetPdf, periodPdf, pdfBytesToBase64, revisionActPdf, toCsv, transferWaybillPdf, ttkPdf } from "../reports/pdf";
 import { advisor } from "../ai/advisor";
 import { abcByRevenue, compareRevisions, deviations, periodPayroll, planVsFact, priceHistory, stockCover, stopListHistory } from "../domain/analytics";
 import { averageCheque, revenueByHour, waiterVoidsAndDiscounts } from "../domain/reports-extra";
 import { isOnboarded } from "../data/empty";
 import { createSeed, USERS } from "../data/seed";
+import { applyEnsureShowcase } from "../data/showcase";
+import { parseNomenclatureCsv } from "../domain/nomenclature-csv";
 import { can, canLoadSample, canResetDemo, hasAbsoluteAccess, isOpsLead } from "../domain/permissions";
 import { ensureEnvBootstrap, readBootstrapEnv, rematerializeLoginSecrets } from "../data/bootstrap";
 import { assertResetAllowed, assertSampleLoadAllowed } from "../data/sample-guard";
@@ -310,7 +316,7 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
       return json({ ok: true, billing: billingPublic(next), simulated: true }, 200, request);
     }
 
-    if (method === "POST" && path === "auth/onboard") {
+    if (method === "POST" && (path === "auth/onboard" || path === "auth/apply")) {
       const login = String(body.login ?? body.email ?? "");
       assertAuthRate(request, login);
       assertAuthFieldSizes({
@@ -319,40 +325,36 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
         pin: String(body.pin ?? ""),
       });
       const snap = await repo.load();
-      if (!canSelfOnboard(snap)) {
-        throw new AuthzError(
-          showCommercialEntry(snap)
-            ? "Сначала выберите тариф и подтвердите оплату."
-            : "Сеть уже создана",
-          showCommercialEntry(snap) ? 403 : 400,
-        );
+      if (!canSubmitNetworkApplication(snap)) {
+        throw new AuthzError("Заявку на сеть принимает администратор. Если уже есть логин — войдите ниже.", 403);
       }
-      const next = applyOnboard(snapshotForCommercialOnboard(snap), {
+      const result = applySubmitNetworkApplication(snap, {
         ownerName: String(body.ownerName ?? body.name ?? ""),
         login,
         password: String(body.password ?? ""),
         pin: String(body.pin ?? ""),
+        phone: String(body.phone ?? ""),
         branchName: String(body.branchName ?? "Филиал 1"),
         city: String(body.city ?? ""),
         address: String(body.address ?? ""),
         seats: body.seats != null ? Number(body.seats) : undefined,
         halls: Array.isArray(body.halls) ? (body.halls as string[]) : typeof body.halls === "string" ? [body.halls] : undefined,
+        tariff: isTariffId(body.tariff) ? body.tariff : snap.settings.tariff,
+        payerName: String(body.payerName ?? ""),
+        note: String(body.note ?? ""),
       });
-      const loginKey = login.trim().toLowerCase();
-      const owner =
-        next.users.find((u) => u.email.trim().toLowerCase() === loginKey) ??
-        next.users.filter((u) => u.role === "owner").at(-1) ??
-        next.users.at(-1)!;
-      const homeBranch = owner.branchId
-        ? next.branches.find((b) => b.id === owner.branchId)?.id
-        : next.branches.at(-1)?.id;
-      const actor = actorFrom(owner, { userId: owner.id, branchId: homeBranch ?? "all" });
-      const sess = mintDeviceSession({ userId: owner.id, request });
-      actor.sessionId = sess.id;
-      const stored = attachSession(next, sess);
-      await repo.save(stored);
-      const token = await signActor(actor);
-      return json({ token, user: publicActor(actor), state: publicSnapshot(stored, actor) }, 200, request);
+      await repo.save(result.snap);
+      return json(
+        {
+          ok: true,
+          pending: true,
+          applicationId: result.application.id,
+          telegram: "@arachtech",
+          billing: billingPublic(result.snap),
+        },
+        200,
+        request,
+      );
     }
 
     if (method === "POST" && path === "auth/bootstrap") {
@@ -473,6 +475,36 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
       });
       await repo.save(state);
       return json({ ok: true, state: publicSnapshot(state, actor) }, 200, request);
+    }
+
+    if (method === "POST" && path === "state/showcase") {
+      const current = await repo.load();
+      const actor = await requireLiveActor(request, current);
+      if (!hasAbsoluteAccess(actor.role)) throw new AuthzError("Витрину показа собирает только администратор-техник");
+      const state = appendOpsLog(applyEnsureShowcase(current), {
+        level: "info",
+        event: "showcase",
+        detail: "собрана витрина показа",
+        userId: actor.userId,
+        path,
+      });
+      await repo.save(state);
+      return json({ ok: true, state: publicSnapshot(state, actor) }, 200, request);
+    }
+
+    if (method === "POST" && path === "admin/applications/approve") {
+      return mutate(request, (snap, actor) =>
+        applyApproveNetworkApplication(snap, actor, {
+          id: String(body.id),
+          tariff: isTariffId(body.tariff) ? body.tariff : undefined,
+          paid: body.paid !== false,
+        }),
+      );
+    }
+    if (method === "POST" && path === "admin/applications/reject") {
+      return mutate(request, (snap, actor) =>
+        applyRejectNetworkApplication(snap, actor, { id: String(body.id), reason: String(body.reason ?? "") }),
+      );
     }
 
     if (method === "POST" && path === "session/branch") {
@@ -652,6 +684,9 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     if (method === "POST" && path === "banquets/status") {
       return mutate(request, (snap, actor) => applyBanquetStatus(snap, actor, String(body.id), body.status as never));
     }
+    if (method === "POST" && path === "banquets/delete") {
+      return mutate(request, (snap, actor) => applyDeleteBanquet(snap, actor, String(body.id)));
+    }
     if (method === "POST" && path === "profile") {
       return mutate(request, (snap, actor) => applyProfile(snap, actor, body as never));
     }
@@ -724,7 +759,15 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
       return mutate(request, (snap, actor) => applyDeleteRecipe(snap, actor, String(body.id)));
     }
     if (method === "POST" && path === "nomenclature/import") {
-      return mutate(request, (snap, actor) => applyImportProducts(snap, actor, (body.rows as never) ?? []));
+      return mutate(request, (snap, actor) => {
+        const fromCsv = typeof body.csv === "string" ? parseNomenclatureCsv(body.csv) : [];
+        const rows = Array.isArray(body.rows) && body.rows.length ? (body.rows as never) : fromCsv;
+        if (!rows.length) throw new AuthzError("Нет строк для импорта", 400);
+        return applyImportProducts(snap, actor, rows);
+      });
+    }
+    if (method === "POST" && path === "nomenclature/product") {
+      return mutate(request, (snap, actor) => applyCreateProduct(snap, actor, body as never));
     }
     if (method === "POST" && path === "staff/invite") {
       return mutate(request, (snap, actor) => applyInviteStaff(snap, actor, body as never));
@@ -836,33 +879,41 @@ export async function handleApiRequest(request: Request, splat?: string): Promis
     if (method === "GET" && path === "reports/pdf") {
       const { actor, view } = await loadScoped(request);
       const kind = url.searchParams.get("kind") ?? "period";
-      if (kind === "banquet") {
-        const b = view.banquets.find((x) => x.id === url.searchParams.get("id"));
-        if (!b) throw new AuthzError("Банкет не найден", 404);
-        const file = await banquetPdf(view, b, (url.searchParams.get("sheet") as never) ?? "guest");
-        return json({ filename: file.filename, base64: file.bytes.toString("base64"), mime: "application/pdf" });
+      try {
+        if (kind === "banquet") {
+          const b = view.banquets.find((x) => x.id === url.searchParams.get("id"));
+          if (!b) throw new AuthzError("Банкет не найден", 404);
+          const file = await banquetPdf(view, b, (url.searchParams.get("sheet") as never) ?? "guest");
+          return json({ filename: file.filename, base64: pdfBytesToBase64(file.bytes), mime: "application/pdf" });
+        }
+        if (kind === "revision") {
+          const file = await revisionActPdf(view, String(url.searchParams.get("id")));
+          return json({ filename: file.filename, base64: pdfBytesToBase64(file.bytes), mime: "application/pdf" });
+        }
+        if (kind === "waybill") {
+          const file = await transferWaybillPdf(view, String(url.searchParams.get("id")));
+          return json({ filename: file.filename, base64: pdfBytesToBase64(file.bytes), mime: "application/pdf" });
+        }
+        if (kind === "ttk") {
+          const file = await ttkPdf(view, String(url.searchParams.get("id")));
+          return json({ filename: file.filename, base64: pdfBytesToBase64(file.bytes), mime: "application/pdf" });
+        }
+        const period = (url.searchParams.get("period") ?? "7d") as Period;
+        const k = computeKpis(view, { period, branchId: actor.sessionBranchId });
+        const file = await periodPdf(view, period, [
+          `Выручка ${k.revenue} ₽, чеков ${k.checks}`,
+          `Фудкост ${k.foodCost.toFixed(1)}%, себест. ${k.cogs}`,
+          `Списания ${k.writeoffs}, ФОТ ${k.payroll}, opex ${k.opex}`,
+          `Чистыми ${k.net} ₽. Банкеты отдельно: ${k.banquetRevenue} ₽.`,
+        ]);
+        return json({ filename: file.filename, base64: pdfBytesToBase64(file.bytes), mime: "application/pdf" });
+      } catch (err) {
+        if (err instanceof AuthzError) throw err;
+        const msg = err instanceof Error && /[А-Яа-яЁё]/.test(err.message)
+          ? err.message
+          : "Не удалось собрать PDF. Проверьте шрифт кириллицы и повторите.";
+        throw new AuthzError(msg, 400);
       }
-      if (kind === "revision") {
-        const file = await revisionActPdf(view, String(url.searchParams.get("id")));
-        return json({ filename: file.filename, base64: file.bytes.toString("base64"), mime: "application/pdf" });
-      }
-      if (kind === "waybill") {
-        const file = await transferWaybillPdf(view, String(url.searchParams.get("id")));
-        return json({ filename: file.filename, base64: file.bytes.toString("base64"), mime: "application/pdf" });
-      }
-      if (kind === "ttk") {
-        const file = await ttkPdf(view, String(url.searchParams.get("id")));
-        return json({ filename: file.filename, base64: file.bytes.toString("base64"), mime: "application/pdf" });
-      }
-      const period = (url.searchParams.get("period") ?? "7d") as Period;
-      const k = computeKpis(view, { period, branchId: actor.sessionBranchId });
-      const file = await periodPdf(view, period, [
-        `Выручка ${k.revenue} ₽, чеков ${k.checks}`,
-        `Фудкост ${k.foodCost.toFixed(1)}%, себест. ${k.cogs}`,
-        `Списания ${k.writeoffs}, ФОТ ${k.payroll}, opex ${k.opex}`,
-        `Чистыми ${k.net} ₽. Банкеты отдельно: ${k.banquetRevenue} ₽.`,
-      ]);
-      return json({ filename: file.filename, base64: file.bytes.toString("base64"), mime: "application/pdf" });
     }
 
     if (method === "GET" && path === "reports/csv") {

@@ -33,11 +33,13 @@ export function showCommercialEntry(snap: Snapshot) {
   return looksLikeSeedNetwork(snap);
 }
 
-export function canSelfOnboard(snap: Snapshot) {
-  if (!snap.settings.paymentSimulatedAt) return false;
-  if (snap.users.length === 0) return true;
-  if (hasTechAdmin(snap)) return true;
-  return looksLikeSeedNetwork(snap);
+export function canSelfOnboard(_snap: Snapshot) {
+  return false;
+}
+
+/** Public form: leave a request. Admin connects the network later. */
+export function canSubmitNetworkApplication(snap: Snapshot) {
+  return showCommercialEntry(snap);
 }
 
 /**
@@ -62,12 +64,15 @@ export function snapshotForCommercialOnboard(snap: Snapshot): Snapshot {
 }
 
 export function billingPublic(snap: Snapshot) {
+  const pending = (snap.pendingNetworks ?? []).filter((a) => a.status === "pending").length;
   return {
     onboarded: snap.users.length > 0 && snap.branches.length > 0,
     tariff: snap.settings.tariff,
     paymentSimulatedAt: snap.settings.paymentSimulatedAt,
     paid: Boolean(snap.settings.paymentSimulatedAt),
-    canCreateNetwork: canSelfOnboard(snap),
+    canCreateNetwork: false,
+    canSubmitApplication: canSubmitNetworkApplication(snap),
     commercialEntry: showCommercialEntry(snap),
+    pendingApplications: pending,
   };
 }

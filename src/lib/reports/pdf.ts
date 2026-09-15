@@ -5,33 +5,61 @@ import { fileURLToPath } from "node:url";
 import { APP_NAME, DOWNLOAD_SLUG } from "../brand.ts";
 import type { Banquet, Snapshot } from "../domain/types";
 
-function fontPath() {
+function fontCandidates() {
   const here = dirname(fileURLToPath(import.meta.url));
-  const candidates = [
+  return [
     join(here, "fonts/DejaVuSans.ttf"),
     join(process.cwd(), "src/lib/reports/fonts/DejaVuSans.ttf"),
     join(process.cwd(), "public/fonts/DejaVuSans.ttf"),
+    join(process.cwd(), "fonts/DejaVuSans.ttf"),
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
   ];
-  return candidates.find((p) => existsSync(p));
+}
+
+function fontBuffer(): Buffer | null {
+  for (const p of fontCandidates()) {
+    try {
+      if (existsSync(p)) return readFileSync(p);
+    } catch {
+      /* next */
+    }
+  }
+  try {
+    return readFileSync(new URL("./fonts/DejaVuSans.ttf", import.meta.url));
+  } catch {
+    return null;
+  }
 }
 
 function pdfBuffer(draw: (doc: PDFKit.PDFDocument) => void): Promise<Buffer> {
   return new Promise((resolve, reject) => {
+    const font = fontBuffer();
+    if (!font) {
+      reject(new Error("Нет шрифта с кириллицей — PDF сейчас собрать нельзя. Обратитесь к администратору контура."));
+      return;
+    }
     const doc = new PDFDocument({ size: "A4", margin: 48 });
     const chunks: Buffer[] = [];
     doc.on("data", (c) => chunks.push(c as Buffer));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
-    doc.on("error", reject);
-    const font = fontPath();
-    if (!font) {
-      reject(new Error("Нет DejaVuSans.ttf — PDF с кириллицей недоступен. Положите шрифт в public/fonts."));
-      return;
+    doc.on("error", (err) => {
+      reject(new Error(`Не удалось собрать PDF: ${err instanceof Error ? err.message : "ошибка записи"}`));
+    });
+    try {
+      const fontName = "DejaVuSans";
+      doc.registerFont(fontName, font);
+      doc.font(fontName);
+      draw(doc);
+      doc.end();
+    } catch (err) {
+      reject(new Error(`Не удалось собрать PDF: ${err instanceof Error ? err.message : "ошибка шрифта"}`));
     }
-    doc.font(font);
-    draw(doc);
-    doc.end();
   });
+}
+
+export function pdfBytesToBase64(bytes: Buffer | Uint8Array) {
+  return Buffer.from(bytes).toString("base64");
 }
 
 export async function banquetPdf(snap: Snapshot, banquet: Banquet, sheet: "guest" | "waiter" | "cook" | "grill") {

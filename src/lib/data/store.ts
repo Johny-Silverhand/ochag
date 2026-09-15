@@ -7,6 +7,7 @@ import type {
   BanquetStatus,
   DocumentPhoto,
   ExpenseKind,
+  Hall,
   HouseholdMoveType,
   InvoiceLine,
   LedgerDebtKind,
@@ -20,6 +21,7 @@ import type {
   StopListReason,
   Unit,
   WriteoffReason,
+  MoneySource,
 } from "../domain/types";
 import { type Session } from "../domain/types";
 import { emptySnapshot, isOnboarded } from "./empty";
@@ -75,20 +77,21 @@ interface OpsState extends Snapshot {
     startList: string[];
     topUpDebtId?: string;
     topUpAmount?: number;
-    incidentals?: Array<{ title: string; amount: number; paidFromTill?: boolean; note?: string }>;
-  }) => void;
+    incidentals?: Array<{ title: string; amount: number; paidFromTill?: boolean; paidFrom?: MoneySource; note?: string }>;
+  }) => Promise<boolean>;
   closeShift: (input: {
     closeCash: number;
     note?: string;
-    incidentals?: Array<{ title: string; amount: number; paidFromTill?: boolean; note?: string }>;
-  }) => void;
+    incidentals?: Array<{ title: string; amount: number; paidFromTill?: boolean; paidFrom?: MoneySource; note?: string }>;
+  }) => Promise<boolean>;
   addShiftIncidental: (input: {
     title: string;
     amount: number;
     paidFromTill?: boolean;
+    paidFrom?: MoneySource;
     note?: string;
     phase?: "open" | "close" | "during";
-  }) => void;
+  }) => Promise<boolean>;
   topUpDebt: (debtId: string) => void;
   addLedgerDebt: (input: { kind: LedgerDebtKind; partyName: string; partyId?: string; amount: number; note?: string }) => void;
   payLedgerDebt: (input: { debtId: string; amount: number; note?: string }) => void;
@@ -101,10 +104,10 @@ interface OpsState extends Snapshot {
     cost?: number;
     note?: string;
     photos?: DocumentPhoto[];
-  }) => void;
+  }) => Promise<boolean>;
   closePeriod: (input: { from: string; to: string; revisionId: string }) => void;
-  adjustPayroll: (input: { userId: string; kind: PayrollAdjKind; amount: number; note: string; date?: string }) => void;
-  accruePremiums: (input?: { month?: string }) => void;
+  adjustPayroll: (input: { userId: string; kind: PayrollAdjKind; amount: number; note: string; date?: string }) => Promise<boolean>;
+  accruePremiums: (input: { month?: string; userIds: string[] }) => Promise<boolean>;
   setPlan: (input: { branchId: string; month: string; target: number }) => void;
   addManualSale: (items: Omit<SaleItem, "costAtSale">[], payment: "cash" | "card" | "qr" | "transfer") => void;
   voidSale: (input: { saleId: string; reason?: string }) => void;
@@ -119,6 +122,7 @@ interface OpsState extends Snapshot {
   importKeeperXml: (xml: string) => Promise<number>;
   pullKeeperSales: () => Promise<number>;
   upsertBanquet: (b: Banquet) => Promise<boolean>;
+  deleteBanquet: (id: string) => Promise<boolean>;
   setBanquetStatus: (id: string, status: BanquetStatus) => void;
   completeRevision: (lines: RevisionLine[], note?: string, photos?: DocumentPhoto[]) => void;
   transferStock: (input: {
@@ -129,11 +133,13 @@ interface OpsState extends Snapshot {
     note?: string;
   }) => void;
   setStopList: (input: { recipeId: string; reason: StopListReason; note?: string; clear?: boolean }) => void;
-  addExpense: (input: { category: string; amount: number; note?: string; kind: ExpenseKind; date?: string }) => void;
+  addExpense: (input: { category: string; amount: number; note?: string; kind: ExpenseKind; date?: string }) => Promise<boolean>;
   upsertRecipe: (recipe: Recipe) => void;
+  createProduct: (input: { name: string; category?: string; unit?: Snapshot["products"][number]["unit"]; minQty?: number; avgCost?: number }) => Promise<boolean>;
   importProducts: (
     rows: Array<{ name: string; category: string; unit: Snapshot["products"][number]["unit"]; minQty: number; avgCost: number }>,
-  ) => void;
+    csv?: string,
+  ) => Promise<boolean>;
   inviteStaff: (input: {
     name: string;
     login: string;
@@ -171,6 +177,7 @@ interface OpsState extends Snapshot {
     seats?: number;
     phone?: string;
     halls?: string[];
+    hallDetails?: Hall[];
   }) => Promise<boolean>;
   updateBranch: (input: {
     branchId: string;
@@ -181,6 +188,7 @@ interface OpsState extends Snapshot {
     seats?: number;
     phone?: string;
     halls?: string[];
+    hallDetails?: Hall[];
   }) => Promise<boolean>;
   deleteBranch: (input: { branchId: string }) => Promise<boolean>;
   updateSettings: (patch: Partial<Snapshot["settings"]>) => void;
@@ -196,7 +204,12 @@ interface OpsState extends Snapshot {
     address: string;
     seats?: number;
     halls?: string[];
+    phone?: string;
+    tariff?: "trial" | "basic" | "mid" | "pro";
   }) => Promise<{ ok: true } | { ok: false; reason: string }>;
+  ensureShowcase: () => Promise<boolean>;
+  approveApplication: (input: { id: string; tariff?: "trial" | "basic" | "mid" | "pro"; paid?: boolean }) => Promise<boolean>;
+  rejectApplication: (input: { id: string; reason?: string }) => Promise<boolean>;
 }
 
 async function applyRemote(path: string, body: unknown) {
@@ -268,12 +281,14 @@ const ACTION_KEYS = [
   "importKeeperXml",
   "pullKeeperSales",
   "upsertBanquet",
+  "deleteBanquet",
   "setBanquetStatus",
   "completeRevision",
   "transferStock",
   "setStopList",
   "addExpense",
   "upsertRecipe",
+  "createProduct",
   "importProducts",
   "inviteStaff",
   "updateStaff",
@@ -285,6 +300,9 @@ const ACTION_KEYS = [
   "flushNotify",
   "simulatePayment",
   "onboardNetwork",
+  "ensureShowcase",
+  "approveApplication",
+  "rejectApplication",
 ] as const;
 
 function withEmpty(): Omit<OpsState, (typeof ACTION_KEYS)[number]> {
@@ -517,17 +535,11 @@ export const useOps = create<OpsState>()(
         void applyRemote("procurement/status", { id, status, supplierId });
       },
 
-      openShift: (input) => {
-        void applyRemote("shifts/open", input);
-      },
+      openShift: (input) => applyRemote("shifts/open", input),
 
-      closeShift: (input) => {
-        void applyRemote("shifts/close", input);
-      },
+      closeShift: (input) => applyRemote("shifts/close", input),
 
-      addShiftIncidental: (input) => {
-        void applyRemote("shifts/incidental", input);
-      },
+      addShiftIncidental: (input) => applyRemote("shifts/incidental", input),
 
       topUpDebt: (debtId) => {
         void applyRemote("debts/topup", { debtId });
@@ -549,21 +561,15 @@ export const useOps = create<OpsState>()(
         void applyRemote("household/item", input);
       },
 
-      householdMove: (input) => {
-        void applyRemote("household/move", input);
-      },
+      householdMove: (input) => applyRemote("household/move", input),
 
       closePeriod: (input) => {
         void applyRemote("period/close", input);
       },
 
-      adjustPayroll: (input) => {
-        void applyRemote("staff/adjust", input);
-      },
+      adjustPayroll: (input) => applyRemote("staff/adjust", input),
 
-      accruePremiums: (input) => {
-        void applyRemote("staff/premiums", input ?? {});
-      },
+      accruePremiums: (input) => applyRemote("staff/premiums", input),
 
       setPlan: (input) => {
         void applyRemote("plan", input);
@@ -613,6 +619,8 @@ export const useOps = create<OpsState>()(
 
       upsertBanquet: (b) => applyRemote("banquets", b),
 
+      deleteBanquet: (id) => applyRemote("banquets/delete", { id }),
+
       setBanquetStatus: (id, status) => {
         void applyRemote("banquets/status", { id, status });
       },
@@ -629,17 +637,15 @@ export const useOps = create<OpsState>()(
         void applyRemote("shifts/stop-list", input);
       },
 
-      addExpense: (input) => {
-        void applyRemote("expenses", input);
-      },
+      addExpense: (input) => applyRemote("expenses", input),
 
       upsertRecipe: (recipe) => {
         void applyRemote("recipes", recipe);
       },
 
-      importProducts: (rows) => {
-        void applyRemote("nomenclature/import", { rows });
-      },
+      createProduct: (input) => applyRemote("nomenclature/product", input),
+
+      importProducts: (rows, csv) => applyRemote("nomenclature/import", csv ? { csv } : { rows }),
 
       inviteStaff: (input) => applyRemote("staff/invite", input),
 
@@ -696,28 +702,23 @@ export const useOps = create<OpsState>()(
 
       onboardNetwork: async (input) => {
         try {
-          const res = await api<{ user: { userId: string; branchId: string }; state: Snapshot }>("auth/onboard", {
+          await api<{ ok: boolean; pending?: boolean }>("auth/apply", {
             method: "POST",
             body: input,
           });
-          applyingRemote = true;
-          set({
-            ...applyIncoming(get(), res.state),
-            session: {
-              userId: res.user.userId,
-              branchId: res.user.branchId,
-              actingOwnerId: "actingOwnerId" in res.user ? (res.user as { actingOwnerId?: string | null }).actingOwnerId : null,
-              sessionId: "sessionId" in res.user ? (res.user as { sessionId?: string }).sessionId : undefined,
-            },
-          });
-          applyingRemote = false;
           return { ok: true as const };
         } catch (err) {
-          const reason = clientErrorMessage(err, "Не удалось создать сеть");
+          const reason = clientErrorMessage(err, "Не удалось отправить заявку");
           toast.error(reason);
           return { ok: false as const, reason };
         }
       },
+
+      ensureShowcase: () => applyRemote("state/showcase", {}),
+
+      approveApplication: (input) => applyRemote("admin/applications/approve", input),
+
+      rejectApplication: (input) => applyRemote("admin/applications/reject", input),
     }),
     {
       name: "ochag-session-v3",
